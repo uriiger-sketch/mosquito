@@ -137,15 +137,21 @@ def options(path): return '', 204
 
 @app.route('/heartbeat', methods=['POST', 'GET'])
 def heartbeat():
-    data   = request.get_json(force=True, silent=True) or {}
-    raw_id = data.get('deviceId', request.args.get('deviceId', 'anon'))
-    h      = dh(raw_id)
+    # Accept both GET (query params, no preflight) and POST (JSON body)
+    if request.method == 'GET':
+        raw_id   = request.args.get('deviceId', 'anon')
+        sess_val = request.args.get('sess', '')
+    else:
+        data     = request.get_json(force=True, silent=True) or {}
+        raw_id   = data.get('deviceId', 'anon')
+        sess_val = str(data.get('sessionStart', ''))
+
+    h = dh(raw_id)
     with lock:
-        new_sess = (data.get('sessionStart') and
-                    session_registry.get(h) != str(data.get('sessionStart')))
+        new_sess = sess_val and session_registry.get(h) != sess_val
         touch(h)
         if new_sess:
-            session_registry[h] = str(data.get('sessionStart'))
+            session_registry[h] = sess_val
             stats['total_sessions'] += 1
     return jsonify(full_stats())
 
