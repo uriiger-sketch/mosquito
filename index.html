@@ -1517,7 +1517,7 @@ class MosquitoClassifier {
     // ── 500-frame sustained vote (≈20s at 25fps) ─────────────────
     // A detection is only CONFIRMED after 500 frames of consistent signal.
     // This eliminates all transient false positives completely.
-    this.VOTE_FRAMES    = 500;   // frames needed to confirm
+    this.VOTE_FRAMES    = 75;    // ~3s at 25fps to lock
     this.VOTE_THRESHOLD = 0.60;  // fraction of frames that must pass
     this.voteBuffer  = {};       // species.id → circular buffer of booleans
     this.votePtr     = {};       // circular buffer write pointer
@@ -2569,6 +2569,56 @@ class MapController {
 
     // Load server hotspots (cells with ≥100 user detections)
     this.loadServerHotspots();
+
+    // Apply GPS location if it arrived before map was ready
+    if (this._pendingLat !== undefined) {
+      this.applyPendingUserLocation();
+    }
+  }
+
+  applyPendingUserLocation() {
+    if (!this.map || this._pendingLat === undefined) return;
+    const lat = this._pendingLat;
+    const lng = this._pendingLng;
+
+    // Update existing marker or create new one
+    if (this._userMarker) {
+      this._userMarker.setLatLng([lat, lng]);
+      if (this._userRing) this._userRing.setLatLng([lat, lng]);
+    } else {
+      // Create the "You are here" marker
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:18px;height:18px;border-radius:50%;
+          background:#2563eb;
+          border:3px solid #fff;
+          box-shadow:0 0 0 5px rgba(37,99,235,0.4), 0 2px 8px rgba(0,0,0,0.5);
+          animation:pulse-user 2s ease-in-out infinite;
+        "></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      });
+
+      this._userMarker = L.marker([lat, lng], { icon, zIndexOffset: 9999 })
+        .addTo(this.map)
+        .bindPopup('<b>📍 You are here</b><br>Your GPS location');
+
+      this._userRing = L.circleMarker([lat, lng], {
+        radius: 24,
+        color: '#2563eb',
+        fillColor: '#2563eb',
+        fillOpacity: 0.08,
+        weight: 2,
+        opacity: 0.4,
+      }).addTo(this.map);
+    }
+
+    // Pan to user on first map open
+    if (!this._pannedToUser) {
+      this._pannedToUser = true;
+      this.map.setView([lat, lng], 8, { animate: true });
+    }
   }
 
   async loadServerHotspots() {
@@ -3125,42 +3175,14 @@ class MapController {
   }
 
   setUserLocation(lat, lng) {
-    if (!this.map) return;
+    // Store always — map may not be ready yet
+    this._pendingLat = lat;
+    this._pendingLng = lng;
 
-    // Create or update the "You are here" marker
-    if (this._userMarker) {
-      this._userMarker.setLatLng([lat, lng]);
-      if (this._userRing)  this._userRing.setLatLng([lat, lng]);
-      return;
+    // If map is ready, apply immediately; otherwise pending will be applied on map init
+    if (this.map) {
+      this.applyPendingUserLocation();
     }
-
-    // Pulsing blue dot — custom DivIcon
-    const icon = L.divIcon({
-      className: '',
-      html: `<div style="
-        width:16px;height:16px;border-radius:50%;
-        background:#2563eb;
-        border:2px solid #fff;
-        box-shadow:0 0 0 4px rgba(37,99,235,0.35);
-        animation:pulse-user 2s ease-in-out infinite;
-      "></div>`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-    });
-
-    this._userMarker = L.marker([lat, lng], { icon, zIndexOffset: 9000 })
-      .addTo(this.map)
-      .bindPopup('<b>📍 Your location</b><br>GPS position');
-
-    // Outer pulsing ring
-    this._userRing = L.circleMarker([lat, lng], {
-      radius: 18,
-      color: '#2563eb',
-      fillColor: '#2563eb',
-      fillOpacity: 0.08,
-      weight: 1.5,
-      opacity: 0.5,
-    }).addTo(this.map);
   }
 
   addLocalDetection(lat, lng, species) {
@@ -3327,9 +3349,16 @@ class App {
         if (name === 'map' && !this.mapInited) {
           this.mapInited = true;
           setTimeout(() => {
-            try { this.mapCtrl.init(); this.wireYearSlider(); }
-            catch(e) { console.warn('Map init:', e); }
+            try {
+              this.mapCtrl.init();
+              this.wireYearSlider();
+              // GPS may have arrived before map existed — apply now
+              this.mapCtrl.applyPendingUserLocation();
+            } catch(e) { console.warn('Map init:', e); }
           }, 80);
+        } else if (name === 'map' && this.mapInited) {
+          // Map already inited — just ensure user location is shown
+          try { this.mapCtrl.applyPendingUserLocation(); } catch(e) {}
         }
       });
     });
@@ -3585,6 +3614,10 @@ self.addEventListener('fetch', e => {
 
     // Update cells to OFF state immediately
     this.updateDetectionPanel([]);
+    // Reset cooldown so a new session can detect immediately
+    if (this._detectionCooldown) {
+      SPECIES_DB.forEach(sp => { this._detectionCooldown[sp.id] = 0; });
+    }
 
     this.setStatus('', 'OFFLINE');
     const btn = document.getElementById('btn-listen');
@@ -3649,59 +3682,61 @@ self.addEventListener('fetch', e => {
         }
       }
 
-      // 3. Update detection panel every frame — charge bar must be live
-      this.updateDetectionPanel(detections);
+      // 3. Update detection panel:
+      //    - charge bar width: every frame (smooth animation)
+      //    - text labels: every ~12 frames (≈0.5s, stops flashing)
+      const updateText = (this.sampleCount % 12 === 0);
+      this.updateDetectionPanel(detections, updateText);
 
-      // 4. Federated learning updates + report detection to server
+      // 4-7. Detection events — one cooldown governs ALL counts/reports/map
+      // _detectionCooldown: per-species timestamp of last CONFIRMED detection event
+      // A "detection event" = first frame locked after ≥60s silence for that species
+      if (!this._detectionCooldown) {
+        this._detectionCooldown = {};
+        SPECIES_DB.forEach(sp => { this._detectionCooldown[sp.id] = 0; });
+      }
+
+      const now60 = Date.now();
       detections.forEach(det => {
-        const labelIdx = SPECIES_DB.findIndex(sp => sp.id === det.species.id);
-        if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
-        // Report to server: max 1 detection per species per user per minute
-        const now    = Date.now();
-        const rKey   = `report_${det.species.id}`;
-        if (!this._lastReport) this._lastReport = {};
-        if (!this._lastReport[rKey] || now - this._lastReport[rKey] > 60000) {
-          this._lastReport[rKey] = now;
+        const spId    = det.species.id;
+        const lastEvt = this._detectionCooldown[spId] || 0;
+        const cooldownMs = 60000; // 1 minute per species per device
+
+        if (now60 - lastEvt >= cooldownMs) {
+          // ── NEW EVENT: first detection after cooldown ───────────
+          this._detectionCooldown[spId] = now60;
+
+          // Count: exactly +1 per event (not per frame)
+          this.sessionCounts[spId]++;
+
+          // Federated learning update
+          const labelIdx = SPECIES_DB.findIndex(sp => sp.id === spId);
+          if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
+
+          // Server report (also throttled server-side)
           this.fedClient.reportDetection(det);
+
+          // Map: add one marker per event
+          if (this.deviceLat !== null && this.deviceLng !== null) {
+            const jitter = 0.02;
+            const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
+            const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
+            this.mapCtrl.addLocalDetection(lat, lng, det.species);
+          }
         }
+        // If still within cooldown: panel shows LOCKED but NO new count/report
       });
 
-      // 5. Update session counts + top-bar detection counter
-      detections.forEach(det => {
-        this.sessionCounts[det.species.id]++;
-      });
-      // Update nb-detections with TOTAL local session detections (all species summed)
-      const totalLocal = Object.values(this.sessionCounts).reduce((s, v) => s + v, 0);
+      // Update top-bar counter from session counts (whole numbers, event-based)
+      const totalEvents = Object.values(this.sessionCounts).reduce((s, v) => s + v, 0);
       const nbDet = document.getElementById('nb-detections');
-      if (nbDet) nbDet.textContent = totalLocal + (totalLocal === 1 ? ' det.' : ' det.');
+      if (nbDet) nbDet.textContent = totalEvents + ' det.';
 
-      // 6. Update stats + fed status
+      // Update stats strip
       if (this.sampleCount % 10 === 0) {
         this.updateStatsGrid();
         this.updateFedStatus();
       }
-
-      // 7. Register every confirmed detection on map (throttled to 5s to avoid spam)
-      detections.forEach(det => {
-        const now = Date.now();
-        if (now - this.lastMapAdd[det.species.id] > 5000) {
-          this.lastMapAdd[det.species.id] = now;
-          if (this.deviceLat !== null && this.deviceLng !== null) {
-            // DP jitter ±0.02° (~2km) for privacy — tighter than before
-            const jitter = 0.02;
-            const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
-            const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
-            // Switch to map tab briefly? No — just register silently
-            this.mapCtrl.addLocalDetection(lat, lng, det.species);
-          } else {
-            // No geolocation yet — accumulate without coordinates,
-            // map will show when geo becomes available
-            this.mapCtrl.totalDetections++;
-            const nbDet = document.getElementById('nb-detections');
-            if (nbDet) nbDet.textContent = `${this.mapCtrl.totalDetections} detection${this.mapCtrl.totalDetections !== 1 ? 's' : ''}`;
-          }
-        }
-      });
 
       this.sampleCount++;
     }
@@ -3793,85 +3828,82 @@ self.addEventListener('fetch', e => {
     });
   }
 
-  updateDetectionPanel(detections) {
+  updateDetectionPanel(detections, updateText = true) {
     const rejection  = this.classifier ? (this.classifier.lastRejection || {}) : {};
     const status     = this.classifier ? this.classifier.getStatus()            : null;
-    // Raw buffer averages drive the CHARGE BAR even below threshold
     const rawConf    = (this.classifier && this.classifier.getRawConfidences)
                        ? this.classifier.getRawConfidences() : {};
-    const THRESHOLD  = 0.55; // must match classifier CONFIDENCE_THRESHOLD
+    const THRESHOLD  = 0.45;
 
     SPECIES_DB.forEach(sp => {
-      const cell      = document.getElementById(`dc-${sp.id}`);
-      const confEl    = document.getElementById(`dc-conf-${sp.id}`);
-      const barEl     = document.getElementById(`dc-bar-${sp.id}`);
-      const statusEl  = document.getElementById(`dc-status-${sp.id}`);
-      const freqEl    = document.getElementById(`dc-freq-${sp.id}`);
-      const snrEl     = document.getElementById(`dc-snr-${sp.id}`);
-      const reasonEl  = document.getElementById(`dc-reason-${sp.id}`);
+      const cell     = document.getElementById(`dc-${sp.id}`);
+      const barEl    = document.getElementById(`dc-bar-${sp.id}`);
       if (!cell) return;
 
-      const det     = detections.find(d => d.species.id === sp.id);
-      const rawAvg  = rawConf[sp.id] || 0;  // 0–1, pre-threshold
-      const barPct  = Math.round(rawAvg * 100);
+      const det    = detections.find(d => d.species.id === sp.id);
+      const rawAvg = rawConf[sp.id] || 0;
+      const barPct = Math.round(rawAvg * 100);
 
-      // ── Bar always reflects temporal buffer fill ──────────────
+      // ── Bar width: EVERY FRAME (smooth charge animation) ──────
       if (barEl) barEl.style.width = barPct + '%';
 
+      // ── Hot class: every frame (border glow instant feedback) ─
+      if      (!this.running)          cell.classList.remove('hot');
+      else if (status && status.gated) cell.classList.remove('hot');
+      else if (det)                    cell.classList.add('hot');
+      else                             cell.classList.remove('hot');
+
+      // ── Text: only every 12 frames ≈ 0.5s (stops flashing) ───
+      if (!updateText) return;
+
+      const confEl   = document.getElementById(`dc-conf-${sp.id}`);
+      const statusEl = document.getElementById(`dc-status-${sp.id}`);
+      const freqEl   = document.getElementById(`dc-freq-${sp.id}`);
+      const snrEl    = document.getElementById(`dc-snr-${sp.id}`);
+      const reasonEl = document.getElementById(`dc-reason-${sp.id}`);
+
       if (!this.running) {
-        // ── OFFLINE state ───────────────────────────────────────
-        cell.classList.remove('hot');
         if (confEl)   { confEl.textContent = 'OFF'; confEl.style.opacity = '0.3'; }
-        if (statusEl) statusEl.textContent  = `~${sp.freq} Hz target`;
-        if (freqEl)   freqEl.textContent    = '—';
-        if (snrEl)    snrEl.textContent     = '—';
-        if (reasonEl) reasonEl.textContent  = '';
-        if (barEl)    barEl.style.width     = '0%';
+        if (statusEl) statusEl.textContent = `~${sp.freq} Hz`;
+        if (freqEl)   freqEl.textContent   = '—';
+        if (snrEl)    snrEl.textContent    = '—';
+        if (reasonEl) reasonEl.textContent = '';
+        if (barEl)    barEl.style.width    = '0%';
 
       } else if (status && status.gated) {
-        // ── GATED — room too loud ───────────────────────────────
-        cell.classList.remove('hot');
         if (confEl)   { confEl.textContent = '🔇'; confEl.style.opacity = '0.6'; }
-        if (statusEl) statusEl.textContent  = 'room too loud';
-        if (freqEl)   freqEl.textContent    = '—';
-        if (snrEl)    snrEl.textContent     = '—';
-        if (reasonEl) reasonEl.textContent  = 'move to quieter area';
-        if (barEl)    barEl.style.width     = '0%';
+        if (statusEl) statusEl.textContent = 'room too loud';
+        if (freqEl)   freqEl.textContent   = '—';
+        if (snrEl)    snrEl.textContent    = '—';
+        if (reasonEl) reasonEl.textContent = 'quieter area needed';
+        if (barEl)    barEl.style.width    = '0%';
 
       } else if (det) {
-        // ── LOCKED — confirmed detection ────────────────────────
-        cell.classList.add('hot');
         const pct = Math.round(det.confidence * 100);
         if (confEl)   { confEl.textContent = pct + '%'; confEl.style.opacity = '1'; }
-        if (statusEl) statusEl.textContent  = '✦ LOCKED';
-        if (freqEl)   freqEl.textContent    = det.frequency.toFixed(0) + ' Hz';
-        if (snrEl)    snrEl.textContent     = '+' + det.snr.toFixed(1) + ' dB';
-        if (reasonEl) reasonEl.textContent  = det.species.disease;
+        if (statusEl) statusEl.textContent = '✦ LOCKED';
+        if (freqEl)   freqEl.textContent   = det.frequency.toFixed(0) + ' Hz';
+        if (snrEl)    snrEl.textContent    = '+' + det.snr.toFixed(1) + ' dB';
+        if (reasonEl) reasonEl.textContent = det.species.disease;
 
       } else if (rawAvg > 0.05) {
-        // ── CHARGING — vote buffer filling ──────────────────────
-        cell.classList.remove('hot');
-        const votes = this.classifier ? this.classifier.voteCount[sp.id] : 0;
-        const vTotal = this.classifier ? this.classifier.VOTE_FRAMES : 500;
+        const votes  = this.classifier ? this.classifier.voteCount[sp.id] : 0;
+        const vTotal = this.classifier ? this.classifier.VOTE_FRAMES : 75;
+        const gSNR   = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
         if (confEl)   { confEl.textContent = barPct + '%'; confEl.style.opacity = '0.85'; }
-        if (statusEl) statusEl.textContent  = `${votes}/${vTotal} votes`;
-        const gSNR = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
-        if (freqEl)   freqEl.textContent    = gSNR > 1 ? `×${gSNR.toFixed(1)}` : sp.freq + ' Hz';
-        if (snrEl)    snrEl.textContent     = '—';
-        if (reasonEl) reasonEl.textContent  = 'accumulating…';
+        if (statusEl) statusEl.textContent = `${votes}/${vTotal} votes`;
+        if (freqEl)   freqEl.textContent   = gSNR > 1 ? `×${gSNR.toFixed(1)}` : sp.freq + ' Hz';
+        if (snrEl)    snrEl.textContent    = '—';
+        if (reasonEl) reasonEl.textContent = 'building…';
 
       } else {
-        // ── IDLE — listening, no signal ─────────────────────────
-        cell.classList.remove('hot');
-        if (confEl)   { confEl.textContent = '—'; confEl.style.opacity = '0.4'; }
         const reason = rejection[sp.id] || '';
-        // Show Goertzel SNR if available
-        const gSNR = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
-        const snrDisplay = gSNR > 1 ? `×${gSNR.toFixed(1)} snr` : '';
-        if (statusEl) statusEl.textContent  = `~${sp.freq} Hz`;
-        if (freqEl)   freqEl.textContent    = snrDisplay || '—';
-        if (snrEl)    snrEl.textContent     = '—';
-        if (reasonEl) reasonEl.textContent  = reason.length > 22 ? reason.slice(0,21)+'…' : reason;
+        const gSNR   = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
+        if (confEl)   { confEl.textContent = '—'; confEl.style.opacity = '0.4'; }
+        if (statusEl) statusEl.textContent = `~${sp.freq} Hz`;
+        if (freqEl)   freqEl.textContent   = gSNR > 1 ? `×${gSNR.toFixed(1)}` : '—';
+        if (snrEl)    snrEl.textContent    = '—';
+        if (reasonEl) reasonEl.textContent = reason.length > 22 ? reason.slice(0,21)+'…' : reason;
       }
     });
   }
