@@ -2995,11 +2995,8 @@ class App {
     // ── 8. Build species stat cards ───────────────────────────────────────
     try { this.buildSpStatCards(); } catch(e) { console.warn('sp cards:', e); }
 
-    // ── 9. Spectrogram canvas ─────────────────────────────────────────────
-    try {
-      const canvas = document.getElementById('spectrogram');
-      if (canvas) this.spectrogram = new SpectrogramRenderer(canvas);
-    } catch(e) { console.warn('spectrogram:', e); }
+    // ── 9. Spectrogram canvas initialised in startListening() ───────────────
+    // (canvas has zero size until Listen tab is visible on iOS)
   }
 
   wireYearSlider() {
@@ -3104,8 +3101,16 @@ self.addEventListener('fetch', e => {
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
-      this.sessionStart = Date.now();
 
+      // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
+      try {
+        const canvas = document.getElementById('spectrogram');
+        if (canvas) {
+          this.spectrogram = new SpectrogramRenderer(canvas);
+        }
+      } catch(e) { console.warn('spectrogram init:', e); }
+
+      this.sessionStart = Date.now();
       this.running = true;
       this.setStatus('active', 'LISTENING');
 
@@ -3147,17 +3152,29 @@ self.addEventListener('fetch', e => {
   analysisLoop() {
     if (!this.running) return;
 
-    const freqData    = this.engine.getFrequencyData();
-    const rawFreqData = this.engine.getRawFrequencyData();
-    const timeData    = this.engine.getTimeDomainData();
+    // Lazy-init spectrogram if it wasn't ready at startup (iOS timing issue)
+    if (!this.spectrogram) {
+      try {
+        const canvas = document.getElementById('spectrogram');
+        if (canvas) this.spectrogram = new SpectrogramRenderer(canvas);
+      } catch(e) { /* will retry next frame */ }
+    }
+
+    const freqData    = this.engine ? this.engine.getFrequencyData()    : null;
+    const rawFreqData = this.engine ? this.engine.getRawFrequencyData()  : null;
+    const timeData    = this.engine ? this.engine.getTimeDomainData()    : null;
 
     if (freqData && rawFreqData) {
-      // 1. Spectrogram uses SMOOTHED data (smoothingTimeConstant=0.75) — beautiful
-      this.spectrogram.pushColumn(freqData, this.engine);
+      // 1. Spectrogram — guarded: may be null if canvas not yet in DOM
+      if (this.spectrogram) {
+        try { this.spectrogram.pushColumn(freqData, this.engine); } catch(e) {}
+      }
 
-      // 2. Classifier uses RAW unsmoothed data — no smoothing artifacts, accurate
-      const detections = this.classifier.analyze(rawFreqData);
-      this.spectrogram.drawMarkers(detections);
+      // 2. Classifier uses RAW unsmoothed data
+      const detections = this.classifier ? this.classifier.analyze(rawFreqData) : [];
+      if (this.spectrogram) {
+        try { this.spectrogram.drawMarkers(detections); } catch(e) {}
+      }
 
       // 2b. Show classifier gate status
       if (this.sampleCount % 8 === 0) {
