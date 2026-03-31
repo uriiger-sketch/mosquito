@@ -127,14 +127,15 @@ body::after {
 
 .header-pill {
   display: flex; align-items: center; gap: 5px;
-  padding: 4px 10px;
+  padding: 4px 9px;
   background: var(--s2);
   border: 1px solid var(--border);
   border-radius: 20px;
   font-family: 'Syne Mono', monospace;
-  font-size: 0.62rem;
+  font-size: 0.58rem;
   color: var(--text2);
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .status-dot {
   width: 6px; height: 6px;
@@ -1016,11 +1017,11 @@ body::after {
       <div class="status-dot" id="status-dot"></div>
       <span id="status-text">OFFLINE</span>
     </div>
-    <div class="header-pill" id="server-pill">
+    <div class="spacer"></div>
+    <div class="header-pill" id="server-pill" style="font-size:0.52rem">
       <span class="srv-dot disconnected" id="server-dot"></span>
       <span id="server-lbl">CONNECTING…</span>
     </div>
-    <div class="spacer"></div>
     <button id="btn-listen">
       <div class="btn-mic-dot"></div>
       <span id="btn-listen-label">START</span>
@@ -1306,6 +1307,17 @@ body::after {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 'use strict';
+
+// Safe timeout signal — works on iOS Safari < 16.4
+function timeoutSignal(ms) {
+  try {
+    return timeoutSignal(ms);
+  } catch(e) {
+    const c = new AbortController();
+    setTimeout(() => c.abort(), ms);
+    return c.signal;
+  }
+}
 
 // ── Server configuration ─────────────────────────────────────────────────────
 // When the federated server is deployed, replace this URL with your
@@ -2341,7 +2353,7 @@ class FederatedLearningClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(5000),
+        signal: timeoutSignal(5000),
       });
       if (resp.ok) {
         this.uploadSuccess++;
@@ -2386,7 +2398,7 @@ class FederatedLearningClient {
           sessionStart: sessionStart || null,
           listening:    !!listening,
         }),
-        signal: AbortSignal.timeout(8000),
+        signal: timeoutSignal(8000),
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -2415,7 +2427,7 @@ class FederatedLearningClient {
             ? `${Math.round(window._app.deviceLat / 5)},${Math.round(window._app.deviceLng / 5)}`
             : 'unknown',
         }),
-        signal: AbortSignal.timeout(5000),
+        signal: timeoutSignal(5000),
       });
     } catch { /* offline */ }
   }
@@ -3211,20 +3223,32 @@ class App {
       if (lbl) lbl.textContent = ok ? 'SERVER ONLINE' : 'SERVER OFFLINE';
     };
 
-    // Update all UI elements from a stats response
+    // Update all UI elements from a heartbeat OR stats response.
+    // Both endpoints return slightly different field names — normalize here.
     const applyStats = (data) => {
+      if (!data) return;
       setServerConnected(true);
+
+      // Normalize field names across /heartbeat and /federated/stats
+      const activeNow   = data.active_now   ?? 0;
+      const everConn    = data.unique_devices ?? data.ever_connected ?? 0;
+      const totalDet    = data.total_detections ?? 0;
+      const totalRounds = data.total_rounds ?? 0;
+      const totalSess   = data.total_sessions ?? 0;
+
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-      set('nb-live',           `${data.active_now ?? 0} live now`);
-      set('nb-ever',           `${data.unique_devices ?? 0} ever`);
-      set('stat-contrib',      data.unique_devices ?? '—');
-      set('stat-server-rounds', data.total_rounds ?? '—');
+      set('nb-live',           `${activeNow} live now`);
+      set('nb-ever',           `${everConn} ever`);
+      set('stat-contrib',      String(everConn));
+      set('stat-server-rounds', String(totalRounds));
+      set('fed-round',         `Round ${totalRounds}`);
+
       const contribSub = document.getElementById('stat-contrib-sub');
       if (contribSub) contribSub.textContent =
-        `${data.active_now ?? 0} online now · ${data.total_detections ?? 0} detections`;
+        `${activeNow} online now · ${totalDet} detections · ${totalSess} sessions`;
+
       const nbDet = document.getElementById('nb-detections');
-      if (nbDet && data.total_detections)
-        nbDet.textContent = `${data.total_detections} detections`;
+      if (nbDet) nbDet.textContent = `${totalDet} detection${totalDet !== 1 ? 's' : ''}`;
     };
 
     // Heartbeat: POST to /heartbeat — registers this device as online right now
@@ -3239,14 +3263,11 @@ class App {
             sessionStart: this.sessionStart || null,
             listening:    this.running,
           }),
-          signal: AbortSignal.timeout(8000),
+          signal: timeoutSignal(8000),
         });
         if (resp.ok) {
           const data = await resp.json();
-          applyStats({ ...data,
-            unique_devices: data.ever_connected,
-            total_detections: data.total_detections || 0,
-          });
+          applyStats(data);  // applyStats normalizes field names
         } else {
           setServerConnected(false);
         }
@@ -3260,7 +3281,7 @@ class App {
       if (!SERVER_URL) return;
       try {
         const resp = await fetch(`${SERVER_URL}/federated/stats`,
-          { signal: AbortSignal.timeout(6000) });
+          { signal: timeoutSignal(6000) });
         if (resp.ok) applyStats(await resp.json());
       } catch { /* heartbeat will handle error state */ }
     };
