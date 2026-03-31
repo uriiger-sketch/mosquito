@@ -1499,155 +1499,137 @@ class MosquitoClassifier {
   constructor(engine) {
     this.engine = engine;
 
-    // ── Detection thresholds ──────────────────────────────────────
-    this.SNR_MIN              = 18;    // dB above noise floor (Pantula 2021 minimum)
-    this.CONFIDENCE_THRESHOLD = 0.55;  // mean over temporal window
-    this.Q_FACTOR_MIN         = 12;    // dB above ±250 Hz neighbours (pure tone)
-    this.HARMONIC_SNR_MIN     = 6;     // 2nd harmonic must be ≥6 dB above noise
-    this.HARMONIC_RATIO_MIN   = 4;     // 2f must be ≥4 dB below fundamental
-    this.HARMONIC_RATIO_MAX   = 22;    // 2f must be ≤22 dB below fundamental
-    this.AMBIENT_GATE_DB      = -42;   // reject frame if avg 200-4kHz > this (relaxed)
-    this.FREQ_STABILITY_WIN   = 30;    // frames to track peak frequency
-    this.FREQ_STABILITY_THR   = 35;    // Hz — peak must stay within ±35 Hz
-    this.FREQ_STABILITY_MIN   = 0.45;  // fraction of frames that must be stable
+    // ── Thresholds ────────────────────────────────────────────────
+    this.SNR_MIN              = 15;   // dB above noise floor
+    this.CONFIDENCE_THRESHOLD = 0.45; // temporal avg to report
+    this.Q_FACTOR_MIN         = 8;    // dB above ±200 Hz neighbours
+    this.AMBIENT_GATE_DB      = -38;  // reject if broadband too loud
+    this.TEMPORAL_FRAMES      = 20;   // ~0.8s at 25 fps
+    this.FREQ_STABILITY_WIN   = 15;
+    this.FREQ_STABILITY_THR   = 50;   // Hz tolerance
+    this.FREQ_STABILITY_MIN   = 0.35; // fraction of stable frames
 
-    // ── Temporal confidence buffer ────────────────────────────────
-    this.TEMPORAL_FRAMES = 30;  // ~1.2s at 25 fps
-    this.temporalBuffer  = {};
-    this.freqHistory     = {};  // per species: rolling peak frequency history
+    // ── Temporal confidence buffers ───────────────────────────────
+    this.temporalBuffer = {};
+    this.freqHistory    = {};
     SPECIES_DB.forEach(sp => {
       this.temporalBuffer[sp.id] = new Float32Array(this.TEMPORAL_FRAMES);
       this.freqHistory[sp.id]    = [];
     });
     this.frameIdx = 0;
 
-    // ── Electrical hum blacklist ──────────────────────────────────
-    // 50 Hz (EU) and 60 Hz (Americas) harmonic series + motor freqs
+    // ── Hum blacklist: TIGHT ±2 Hz tolerance ─────────────────────
+    // Real electrical hum is rock-stable in frequency.
+    // Old ±9 Hz tolerance was blocking 3/4 species centres.
     this.humSet = new Set();
     for (let h = 1; h <= 20; h++) {
-      this.humSet.add(Math.round(50 * h));
-      this.humSet.add(Math.round(60 * h));
+      this.humSet.add(50 * h);
+      this.humSet.add(60 * h);
     }
-    // Common HVAC / PC fan frequencies
-    [83, 125, 167, 250, 333, 375, 416, 500, 583, 667, 750, 833, 875].forEach(f => this.humSet.add(f));
+    // Do NOT add 416, 667 — too close to Anopheles (410) and albopictus (668)
 
-    // ── Running diagnostics (for display) ────────────────────────
+    // ── Diagnostics ───────────────────────────────────────────────
     this.lastNoiseFloor = -70;
     this.ambientRMS     = -80;
-    this.lastRejection  = {};  // species → reason string for debugging
+    this.lastRejection  = {};
     SPECIES_DB.forEach(sp => { this.lastRejection[sp.id] = ''; });
   }
 
-  // ── Noise floor: 15th percentile of 80–6000 Hz ───────────────
-  // 15th percentile is more conservative than 20th → harder to get high SNR
+  // Noise floor: 15th percentile of 80–6000 Hz spectrum
   estimateNoiseFloor(data) {
     const lo = this.engine.freqToBin(80);
     const hi = Math.min(this.engine.freqToBin(6000), data.length - 1);
     const slice = [];
     for (let i = lo; i <= hi; i++) {
-      const v = data[i];
-      if (isFinite(v) && v > -130) slice.push(v);
+      if (isFinite(data[i]) && data[i] > -130) slice.push(data[i]);
     }
     if (!slice.length) return -70;
     slice.sort((a, b) => a - b);
     return slice[Math.floor(slice.length * 0.15)];
   }
 
-  // ── Ambient gate: average power 200–4000 Hz ──────────────────
+  // Broadband RMS gate — reject extremely loud environments
   computeAmbientRMS(data) {
     const lo = this.engine.freqToBin(200);
     const hi = Math.min(this.engine.freqToBin(4000), data.length - 1);
     let sumLin = 0, count = 0;
     for (let i = lo; i <= hi; i++) {
-      const v = data[i];
-      if (isFinite(v)) { sumLin += Math.pow(10, v / 10); count++; }
+      if (isFinite(data[i])) { sumLin += Math.pow(10, data[i] / 10); count++; }
     }
     return count > 0 ? 10 * Math.log10(sumLin / count) : -80;
   }
 
-  // ── Is frequency near an electrical hum harmonic? ────────────
+  // Hum check: ±2 Hz tolerance (was ±9 — was blocking species centres)
   isHum(hz) {
     const r = Math.round(hz);
-    for (let d = -9; d <= 9; d++) {
+    for (let d = -2; d <= 2; d++) {
       if (this.humSet.has(r + d)) return true;
     }
     return false;
   }
 
-  // ── Find sharpest peak in band ────────────────────────────────
+  // Find highest peak in frequency band
   findPeak(data, loHz, hiHz) {
     const lo = this.engine.freqToBin(loHz);
     const hi = Math.min(this.engine.freqToBin(hiHz), data.length - 1);
     let bin = lo, val = -130;
     for (let i = lo; i <= hi; i++) {
-      const v = data[i];
-      if (isFinite(v) && v > val) { val = v; bin = i; }
+      if (isFinite(data[i]) && data[i] > val) { val = data[i]; bin = i; }
     }
     return { bin, hz: this.engine.binToHz(bin), db: val };
   }
 
-  // ── Q-factor: how much does peak exceed ±250 Hz neighbours ───
+  // Q-factor: how much peak exceeds ±200 Hz window (tonal sharpness)
   computeQFactor(data, peakBin, peakDb) {
-    const span = Math.round(250 / this.engine.binHz);
-    let neighborMax = -130;
+    const span = Math.round(200 / this.engine.binHz);
+    let nmax = -130;
     for (let d = -span; d <= span; d++) {
       if (d === 0) continue;
       const b = peakBin + d;
-      if (b >= 0 && b < data.length && isFinite(data[b])) {
-        neighborMax = Math.max(neighborMax, data[b]);
-      }
+      if (b >= 0 && b < data.length && isFinite(data[b])) nmax = Math.max(nmax, data[b]);
     }
-    return peakDb - neighborMax;
+    return peakDb - nmax;
   }
 
-  // ── Harmonic check: 2f, 3f present with correct power ratio ──
-  // Returns { score, secondHarmonicDb }
-  checkHarmonics(data, fundamentalHz, fundamentalDb, noiseFloor) {
-    const tol = Math.round(30 / this.engine.binHz); // ±30 Hz window
+  // Harmonic scoring — SCORING ONLY, not a hard gate
+  // Returns 0–1. Missing harmonics = 0 score, not rejection.
+  scoreHarmonics(data, fundamentalHz, fundamentalDb, noiseFloor) {
+    const tol = Math.round(35 / this.engine.binHz);
     let score = 0;
-    let h2Db = null;
 
     for (const h of [2, 3]) {
       const targetHz  = fundamentalHz * h;
-      if (targetHz > 20000) break;
-
+      if (targetHz > this.engine.ctx.sampleRate / 2) break;
       const targetBin = this.engine.freqToBin(targetHz);
       let maxDb = -130;
       for (let d = -tol; d <= tol; d++) {
         const b = targetBin + d;
-        if (b >= 0 && b < data.length && isFinite(data[b])) {
-          maxDb = Math.max(maxDb, data[b]);
-        }
+        if (b >= 0 && b < data.length && isFinite(data[b])) maxDb = Math.max(maxDb, data[b]);
       }
-
-      if (h === 2) h2Db = maxDb;
-
       const harmonicSNR = maxDb - noiseFloor;
-      if (harmonicSNR >= this.HARMONIC_SNR_MIN) {
+      if (harmonicSNR > 5) {
+        const ratio = fundamentalDb - maxDb; // positive = harmonic quieter
+        // Mosquito harmonics are typically 6–25 dB below fundamental
+        const ratioScore = ratio >= 4 && ratio <= 30 ? 1.0 : 0.5;
         const w = h === 2 ? 0.70 : 0.30;
-        score += w * Math.min(1, (harmonicSNR - this.HARMONIC_SNR_MIN) / 18);
+        score += w * ratioScore * Math.min(1, (harmonicSNR - 5) / 20);
       }
     }
-
-    return { score: Math.min(1, score), h2Db };
+    return Math.min(1, score);
   }
 
-  // ── Frequency stability over temporal window ──────────────────
-  // Returns fraction of history frames within ±FREQ_STABILITY_THR Hz of median
+  // Frequency stability: fraction of history within ±THR Hz of median
   computeFreqStability(speciesId, currentHz) {
     const hist = this.freqHistory[speciesId];
     hist.push(currentHz);
     if (hist.length > this.FREQ_STABILITY_WIN) hist.shift();
-    if (hist.length < 6) return 0;   // need at least 6 frames
-
+    if (hist.length < 3) return 0;
     const sorted = [...hist].sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
     const stable = hist.filter(f => Math.abs(f - median) <= this.FREQ_STABILITY_THR).length;
     return stable / hist.length;
   }
 
-  // ── Main analysis ─────────────────────────────────────────────
-  // Uses raw (unsmoothed) FFT data from rawAnalyser
   analyze(rawData) {
     if (!rawData || !rawData.length) return [];
 
@@ -1658,11 +1640,11 @@ class MosquitoClassifier {
     const frameIdx = this.frameIdx % this.TEMPORAL_FRAMES;
     this.frameIdx++;
 
-    // ── Ambient gate: room too loud, zero all buffers ─────────
+    // Ambient gate: very loud room only
     if (this.ambientRMS > this.AMBIENT_GATE_DB) {
       SPECIES_DB.forEach(sp => {
         this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `ambient ${this.ambientRMS.toFixed(0)}dB > gate`;
+        this.lastRejection[sp.id] = `loud: ${this.ambientRMS.toFixed(0)}dB`;
       });
       return [];
     }
@@ -1670,96 +1652,50 @@ class MosquitoClassifier {
     const rawResults = [];
 
     for (const sp of SPECIES_DB) {
-      // 1. Find peak in species band
       const peak = this.findPeak(rawData, sp.freqRange[0], sp.freqRange[1]);
       const snr  = peak.db - noiseFloor;
 
-      // Gate A: SNR
+      // Hard gate A: SNR minimum
       if (!isFinite(snr) || snr < this.SNR_MIN) {
         this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `snr ${snr.toFixed(0)}dB < ${this.SNR_MIN}`;
+        this.lastRejection[sp.id] = `snr ${snr.toFixed(0)}dB<${this.SNR_MIN}`;
         continue;
       }
 
-      // Gate B: Electrical hum
+      // Hard gate B: hum (tight ±2 Hz now)
       if (this.isHum(peak.hz)) {
         this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `hum at ${peak.hz.toFixed(0)}Hz`;
+        this.lastRejection[sp.id] = `hum@${peak.hz.toFixed(0)}Hz`;
         continue;
       }
 
-      // Gate C: Q-factor (must be a sharp pure tone)
+      // Hard gate C: Q-factor (must be somewhat tonal)
       const qFactor = this.computeQFactor(rawData, peak.bin, peak.db);
       if (qFactor < this.Q_FACTOR_MIN) {
         this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `Q=${qFactor.toFixed(0)} < ${this.Q_FACTOR_MIN}`;
+        this.lastRejection[sp.id] = `Q=${qFactor.toFixed(0)}<${this.Q_FACTOR_MIN}`;
         continue;
       }
 
-      // Gate D: Harmonic structure — MUST have 2nd harmonic
-      const { score: harmonicScore, h2Db } = this.checkHarmonics(
-        rawData, peak.hz, peak.db, noiseFloor
-      );
+      // Soft scoring (no more hard harmonic gate)
+      const harmonicScore  = this.scoreHarmonics(rawData, peak.hz, peak.db, noiseFloor);
+      const freqStability  = this.computeFreqStability(sp.id, peak.hz);
+      const snrScore       = Math.min(1, (snr - this.SNR_MIN) / 25);
+      const qScore         = Math.min(1, (qFactor - this.Q_FACTOR_MIN) / 20);
+      const stabScore      = Math.min(1, freqStability / this.FREQ_STABILITY_MIN);
 
-      if (h2Db !== null) {
-        const ratio = peak.db - h2Db; // positive = 2f quieter (biological)
-        if (ratio < this.HARMONIC_RATIO_MIN) {
-          // 2f louder than or equal to fundamental → interference, not mosquito
-          this.temporalBuffer[sp.id][frameIdx] = 0;
-          this.lastRejection[sp.id] = `2f too loud (ratio=${ratio.toFixed(0)}dB)`;
-          continue;
-        }
-        if (ratio > this.HARMONIC_RATIO_MAX) {
-          // 2f too faint — could be a pure sine wave, not a mosquito
-          this.temporalBuffer[sp.id][frameIdx] = 0;
-          this.lastRejection[sp.id] = `2f too faint (ratio=${ratio.toFixed(0)}dB)`;
-          continue;
-        }
-      } else {
-        // No 2nd harmonic found at all — not a mosquito
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = '2f harmonic absent';
-        continue;
-      }
+      // Weighted confidence: SNR + Q-factor are primary; harmonics + stability boost
+      const confidence = (snrScore * 0.40) + (qScore * 0.25) +
+                         (harmonicScore * 0.20) + (stabScore * 0.15);
 
-      // Gate E: Harmonic score threshold
-      if (harmonicScore < 0.35) {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `harmonic score ${harmonicScore.toFixed(2)} < 0.35`;
-        continue;
-      }
-
-      // Gate F: Frequency stability (peak must be stable across ~2s)
-      const freqStability = this.computeFreqStability(sp.id, peak.hz);
-      if (freqStability < this.FREQ_STABILITY_MIN) {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `freq unstable (${(freqStability*100).toFixed(0)}% stable)`;
-        continue;
-      }
-
-      // ── All gates passed — compute confidence ─────────────────
-      const snrScore  = Math.min(1, (snr - this.SNR_MIN) / 20);
-      const qScore    = Math.min(1, (qFactor - this.Q_FACTOR_MIN) / 15);
-      const stabScore = Math.min(1, (freqStability - this.FREQ_STABILITY_MIN) / 0.4);
-
-      const confidence = (snrScore * 0.30) + (harmonicScore * 0.40) +
-                         (qScore * 0.15)   + (stabScore * 0.15);
-
-      this.temporalBuffer[sp.id][frameIdx] = Math.max(0, Math.min(1, confidence));
+      const conf = Math.max(0, Math.min(1, confidence));
+      this.temporalBuffer[sp.id][frameIdx] = conf;
       this.lastRejection[sp.id] = '';
 
-      rawResults.push({
-        species:        sp,
-        frequency:      peak.hz,
-        snr,
-        harmonicScore,
-        qFactor,
-        freqStability,
-        confidence,     // raw frame confidence
-      });
+      rawResults.push({ species: sp, frequency: peak.hz, snr, qFactor, harmonicScore, confidence: conf });
     }
 
-    // ── Temporal smoothing: average over 50 frames ─────────────
+    // Temporal smoothing
     const results = [];
     for (const sp of SPECIES_DB) {
       const buf = this.temporalBuffer[sp.id];
@@ -1769,31 +1705,24 @@ class MosquitoClassifier {
         if (raw) results.push({ ...raw, confidence: avg });
       }
     }
-
     return results.sort((a, b) => b.confidence - a.confidence);
   }
 
-  // Public: noise floor / gate status
   getStatus() {
-    return {
-      noiseFloor: this.lastNoiseFloor,
-      ambientRMS: this.ambientRMS,
-      gated:      this.ambientRMS > this.AMBIENT_GATE_DB,
-    };
+    return { noiseFloor: this.lastNoiseFloor, ambientRMS: this.ambientRMS,
+             gated: this.ambientRMS > this.AMBIENT_GATE_DB };
   }
 
-  // Public: raw temporal-buffer average per species (0–1), pre-threshold.
-  // This drives the charge bar even when confidence is below the report threshold.
   getRawConfidences() {
     const result = {};
     SPECIES_DB.forEach(sp => {
       const buf = this.temporalBuffer[sp.id];
-      if (!buf) { result[sp.id] = 0; return; }
-      result[sp.id] = buf.reduce((s, v) => s + v, 0) / buf.length;
+      result[sp.id] = buf ? buf.reduce((s, v) => s + v, 0) / buf.length : 0;
     });
     return result;
   }
 }
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  SpectrogramRenderer — noise-floor-relative, species-focused
