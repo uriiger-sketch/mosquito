@@ -1532,6 +1532,15 @@ class MosquitoClassifier {
 
     return results.sort((a, b) => b.confidence - a.confidence);
   }
+
+  // Public getter — called by the UI to show noise floor / gate status
+  getStatus() {
+    return {
+      noiseFloor: this.lastNoiseFloor,
+      ambientRMS: this.ambientRMS,
+      gated:      this.ambientRMS > this.AMBIENT_GATE_DB,
+    };
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
