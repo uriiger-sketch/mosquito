@@ -1218,8 +1218,9 @@ body::after {
           <div class="map-key-icon">🔵</div>
           <div>
             <strong style="color:var(--text1);font-size:0.62rem;">What each circle represents:</strong>
-            Each coloured dot = one city-level vector presence record from WHO/PAHO/CDC/ECDC surveillance data.
-            Colour = species. Opacity = relative burden intensity.
+            Each dot = one city-level vector presence record (WHO/PAHO/CDC/ECDC data).
+            Circle colour matches the species colour in the Listen detection cards.
+            Opacity = relative burden intensity.
             <span class="tag">drag to pan</span> <span class="tag">pinch to zoom</span>
           </div>
         </div>
@@ -1406,10 +1407,19 @@ const SERVER_URL = 'https://mosquito.charity';
 window.SERVER_URL = SERVER_URL;  // expose globally for class methods
 
 // ── Safe timeout signal (iOS Safari < 16.4 polyfill) ─────────────────────────
+// fetchWithTimeout: wraps fetch with a Promise.race timeout.
+// Does NOT pass AbortSignal into fetch, so service worker cloning never fails.
+function fetchWithTimeout(url, opts, ms) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timeout')), ms)
+  );
+  return Promise.race([fetch(url, opts), timeout]);
+}
+// Legacy alias used in some places — returns a resolved-immediately signal
+// (we no longer pass it to fetch; timeouts handled by fetchWithTimeout)
 function timeoutSignal(ms) {
-  const c = new AbortController();
-  setTimeout(() => c.abort(), ms);
-  return c.signal;
+  // No-op: real timeout is done via fetchWithTimeout
+  return undefined;
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -2508,12 +2518,11 @@ class FederatedLearningClient {
     // Upload — only if a server URL is configured
     if (!window.SERVER_URL) { this.uploadFailed = 0; return; }
     try {
-      const resp = await fetch(`${window.SERVER_URL}/federated/upload`, {
+      const resp = await fetchWithTimeout(`${window.SERVER_URL}/federated/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: timeoutSignal(5000),
-      });
+      }, 5000);
       if (resp.ok) {
         this.uploadSuccess++;
         this.lastUpload = new Date();
@@ -2549,7 +2558,7 @@ class FederatedLearningClient {
   async sendHeartbeat(listening, sessionStart) {
     if (!window.SERVER_URL) return;
     try {
-      const resp = await fetch(`${window.SERVER_URL}/heartbeat`, {
+      const resp = await fetchWithTimeout(`${window.SERVER_URL}/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2557,8 +2566,7 @@ class FederatedLearningClient {
           sessionStart: sessionStart || null,
           listening:    !!listening,
         }),
-        signal: timeoutSignal(8000),
-      });
+      }, 8000);
       if (resp.ok) {
         const data = await resp.json();
         return data;  // { active_now, ever_connected, total_sessions }
@@ -2581,7 +2589,7 @@ class FederatedLearningClient {
       lng = app.deviceLng + (Math.random() - 0.5) * jitter;
     }
     try {
-      const resp = await fetch(`${window.SERVER_URL}/detection`, {
+      const resp = await fetchWithTimeout(`${window.SERVER_URL}/detection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2593,7 +2601,6 @@ class FederatedLearningClient {
           asymptomatic: !!det.species.asymptomatic,
           lat, lng,
         }),
-        signal: timeoutSignal(5000),
       });
       if (resp.ok) {
         const data = await resp.json();
@@ -2690,6 +2697,16 @@ class MapController {
 
     this.addLegend();
 
+    // Build map controls legend from SPECIES_DB
+    const mlRow = document.getElementById('map-legend-row');
+    if (mlRow) {
+      mlRow.innerHTML = SPECIES_DB.map(sp => `
+        <div class="ml-item">
+          <div class="ml-circle" style="background:${sp.color};opacity:${sp.asymptomatic?0.4:0.9}"></div>
+          <span style="color:${sp.asymptomatic?'var(--text3)':'var(--text2)'}">${sp.name.split(' ').slice(0,2).join(' ')}${sp.asymptomatic?' (NV)':''}</span>
+        </div>`).join('');
+    }
+
     // Load server hotspots (cells with ≥100 user detections)
     this.loadServerHotspots();
 
@@ -2749,8 +2766,7 @@ class MapController {
     const _url = window.SERVER_URL;
     if (!_url) return;
     try {
-      const resp = await fetch(`${_url}/hotspots`,
-        { signal: timeoutSignal(8000) });
+      const resp = await fetchWithTimeout(`${_url}/hotspots`, {}, 8000);
       if (!resp.ok) return;
       const data = await resp.json();
 
@@ -3261,16 +3277,25 @@ class MapController {
       ? points.filter(p => p[4] === filterYear)
       : points;
 
-    // ── Chunked rendering: add 150 markers per animation frame ────────────
-    // iOS Safari freezes if we insert 7000 Leaflet DOM nodes synchronously.
-    // Splitting across rAF callbacks keeps the main thread responsive.
+    // Stable index→species mapping for historical database centers
+    // (sp:0-3 in the centers data always mean these 4 original species)
+    const SP_MAP = {
+      0: 'anopheles',
+      1: 'aedes_aegypti',
+      2: 'aedes_albopictus',
+      3: 'culex',
+    };
+
+    // ── Chunked rendering ──────────────────────────────────────────────────
     const CHUNK = 150;
     let i = 0;
     const addChunk = () => {
       const end = Math.min(i + CHUNK, filtered.length);
       for (; i < end; i++) {
         const [lat, lng, intensity, spIdx] = filtered[i];
-        const sp = SPECIES_DB[spIdx !== undefined ? spIdx : 0];
+        // Look up by stable string ID, not by array position
+        const spId = SP_MAP[spIdx] || 'anopheles';
+        const sp   = SPECIES_DB.find(s => s.id === spId) || SPECIES_DB[0];
         const alpha = 0.12 + intensity * 0.45;
         const size  = 4 + intensity * 9;
         const circle = L.circleMarker([lat, lng], {
@@ -3388,23 +3413,28 @@ class MapController {
     legend.onAdd = () => {
       const div = L.DomUtil.create('div');
       div.style.cssText = `
-        background: rgba(6,15,32,0.9);
-        border: 1px solid rgba(0,200,170,0.2);
-        border-radius: 6px; padding: 8px 10px;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 9px; color: #7a9ab0; line-height: 1.8;
+        background: rgba(3,11,20,0.92);
+        border: 1px solid rgba(0,232,192,0.15);
+        border-radius: 8px; padding: 8px 12px;
+        font-family: 'Syne Mono', monospace;
+        font-size: 9px; color: #4d7a99; line-height: 2;
+        max-width: 180px;
       `;
-      div.innerHTML = `
-        <div style="color:#b8d4ec;margin-bottom:4px;font-weight:700">VECTOR DENSITY</div>
-        <div><span style="color:#ff2d55">●</span> Anopheles (Malaria)</div>
-        <div><span style="color:#ff8c00">●</span> Aedes (Dengue)</div>
-        <div><span style="color:#3d9eff">●</span> Culex (West Nile)</div>
-        <div style="margin-top:4px;color:#2a3f52">crowd-sourced · live</div>
-      `;
+      // Build legend rows dynamically from SPECIES_DB
+      const rows = SPECIES_DB.map(sp => {
+        const tag = sp.asymptomatic
+          ? `<span style="opacity:0.5">(non-vector)</span>`
+          : `<span style="color:${sp.color};opacity:0.85">${sp.disease.split('/')[0].trim()}</span>`;
+        return `<div><span style="color:${sp.color};font-size:11px">●</span> ` +
+               `<span style="color:#8ab0c8">${sp.name.split(' ').slice(0,2).join(' ')}</span> ` +
+               tag + `</div>`;
+      }).join('');
+      div.innerHTML = `<div style="color:#c8dff0;margin-bottom:5px;font-weight:700;font-size:8px;letter-spacing:0.1em">VECTOR DATABASE</div>` + rows;
       return div;
     };
     legend.addTo(this.map);
   }
+
 }
 
 /* ════════════════════════════════════════════════════════════
@@ -3544,7 +3574,7 @@ class App {
     const sendHeartbeat = async () => {
       if (!SERVER_URL) { setServerConnected(false); return; }
       try {
-        const resp = await fetch(`${SERVER_URL}/heartbeat`, {
+        const resp = await fetchWithTimeout(`${SERVER_URL}/heartbeat`, {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3552,8 +3582,7 @@ class App {
             sessionStart: this.sessionStart || null,
             listening:    this.running,
           }),
-          signal: timeoutSignal(6000),
-        });
+        }, 6000);
         if (resp.ok) {
           const data = await resp.json();
           applyStats(data);
@@ -3571,8 +3600,7 @@ class App {
     const fetchStats = async () => {
       if (!SERVER_URL) return;
       try {
-        const resp = await fetch(`${SERVER_URL}/federated/stats`,
-          { signal: timeoutSignal(6000) });
+        const resp = await fetchWithTimeout(`${SERVER_URL}/federated/stats`, {}, 6000);
         if (resp.ok) applyStats(await resp.json());
       } catch { /* heartbeat will handle error state */ }
     };
