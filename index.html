@@ -1404,7 +1404,7 @@ class MosquitoAudioEngine {
     this.running  = false;
 
     this.FFT_SIZE  = 8192;   // 8192 → 5.4 Hz/bin at 44.1kHz — finer resolution
-    this.SMOOTHING = 0.75;   // High smoothing for beautiful display; raw data via separate analyser
+    this.SMOOTHING = 0.88;   // High smoothing reduces noise for display (classifier uses raw)
 
     this.freqBuffer = null;
     this.timeBuffer = null;
@@ -1443,7 +1443,7 @@ class MosquitoAudioEngine {
     // ── Raw analyser (no smoothing — for classifier) ──
     this.rawAnalyser = this.ctx.createAnalyser();
     this.rawAnalyser.fftSize               = this.FFT_SIZE;
-    this.rawAnalyser.smoothingTimeConstant = 0.0;   // Raw — classifier needs truth
+    this.rawAnalyser.smoothingTimeConstant = 0.35;  // Light smoothing — reduces noise spikes while keeping accuracy
     this.rawAnalyser.minDecibels           = -100;
     this.rawAnalyser.maxDecibels           = -10;
 
@@ -1502,7 +1502,7 @@ class MosquitoClassifier {
     // ── Thresholds ────────────────────────────────────────────────
     this.SNR_MIN              = 15;   // dB above noise floor
     this.CONFIDENCE_THRESHOLD = 0.45; // temporal avg to report
-    this.Q_FACTOR_MIN         = 8;    // dB above ±200 Hz neighbours
+    this.Q_FACTOR_MIN         = 12;   // dB above ±200 Hz (guard-band measurement — 12 is safe)
     this.AMBIENT_GATE_DB      = -38;  // reject if broadband too loud
     this.TEMPORAL_FRAMES      = 20;   // ~0.8s at 25 fps
     this.FREQ_STABILITY_WIN   = 15;
@@ -1579,14 +1579,21 @@ class MosquitoClassifier {
     return { bin, hz: this.engine.binToHz(bin), db: val };
   }
 
-  // Q-factor: how much peak exceeds ±200 Hz window (tonal sharpness)
+  // Q-factor: peak prominence over ±200 Hz window.
+  // GUARD BAND: skip ±5 bins (±27 Hz) around peak to avoid
+  // Hann-window spectral leakage polluting the measurement.
+  // Without guard: pure 668 Hz sine gives Q≈4-6 (leakage at ±1 bin).
+  // With guard: pure 668 Hz sine gives Q≈30+ (leakage falls off fast).
   computeQFactor(data, peakBin, peakDb) {
-    const span = Math.round(200 / this.engine.binHz);
+    const span  = Math.round(200 / this.engine.binHz);
+    const guard = 5;  // skip ±5 bins = ±27 Hz around peak
     let nmax = -130;
     for (let d = -span; d <= span; d++) {
-      if (d === 0) continue;
+      if (Math.abs(d) < guard) continue;  // skip leakage zone
       const b = peakBin + d;
-      if (b >= 0 && b < data.length && isFinite(data[b])) nmax = Math.max(nmax, data[b]);
+      if (b >= 0 && b < data.length && isFinite(data[b])) {
+        nmax = Math.max(nmax, data[b]);
+      }
     }
     return peakDb - nmax;
   }
@@ -1756,7 +1763,7 @@ class SpectrogramRenderer {
 
     // Running noise floor estimate (exponential moving average)
     this.smoothedNoiseFloor = -75;
-    this.NOISE_EMA          = 0.95; // slow EMA — stable baseline
+    this.NOISE_EMA          = 0.97; // very slow EMA — rock-stable noise floor
 
     // Species band state — tracks active glow
     this.bandGlow = {};  // species.id → 0–1 glow intensity
@@ -1902,9 +1909,9 @@ class SpectrogramRenderer {
     }
     if (slice.length) {
       slice.sort((a,b)=>a-b);
-      const p25 = slice[Math.floor(slice.length*0.25)];
+      const p20 = slice[Math.floor(slice.length*0.20)];
       this.smoothedNoiseFloor = this.NOISE_EMA * this.smoothedNoiseFloor +
-                                (1-this.NOISE_EMA) * p25;
+                                (1-this.NOISE_EMA) * p20;
     }
 
     const floor = this.smoothedNoiseFloor;
@@ -3149,6 +3156,10 @@ class App {
     const applyStats = (data) => {
       if (!data) return;
       setServerConnected(true);
+      console.log('[MosquitoNet] server stats:', JSON.stringify({
+        active_now: data.active_now, ever: data.unique_devices ?? data.ever_connected,
+        detections: data.total_detections, rounds: data.total_rounds
+      }));
 
       // Normalize field names across /heartbeat and /federated/stats
       const activeNow   = data.active_now   ?? 0;
@@ -3177,23 +3188,25 @@ class App {
       if (!SERVER_URL) { setServerConnected(false); return; }
       try {
         const resp = await fetch(`${SERVER_URL}/heartbeat`, {
-          method: 'POST',
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             deviceId:     this.fedClient.getAnonymousId(),
             sessionStart: this.sessionStart || null,
             listening:    this.running,
           }),
-          signal: timeoutSignal(8000),
+          signal: timeoutSignal(6000),
         });
         if (resp.ok) {
           const data = await resp.json();
-          applyStats(data);  // applyStats normalizes field names
+          applyStats(data);
         } else {
           setServerConnected(false);
         }
-      } catch {
+      } catch(e) {
+        // Network failure — mark offline but keep trying
         setServerConnected(false);
+        console.warn('Heartbeat failed:', e.message || e);
       }
     };
 
@@ -3212,8 +3225,8 @@ class App {
     fetchStats();
 
     // Then repeat on schedule
-    setInterval(sendHeartbeat, 30000);  // heartbeat every 30s
-    setInterval(fetchStats,    60000);  // full stats every 60s
+    setInterval(sendHeartbeat, 10000);  // heartbeat every 10s — real-time online count
+    setInterval(fetchStats,    15000);  // full stats every 15s
 
     // ── 7. Build persistent detection grid (ONCE) ─────────────────────────
     try { this.buildDetectionGrid(); } catch(e) { console.warn('det grid:', e); }
