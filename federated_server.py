@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
 """
-MosquitoNet Federated Server v3
-================================
-Additions over v2:
-  • Per-cell detection counts (0.05° ≈ 5.5km cells)
-  • Hotspot cells: when a cell reaches 100 detections, it's flagged
-  • /hotspots endpoint returns all hotspot cells
-  • Per-device per-species 60s rate-limiting enforced server-side too
+MosquitoNet Federated Server v4
+=================================
+Adds persistent detection log — every confirmed detection stored with:
+  timestamp, species, confidence, frequency, location (DP-jittered),
+  device_hash. Used for hotspot detection and scientific analysis.
 """
 
 import json, os, time, hashlib, threading
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from flask import Flask, request, jsonify
@@ -25,7 +23,7 @@ CORS(app, origins='*', supports_credentials=False,
      methods=['GET', 'POST', 'OPTIONS'])
 
 # ── Model ─────────────────────────────────────────────────────────────────────
-N_FEATURES, N_CLASSES = 4, 4
+N_FEATURES, N_CLASSES = 4, 10   # 10 species now
 global_W = np.array([
     [ 2.8, 0.9, 1.2, 0.8],
     [-0.6, 0.7, 1.0, 0.7],
@@ -36,18 +34,26 @@ global_b = np.array([-0.4, -0.3, -0.3, -0.4], dtype=float)
 
 # ── State ─────────────────────────────────────────────────────────────────────
 lock             = threading.Lock()
-device_registry  = {}   # hash → last_seen
-session_registry = {}   # hash → session_start string
+device_registry  = {}
+session_registry = {}
 pending_updates  = []
 
-# Per-cell detection counts: cellKey → {species: count, total: count}
-# Cell resolution: 0.05° × 0.05° ≈ 5.5km × 5.5km at equator
-detection_cells  = {}   # cellKey → {'species': {'anopheles': N, ...}, 'total': N}
-hotspot_cells    = {}   # cellKey → cell info (total ≥ HOTSPOT_THRESHOLD)
+# Detection log: list of dicts, persistent in memory (Railway resets on redeploy)
+# Each entry: {ts, species, confidence, freq, lat, lng, device_hash, risk}
+detection_log    = []
+MAX_LOG_SIZE     = 50000  # keep last 50k detections
+
+# Per-cell counts for hotspot detection (0.05° ≈ 5.5km)
+detection_cells  = {}
+hotspot_cells    = {}
 HOTSPOT_THRESHOLD = 100
 
-# Per-device per-species cooldown (server-enforced: 60s)
-detection_cooldowns = {}  # f"{deviceHash}:{species}" → last_report_time
+# Full detection log for research analysis
+detection_log = []
+MAX_LOG = 100000
+
+# Per-device per-species 60s cooldown
+detection_cooldowns = {}
 
 stats = {
     'total_uploads': 0, 'total_rounds': 0,
@@ -71,14 +77,9 @@ def touch(h):
     device_registry[h] = time.time()
 
 def cell_key(lat, lng, species):
-    """0.05° ≈ 5.5km cell resolution"""
     clat = round(float(lat) / 0.05) * 0.05
     clng = round(float(lng) / 0.05) * 0.05
     return f"{clat:.3f},{clng:.3f},{species}"
-
-def cell_centroid(key):
-    parts = key.split(',')
-    return float(parts[0]), float(parts[1]), parts[2]
 
 def full_stats():
     return {
@@ -93,39 +94,45 @@ def full_stats():
         'pending_updates':  len(pending_updates),
         'last_aggregate':   stats['last_aggregate'],
         'uptime_seconds':   int(time.time() - start_time),
+        'log_size':         len(detection_log),
     }
 
 def fedavg(updates):
     global global_W, global_b
     total = sum(u['steps'] for u in updates)
     if total == 0: return
-    nW = np.zeros((N_CLASSES, N_FEATURES))
-    nb = np.zeros(N_CLASSES)
-    for u in updates:
-        w = u['steps'] / total
-        nW += w * np.array(u['weights']['W'])
-        nb += w * np.array(u['weights']['b'])
-    global_W = 0.3 * global_W + 0.7 * nW
-    global_b = 0.3 * global_b + 0.7 * nb
+    # Pad weights to current dimensions if needed
+    nW = global_W.copy()
+    nb = global_b.copy()
+    try:
+        aW = np.array(updates[0]['weights']['W'])
+        if aW.shape == global_W.shape:
+            nW = np.zeros_like(global_W)
+            nb = np.zeros_like(global_b)
+            for u in updates:
+                w = u['steps'] / total
+                nW += w * np.array(u['weights']['W'])
+                nb += w * np.array(u['weights']['b'])
+            global_W = 0.3 * global_W + 0.7 * nW
+            global_b = 0.3 * global_b + 0.7 * nb
+    except Exception as e:
+        print(f"[FedAvg] shape mismatch: {e}")
     stats['total_rounds'] += 1
-    stats['last_aggregate'] = datetime.utcnow().isoformat() + 'Z'
+    stats['last_aggregate'] = datetime.now(timezone.utc).isoformat()
     print(f"[FedAvg] Round {stats['total_rounds']}")
 
-# ── CORS on every response ────────────────────────────────────────────────────
+# ── CORS ──────────────────────────────────────────────────────────────────────
 @app.after_request
-def add_cors(response):
-    response.headers['Access-Control-Allow-Origin']  = '*'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Accept'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-    return response
+def add_cors(r):
+    r.headers['Access-Control-Allow-Origin']  = '*'
+    r.headers['Access-Control-Allow-Headers'] = 'Content-Type, Accept'
+    r.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    return r
 
 @app.route('/', defaults={'path': ''}, methods=['OPTIONS'])
 @app.route('/<path:path>', methods=['OPTIONS'])
-def handle_options(path):
-    return '', 204
+def options(path): return '', 204
 
-# ══════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.route('/heartbeat', methods=['POST', 'GET'])
@@ -134,10 +141,10 @@ def heartbeat():
     raw_id = data.get('deviceId', request.args.get('deviceId', 'anon'))
     h      = dh(raw_id)
     with lock:
-        is_new = (data.get('sessionStart') and
-                  session_registry.get(h) != str(data.get('sessionStart')))
+        new_sess = (data.get('sessionStart') and
+                    session_registry.get(h) != str(data.get('sessionStart')))
         touch(h)
-        if is_new:
+        if new_sess:
             session_registry[h] = str(data.get('sessionStart'))
             stats['total_sessions'] += 1
     return jsonify(full_stats())
@@ -145,76 +152,154 @@ def heartbeat():
 
 @app.route('/detection', methods=['POST'])
 def report_detection():
-    data   = request.get_json(force=True, silent=True) or {}
-    raw_id = data.get('deviceId', 'anon')
-    h      = dh(raw_id)
-    species = data.get('species', '')
+    data    = request.get_json(force=True, silent=True) or {}
+    raw_id  = data.get('deviceId', 'anon')
+    h       = dh(raw_id)
+    species = str(data.get('species', ''))
     lat     = data.get('lat')
     lng     = data.get('lng')
+    conf    = data.get('confidence', 0)
+    freq    = data.get('frequency', 0)
+    risk    = data.get('risk', 'UNKNOWN')
 
     # Server-side 60s cooldown per device+species
     cd_key = f"{h}:{species}"
     now    = time.time()
     with lock:
-        last = detection_cooldowns.get(cd_key, 0)
-        if now - last < 60:
+        if now - detection_cooldowns.get(cd_key, 0) < 60:
             return jsonify({'received': False, 'reason': 'cooldown', **full_stats()})
         detection_cooldowns[cd_key] = now
         touch(h)
         stats['total_detections'] += 1
 
-        # Store per-cell counts if location provided
-        if lat is not None and lng is not None and species:
+        # ── Persistent detection log ─────────────────────────────
+        entry = {
+            'ts':      datetime.now(timezone.utc).isoformat(),
+            'species': species,
+            'conf':    round(float(conf), 3),
+            'freq':    round(float(freq), 1),
+            'risk':    risk,
+            'device':  h,
+        }
+        if lat is not None and lng is not None:
+            try:
+                entry['lat'] = round(float(lat), 4)
+                entry['lng'] = round(float(lng), 4)
+            except Exception:
+                pass
+
+        detection_log.append(entry)
+        if len(detection_log) > MAX_LOG_SIZE:
+            detection_log.pop(0)
+
+        # ── Per-cell accumulation ────────────────────────────────
+        if lat is not None and lng is not None:
             try:
                 ck = cell_key(lat, lng, species)
                 if ck not in detection_cells:
-                    detection_cells[ck] = {'species': species, 'total': 0,
-                                           'lat': round(float(lat)/0.05)*0.05,
-                                           'lng': round(float(lng)/0.05)*0.05}
+                    detection_cells[ck] = {
+                        'species': species, 'total': 0, 'risk': risk,
+                        'lat': round(float(lat)/0.05)*0.05,
+                        'lng': round(float(lng)/0.05)*0.05,
+                    }
                 detection_cells[ck]['total'] += 1
-
-                # Promote to hotspot when threshold reached
                 if detection_cells[ck]['total'] >= HOTSPOT_THRESHOLD:
-                    hotspot_cells[ck] = {**detection_cells[ck]}
-                    print(f"[Hotspot] {ck} hit {detection_cells[ck]['total']} detections!")
+                    hotspot_cells[ck] = dict(detection_cells[ck])
+                    print(f"[Hotspot] {ck} → {detection_cells[ck]['total']} det.")
             except Exception as e:
-                print(f"[Cell err] {e}")
+                print(f"[Cell] {e}")
 
-    conf = data.get('confidence', '?')
-    freq = data.get('frequency', '?')
-    print(f"[Det] {species} conf={conf} freq={freq}Hz device={h}")
+    # Append to research log
+    with lock:
+        detection_log.append({
+            'ts':         datetime.utcnow().isoformat() + 'Z',
+            'device':     h,
+            'species':    species,
+            'confidence': float(data.get('confidence', 0)),
+            'frequency':  float(data.get('frequency', 0)),
+            'lat':        float(lat) if lat is not None else None,
+            'lng':        float(lng) if lng is not None else None,
+        })
+        if len(detection_log) > MAX_LOG:
+            detection_log.pop(0)
+
+    loc = f"{lat:.4f},{lng:.4f}" if lat is not None else "no-gps"
+    print(f"[Det] {species} conf={data.get('confidence','?')} freq={data.get('frequency','?')}Hz loc={loc}")
     return jsonify({'received': True, **full_stats()})
+
+
+@app.route('/detections/log', methods=['GET'])
+def get_detection_log():
+    """Full detection log for research analysis. Last N entries."""
+    try:
+        n = min(int(request.args.get('n', 1000)), 10000)
+    except Exception:
+        n = 1000
+    with lock:
+        entries = detection_log[-n:]
+    return jsonify({
+        'count': len(entries),
+        'total_logged': len(detection_log),
+        'entries': entries,
+    })
+
+
+@app.route('/detections/log', methods=['GET'])
+def get_detection_log():
+    """Return recent detection log for analysis. Optional ?species= filter."""
+    sp_filter = request.args.get('species')
+    limit = min(int(request.args.get('limit', 500)), 2000)
+    with lock:
+        entries = detection_log[-limit:]
+        if sp_filter:
+            entries = [e for e in entries if e.get('species') == sp_filter]
+    return jsonify({
+        'count':      len(entries),
+        'total_ever': stats['total_detections'],
+        'entries':    entries,
+    })
+
+
+@app.route('/detections/stats', methods=['GET'])
+def detection_stats():
+    """Per-species detection counts and hotspot summary."""
+    with lock:
+        by_species = {}
+        for e in detection_log:
+            sp = e.get('species', 'unknown')
+            by_species[sp] = by_species.get(sp, 0) + 1
+        return jsonify({
+            'by_species':   by_species,
+            'total':        stats['total_detections'],
+            'hotspots':     len(hotspot_cells),
+            'cells_tracked': len(detection_cells),
+        })
 
 
 @app.route('/hotspots', methods=['GET'])
 def get_hotspots():
-    """Return all hotspot cells (≥100 detections in a 5km cell)."""
     with lock:
-        cells_list = []
-        for ck, info in hotspot_cells.items():
-            cells_list.append({
-                'key':     ck,
-                'lat':     info['lat'],
-                'lng':     info['lng'],
-                'species': info['species'],
-                'total':   info['total'],
-            })
-        # Also include cells approaching hotspot (≥50)
-        approaching = []
-        for ck, info in detection_cells.items():
-            if ck not in hotspot_cells and info['total'] >= 50:
-                approaching.append({
-                    'key':     ck,
-                    'lat':     info['lat'],
-                    'lng':     info['lng'],
-                    'species': info['species'],
-                    'total':   info['total'],
-                    'approaching': True,
-                })
+        hot  = [{'key': k, **v} for k, v in hotspot_cells.items()]
+        near = [{'key': k, **v, 'approaching': True}
+                for k, v in detection_cells.items()
+                if k not in hotspot_cells and v['total'] >= 50]
+    return jsonify({'hotspots': hot, 'approaching': near,
+                    'threshold': HOTSPOT_THRESHOLD})
+
+
+@app.route('/log', methods=['GET'])
+def get_log():
+    """Return detection log for analysis. Optional ?species= and ?limit= filters."""
+    sp_filter = request.args.get('species')
+    try:    limit = min(int(request.args.get('limit', 1000)), 10000)
+    except: limit = 1000
+    with lock:
+        filtered = [e for e in detection_log
+                    if not sp_filter or e.get('species') == sp_filter]
         return jsonify({
-            'hotspots':   cells_list,
-            'approaching': approaching,
-            'threshold':  HOTSPOT_THRESHOLD,
+            'count':      len(filtered),
+            'total_log':  len(detection_log),
+            'detections': filtered[-limit:],
         })
 
 
@@ -222,16 +307,14 @@ def get_hotspots():
 def upload():
     data = request.get_json(force=True, silent=True) or {}
     if not all(k in data for k in ['deviceId', 'weights', 'steps']):
-        return jsonify({'error': 'missing fields'}), 400
+        return jsonify({'error': 'missing'}), 400
     h = dh(data['deviceId'])
     with lock:
         touch(h)
         stats['total_uploads'] += 1
-        pending_updates.append({
-            'device_hash': h,
-            'steps': min(int(data.get('steps', 1)), 500),
-            'weights': data['weights'],
-        })
+        pending_updates.append({'device_hash': h,
+                                 'steps': min(int(data.get('steps', 1)), 500),
+                                 'weights': data['weights']})
         if len(pending_updates) >= MIN_UPLOADS_ROUND:
             fedavg(pending_updates.copy())
             pending_updates.clear()
@@ -241,38 +324,31 @@ def upload():
 
 
 @app.route('/federated/model', methods=['GET'])
-def get_model():
+def model():
     return jsonify({'round': stats['total_rounds'],
                     'weights': {'W': global_W.tolist(), 'b': global_b.tolist()}})
 
 
 @app.route('/federated/stats', methods=['GET'])
 def get_stats():
-    with lock:
-        return jsonify(full_stats())
+    with lock: return jsonify(full_stats())
 
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({'status': 'ok', 'service': 'MosquitoNet v3', **full_stats()})
+    return jsonify({'status': 'ok', 'service': 'MosquitoNet v4', **full_stats()})
 
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({
-        'service': 'MosquitoNet v3',
-        'endpoints': [
-            'POST /heartbeat',
-            'POST /detection  — body: {deviceId, species, confidence, frequency, lat, lng}',
-            'GET  /hotspots   — returns cells with ≥100 detections',
-            'POST /federated/upload',
-            'GET  /federated/stats',
-            'GET  /health',
-        ],
-    })
+    return jsonify({'service': 'MosquitoNet v4',
+                    'endpoints': ['POST /heartbeat', 'POST /detection',
+                                  'GET /hotspots', 'GET /log',
+                                  'POST /federated/upload', 'GET /federated/stats',
+                                  'GET /health']})
 
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    print(f'\nMosquitoNet Server v3 on :{port}\n')
+    print(f'\nMosquitoNet v4 :{port}\n')
     app.run(host='0.0.0.0', port=port, debug=False)
