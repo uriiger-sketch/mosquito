@@ -2555,24 +2555,22 @@ class FederatedLearningClient {
   // ── Heartbeat: called every 30s to register presence ─────────────────────
   // Tells the server "I exist right now" — no audio, no location.
   // This is what drives the "live now" counter.
-  async sendHeartbeat(listening, sessionStart) {
-    if (!window.SERVER_URL) return;
-    try {
-      const resp = await fetchWithTimeout(`${window.SERVER_URL}/heartbeat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceId:     this.getAnonymousId(),
-          sessionStart: sessionStart || null,
-          listening:    !!listening,
-        }),
-      }, 8000);
-      if (resp.ok) {
-        const data = await resp.json();
-        return data;  // { active_now, ever_connected, total_sessions }
-      }
-    } catch { /* offline — silent */ }
-    return null;
+  sendHeartbeat(listening, sessionStart) {
+    // XHR — bypasses service worker, no CORS preflight, works on iOS PWA
+    return new Promise(resolve => {
+      if (!window.SERVER_URL) { resolve(null); return; }
+      const id  = this.getAnonymousId();
+      const url = `${window.SERVER_URL}/heartbeat?deviceId=${encodeURIComponent(id)}` +
+                  `&listening=${listening?1:0}&sess=${sessionStart||0}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 8000;
+      xhr.onload  = () => {
+        try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); }
+      };
+      xhr.onerror = xhr.ontimeout = () => resolve(null);
+      xhr.send();
+    });
   }
 
   // ── Report a confirmed detection ──────────────────────────────────────────
@@ -3571,36 +3569,32 @@ class App {
     };
 
     // Heartbeat: POST to /heartbeat — registers this device as online right now
-    const sendHeartbeat = async () => {
+    // Heartbeat via XHR — bypasses service worker, works in iOS PWA sandbox
+    const sendHeartbeat = () => {
       if (!SERVER_URL) { setServerConnected(false); return; }
-      try {
-        const resp = await fetchWithTimeout(`${SERVER_URL}/heartbeat`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            deviceId:     this.fedClient.getAnonymousId(),
-            sessionStart: this.sessionStart || null,
-            listening:    this.running,
-          }),
-        }, 6000);
-        if (resp.ok) {
-          const data = await resp.json();
-          applyStats(data);
+      const id  = this.fedClient.getAnonymousId();
+      const url = `${SERVER_URL}/heartbeat?deviceId=${encodeURIComponent(id)}` +
+                  `&listening=${this.running?1:0}&sess=${this.sessionStart||0}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.timeout = 8000;
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { applyStats(JSON.parse(xhr.responseText)); } catch(e) {}
         } else {
           setServerConnected(false);
         }
-      } catch(e) {
-        // Network failure — mark offline but keep trying
-        setServerConnected(false);
-        console.warn('Heartbeat failed:', e.message || e);
-      }
+      };
+      xhr.onerror   = () => setServerConnected(false);
+      xhr.ontimeout = () => setServerConnected(false);
+      xhr.send();
     };
 
     // Fetch full stats (called less often)
     const fetchStats = async () => {
       if (!SERVER_URL) return;
       try {
-        const resp = await fetchWithTimeout(`${SERVER_URL}/federated/stats`, {}, 6000);
+        const resp = await fetchWithTimeout(`${SERVER_URL}/federated/stats`, { mode:'cors', cache:'no-store' }, 6000);
         if (resp.ok) applyStats(await resp.json());
       } catch { /* heartbeat will handle error state */ }
     };
@@ -3645,6 +3639,7 @@ class App {
 self.addEventListener('install', e => { self.skipWaiting(); });
 self.addEventListener('activate', e => { clients.claim(); });
 self.addEventListener('fetch', e => {
+  // Only intercept map tile requests — let all other fetches pass through untouched
   if (e.request.url.includes('tile.openstreetmap.org')) {
     e.respondWith(
       caches.open('map-tiles').then(cache =>
@@ -3654,6 +3649,8 @@ self.addEventListener('fetch', e => {
       )
     );
   }
+  // For mosquito.charity and everything else: return without calling respondWith
+  // so the browser handles the request natively (no SW interference)
 });
       `;
       const blob = new Blob([swCode], { type: 'application/javascript' });
