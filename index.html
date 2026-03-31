@@ -1013,15 +1013,7 @@ body::after {
   <!-- HEADER -->
   <header id="header">
     <div class="logo-mark">Mosquito<span>Net</span></div>
-    <div class="header-pill">
-      <div class="status-dot" id="status-dot"></div>
-      <span id="status-text">OFFLINE</span>
-    </div>
     <div class="spacer"></div>
-    <div class="header-pill" id="server-pill" style="font-size:0.52rem">
-      <span class="srv-dot disconnected" id="server-dot"></span>
-      <span id="server-lbl">CONNECTING…</span>
-    </div>
     <button id="btn-listen">
       <div class="btn-mic-dot"></div>
       <span id="btn-listen-label">START</span>
@@ -1032,22 +1024,22 @@ body::after {
   <div id="net-bar">
     <div class="nb-item">
       <span class="nb-dot" id="nb-rec-dot"></span>
-      <span id="nb-rec-label">NOT RECORDING</span>
+      <span id="nb-rec-label">STANDBY</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
-      <span class="nb-icon">📡</span>
-      <span id="nb-live">0 live now</span>
+      <span class="srv-dot disconnected" id="server-dot"></span>
+      <span id="server-lbl">SERVER…</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
-      <span class="nb-icon">🌐</span>
-      <span id="nb-ever">— ever</span>
+      <span class="nb-icon">👥</span>
+      <span id="nb-live">— online</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
       <span class="nb-icon">🔬</span>
-      <span id="nb-detections">0 detections</span>
+      <span id="nb-detections">0 det.</span>
     </div>
   </div>
 
@@ -3220,7 +3212,7 @@ class App {
       if (dot) {
         dot.className = ok ? 'srv-dot connected' : 'srv-dot disconnected';
       }
-      if (lbl) lbl.textContent = ok ? 'SERVER ONLINE' : 'SERVER OFFLINE';
+      if (lbl) lbl.textContent = ok ? 'ONLINE' : 'OFFLINE';
     };
 
     // Update all UI elements from a heartbeat OR stats response.
@@ -3237,7 +3229,7 @@ class App {
       const totalSess   = data.total_sessions ?? 0;
 
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-      set('nb-live',           `${activeNow} live now`);
+      set('nb-live',           `${activeNow} online`);
       set('nb-ever',           `${everConn} ever`);
       set('stat-contrib',      String(everConn));
       set('stat-server-rounds', String(totalRounds));
@@ -3805,11 +3797,11 @@ self.addEventListener('fetch', e => {
     if (nbDot && nbLabel) {
       if (type === 'live') {
         nbDot.classList.add('live');
-        nbLabel.textContent = '🔴 RECORDING';
+        nbLabel.textContent = '🔴 REC';
         nbLabel.style.color = 'var(--red)';
       } else {
         nbDot.classList.remove('live');
-        nbLabel.textContent = 'NOT RECORDING';
+        nbLabel.textContent = 'STANDBY';
         nbLabel.style.color = 'var(--text3)';
       }
     }
