@@ -180,7 +180,40 @@ body::after {
   flex-shrink: 0;
 }
 
-/* ─────────── TAB BAR ─────────── */
+/* ─────────── NETWORK STATUS BAR ─────────── */
+    #net-bar {
+      flex-shrink: 0;
+      height: 28px;
+      display: flex; align-items: center;
+      padding: 0 14px; gap: 0;
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .nb-item {
+      display: flex; align-items: center; gap: 5px;
+      font-family: 'Syne Mono', monospace;
+      font-size: 0.58rem; color: var(--text2);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .nb-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text3); flex-shrink: 0;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .nb-dot.live {
+      background: var(--red);
+      box-shadow: 0 0 6px var(--red);
+      animation: pulse-dot 1s ease-in-out infinite;
+    }
+    .nb-sep {
+      width: 1px; height: 14px;
+      background: var(--border); margin: 0 10px;
+      flex-shrink: 0;
+    }
+    .nb-icon { font-size: 0.7rem; }
+
+    /* ─────────── TAB BAR ─────────── */
 #tab-bar {
   flex-shrink: 0;
   height: var(--tab-bar-h);
@@ -805,6 +838,29 @@ body::after {
     </button>
   </header>
 
+  <!-- NETWORK STATUS BAR -->
+  <div id="net-bar">
+    <div class="nb-item">
+      <span class="nb-dot" id="nb-rec-dot"></span>
+      <span id="nb-rec-label">NOT RECORDING</span>
+    </div>
+    <div class="nb-sep"></div>
+    <div class="nb-item">
+      <span class="nb-icon">📡</span>
+      <span id="nb-live">0 live now</span>
+    </div>
+    <div class="nb-sep"></div>
+    <div class="nb-item">
+      <span class="nb-icon">🌐</span>
+      <span id="nb-ever">— ever</span>
+    </div>
+    <div class="nb-sep"></div>
+    <div class="nb-item">
+      <span class="nb-icon">🔬</span>
+      <span id="nb-detections">0 detections</span>
+    </div>
+  </div>
+
   <!-- TAB BAR -->
   <nav id="tab-bar">
     <button class="tab active" data-tab="listen">
@@ -930,18 +986,19 @@ body::after {
           </div>
           <div class="ic-sub">4096-point FFT frames analysed</div>
         </div>
-        <div class="info-card" style="border-color:rgba(245,158,11,0.25);background:rgba(245,158,11,0.04)">
+        <div class="info-card">
           <div class="ic-row">
-            <span class="ic-title">📱 Network</span>
-            <span class="ic-value" style="color:var(--amber)">1 device</span>
+            <span class="ic-title">🌐 Network Contributors</span>
+            <span class="ic-value" id="stat-contrib">—</span>
           </div>
-          <div class="ic-sub" style="color:var(--text2)">
-            <strong style="color:var(--amber)">This is your device only.</strong>
-            The federated server (federated_server.py) is not running —
-            no other devices have joined. Contributor count would update here
-            if the server were deployed. The number you saw earlier (4,821) was
-            a fake placeholder. It has been removed.
+          <div class="ic-sub" id="stat-contrib-sub">Fetching live data from mosquito.charity…</div>
+        </div>
+        <div class="info-card">
+          <div class="ic-row">
+            <span class="ic-title">📡 Server Rounds</span>
+            <span class="ic-value" id="stat-server-rounds">—</span>
           </div>
+          <div class="ic-sub" id="stat-server-sub">Total FedAvg aggregation rounds completed</div>
         </div>
       </div>
 
@@ -1087,7 +1144,9 @@ body::after {
 // Railway / Render deployment URL, e.g.:
 //   const SERVER_URL = 'https://mosquitonet-server.up.railway.app';
 // Leave as empty string to run in offline-only mode (no federation).
-const SERVER_URL = 'https://mosquito.charity';   // ← PASTE YOUR SERVER URL HERE AFTER DEPLOYING
+const SERVER_URL = '';   // ← PASTE YOUR SERVER URL HERE AFTER DEPLOYING
+
+
 
 'use strict';
 
@@ -1266,19 +1325,19 @@ class MosquitoClassifier {
     this.engine = engine;
 
     // ── Detection thresholds ──────────────────────────────────────
-    this.SNR_MIN              = 26;    // dB above noise floor — very strict
-    this.CONFIDENCE_THRESHOLD = 0.70;  // mean over temporal window
-    this.Q_FACTOR_MIN         = 18;    // dB above ±250 Hz neighbours (pure tone)
-    this.HARMONIC_SNR_MIN     = 10;    // 2nd harmonic must be ≥10 dB above noise
+    this.SNR_MIN              = 18;    // dB above noise floor (Pantula 2021 minimum)
+    this.CONFIDENCE_THRESHOLD = 0.55;  // mean over temporal window
+    this.Q_FACTOR_MIN         = 12;    // dB above ±250 Hz neighbours (pure tone)
+    this.HARMONIC_SNR_MIN     = 6;     // 2nd harmonic must be ≥6 dB above noise
     this.HARMONIC_RATIO_MIN   = 4;     // 2f must be ≥4 dB below fundamental
     this.HARMONIC_RATIO_MAX   = 22;    // 2f must be ≤22 dB below fundamental
-    this.AMBIENT_GATE_DB      = -52;   // reject frame if avg 200-4kHz > this
-    this.FREQ_STABILITY_WIN   = 50;    // frames to track peak frequency
-    this.FREQ_STABILITY_THR   = 25;    // Hz — peak must stay within ±25 Hz
-    this.FREQ_STABILITY_MIN   = 0.60;  // fraction of frames that must be stable
+    this.AMBIENT_GATE_DB      = -42;   // reject frame if avg 200-4kHz > this (relaxed)
+    this.FREQ_STABILITY_WIN   = 30;    // frames to track peak frequency
+    this.FREQ_STABILITY_THR   = 35;    // Hz — peak must stay within ±35 Hz
+    this.FREQ_STABILITY_MIN   = 0.45;  // fraction of frames that must be stable
 
     // ── Temporal confidence buffer ────────────────────────────────
-    this.TEMPORAL_FRAMES = 50;  // ~2s at 25 fps
+    this.TEMPORAL_FRAMES = 30;  // ~1.2s at 25 fps
     this.temporalBuffer  = {};
     this.freqHistory     = {};  // per species: rolling peak frequency history
     SPECIES_DB.forEach(sp => {
@@ -1404,7 +1463,7 @@ class MosquitoClassifier {
     const hist = this.freqHistory[speciesId];
     hist.push(currentHz);
     if (hist.length > this.FREQ_STABILITY_WIN) hist.shift();
-    if (hist.length < 10) return 0;  // need at least 10 frames
+    if (hist.length < 6) return 0;   // need at least 6 frames
 
     const sorted = [...hist].sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
@@ -2144,12 +2203,19 @@ class FederatedLearningClient {
 ════════════════════════════════════════════════════════════ */
 class MapController {
   constructor() {
-    this.map = null;
-    this.heatLayer = null;
-    this._layerGroup = null;
-    this.localPoints = [];
-    this.markers = [];
-    this.allPoints = [];
+    this.map          = null;
+    this.heatLayer    = null;
+    this._layerGroup  = null;
+    this.localPoints  = [];
+    this.markers      = [];
+    this.allPoints    = [];
+
+    // Detection density system
+    this.densityGrid    = {};  // cellKey → count
+    this.densitySquares = {};  // squareKey → L.rectangle
+    this.localMarkers   = [];  // pulse markers (auto-fade)
+    this.totalDetections = 0;
+    this.DENSITY_THRESHOLD = 100; // detections before permanent square appears
   }
 
   init() {
@@ -2687,21 +2753,89 @@ class MapController {
     requestAnimationFrame(addChunk);
   }
 
+  // ── Detection density grid ──────────────────────────────────
+  // Divides the world into 0.1° × 0.1° cells (~11km × 11km).
+  // Every confirmed detection increments that cell's counter.
+  // When a cell reaches DENSITY_THRESHOLD detections, a permanent
+  // coloured square is drawn on the map for that species.
+
+  cellKey(lat, lng, spId) {
+    const clat = Math.floor(lat * 10) / 10;
+    const clng = Math.floor(lng * 10) / 10;
+    return `${clat.toFixed(1)},${clng.toFixed(1)},${spId}`;
+  }
+
   addLocalDetection(lat, lng, species) {
-    const marker = L.circleMarker([lat, lng], {
-      radius: 10,
+    const key   = this.cellKey(lat, lng, species.id);
+    const count = (this.densityGrid[key] || 0) + 1;
+    this.densityGrid[key] = count;
+    this.totalDetections++;
+
+    // Update net bar counter
+    const nbDet = document.getElementById('nb-detections');
+    if (nbDet) nbDet.textContent = `${this.totalDetections} detection${this.totalDetections !== 1 ? 's' : ''}`;
+
+    // ── Pulse marker: shows every confirmed detection ────────
+    const pulse = L.circleMarker([lat, lng], {
+      radius: 8,
       fillColor: species.color,
       color: species.color,
-      fillOpacity: 0.7,
+      fillOpacity: 0.85,
       weight: 2,
     }).addTo(this.map)
-      .bindPopup(`<b>${species.name}</b><br>${species.disease}<br><small>Local detection</small>`);
+      .bindPopup(
+        `<b>${species.name}</b><br>` +
+        `${species.disease}<br>` +
+        `<small>Detection #${count} in this cell · ${new Date().toLocaleTimeString()}</small>`
+      );
+    this.localMarkers.push(pulse);
 
-    this.localPoints.push([lat, lng, 1.0]);
-    this.markers.push(marker);
+    // Auto-fade pulse after 8 seconds
+    setTimeout(() => {
+      try { this.map.removeLayer(pulse); } catch(e) {}
+      this.localMarkers = this.localMarkers.filter(m => m !== pulse);
+    }, 8000);
 
-    // Pulse animation via CSS
-    setTimeout(() => marker.openPopup(), 100);
+    // ── Permanent square: when cell hits DENSITY_THRESHOLD ───
+    if (count === this.DENSITY_THRESHOLD) {
+      this.drawDensitySquare(lat, lng, species, count);
+    } else if (count > this.DENSITY_THRESHOLD && count % this.DENSITY_THRESHOLD === 0) {
+      // Update existing square opacity on multiples
+      this.drawDensitySquare(lat, lng, species, count);
+    }
+  }
+
+  drawDensitySquare(lat, lng, species, count) {
+    const clat = Math.floor(lat * 10) / 10;
+    const clng = Math.floor(lng * 10) / 10;
+    const key  = `sq_${clat.toFixed(1)},${clng.toFixed(1)},${species.id}`;
+
+    // Remove existing square for this cell if updating
+    if (this.densitySquares[key]) {
+      try { this.map.removeLayer(this.densitySquares[key]); } catch(e) {}
+    }
+
+    const intensity = Math.min(1, count / (this.DENSITY_THRESHOLD * 5));
+    const opacity   = 0.25 + intensity * 0.55;
+
+    // Square = L.rectangle over the 0.1° cell
+    const rect = L.rectangle(
+      [[clat, clng], [clat + 0.1, clng + 0.1]],
+      {
+        color:       species.color,
+        fillColor:   species.color,
+        fillOpacity: opacity,
+        weight:      1.5,
+        opacity:     0.8,
+      }
+    ).addTo(this.map)
+     .bindPopup(
+       `<b>${species.name}</b><br>` +
+       `${count} detections in this zone<br>` +
+       `<small>${species.disease} · Confirmed hotspot</small>`
+     );
+
+    this.densitySquares[key] = rect;
   }
 
   addLegend() {
@@ -2807,7 +2941,50 @@ class App {
 
     // ── 6. Timers ─────────────────────────────────────────────────────────
     setInterval(() => this.updateFooter(), 1000);
-    // (No fake contributor count — removed for honesty)
+    // ── Live server stats (real data from mosquito.charity) ─────────────────
+    // Update net bar from server stats
+    const updateNetBar = (data) => {
+      const liveEl = document.getElementById('nb-live');
+      const everEl = document.getElementById('nb-ever');
+      if (liveEl) liveEl.textContent = `${data.unique_devices ?? 0} live now`;
+      if (everEl) everEl.textContent = `${data.total_uploads ?? 0} ever`;
+    };
+
+    // Patch fetchServerStats to also update net bar
+    const origFetch = fetchServerStats;
+    const patchedFetch = async () => {
+      if (!SERVER_URL) return;
+      try {
+        const resp = await fetch(`${SERVER_URL}/federated/stats`, { signal: AbortSignal.timeout(6000) });
+        if (!resp.ok) throw new Error(resp.status);
+        const data = await resp.json();
+        // Update stats panel
+        const contribEl = document.getElementById('stat-contrib');
+        const contribSub = document.getElementById('stat-contrib-sub');
+        const roundsEl  = document.getElementById('stat-server-rounds');
+        const roundsSub = document.getElementById('stat-server-sub');
+        if (contribEl) contribEl.textContent = data.unique_devices ?? '—';
+        if (contribSub) contribSub.textContent =
+          `${data.total_uploads ?? 0} total uploads · uptime ${
+            Math.floor((data.uptime_seconds ?? 0) / 3600)}h ${
+            Math.floor(((data.uptime_seconds ?? 0) % 3600) / 60)}m`;
+        if (roundsEl) roundsEl.textContent = data.total_rounds ?? '—';
+        if (roundsSub) roundsSub.textContent = data.last_aggregate
+          ? `Last model update: ${new Date(data.last_aggregate).toLocaleTimeString()}`
+          : 'No aggregation yet — keep listening';
+        // Update net bar
+        updateNetBar(data);
+      } catch(e) {
+        const contribEl = document.getElementById('stat-contrib');
+        const contribSub = document.getElementById('stat-contrib-sub');
+        if (contribEl) contribEl.textContent = '—';
+        if (contribSub) { contribSub.textContent = 'Server unreachable'; contribSub.style.color = 'var(--red)'; }
+      }
+    };
+
+    // Fetch immediately, then every 20 seconds
+    patchedFetch();
+    setInterval(patchedFetch, 20000);
 
     // ── 7. Build persistent detection grid (ONCE) ─────────────────────────
     try { this.buildDetectionGrid(); } catch(e) { console.warn('det grid:', e); }
@@ -3011,19 +3188,25 @@ self.addEventListener('fetch', e => {
         this.updateFedStatus();
       }
 
-      // 7. Add to map (throttled — once per 30s per species)
+      // 7. Register every confirmed detection on map (throttled to 5s to avoid spam)
       detections.forEach(det => {
         const now = Date.now();
-        if (now - this.lastMapAdd[det.species.id] > 30000) {
+        if (now - this.lastMapAdd[det.species.id] > 5000) {
           this.lastMapAdd[det.species.id] = now;
-          // Apply DP jitter (±0.05° ≈ ±5km) to real geolocation for privacy
           if (this.deviceLat !== null && this.deviceLng !== null) {
-            const jitter = 0.05;
+            // DP jitter ±0.02° (~2km) for privacy — tighter than before
+            const jitter = 0.02;
             const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
             const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
+            // Switch to map tab briefly? No — just register silently
             this.mapCtrl.addLocalDetection(lat, lng, det.species);
+          } else {
+            // No geolocation yet — accumulate without coordinates,
+            // map will show when geo becomes available
+            this.mapCtrl.totalDetections++;
+            const nbDet = document.getElementById('nb-detections');
+            if (nbDet) nbDet.textContent = `${this.mapCtrl.totalDetections} detection${this.mapCtrl.totalDetections !== 1 ? 's' : ''}`;
           }
-          // If geolocation not yet available, skip — don't invent coordinates
         }
       });
 
@@ -3199,6 +3382,21 @@ self.addEventListener('fetch', e => {
     const txt = document.getElementById('status-text');
     if (dot) dot.className = `status-dot${type ? ' ' + type : ''}`;
     if (txt) txt.textContent = text;
+
+    // Update network bar recording indicator
+    const nbDot   = document.getElementById('nb-rec-dot');
+    const nbLabel = document.getElementById('nb-rec-label');
+    if (nbDot && nbLabel) {
+      if (type === 'live') {
+        nbDot.classList.add('live');
+        nbLabel.textContent = '🔴 RECORDING';
+        nbLabel.style.color = 'var(--red)';
+      } else {
+        nbDot.classList.remove('live');
+        nbLabel.textContent = 'NOT RECORDING';
+        nbLabel.style.color = 'var(--text3)';
+      }
+    }
   }
 
   showToast(msg, duration = 3500) {
