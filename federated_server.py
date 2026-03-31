@@ -12,6 +12,47 @@ CORS(app, origins='*', supports_credentials=False,
      allow_headers=['Content-Type','Accept'],
      methods=['GET','POST','OPTIONS'])
 
+# ── Persistence ───────────────────────────────────────────────────────────────
+# Use DATA_DIR env var if set (Railway volume mount), otherwise /tmp
+DATA_DIR  = os.environ.get('DATA_DIR', '/tmp')
+DATA_FILE = os.path.join(DATA_DIR, 'mosquitonet_data.json')
+
+def save_state():
+    """Save persistent state to JSON file."""
+    try:
+        payload = {
+            'stats':            stats,
+            'detection_log':    detection_log[-10000:],  # keep last 10k
+            'detection_cells':  detection_cells,
+            'hotspot_cells':    hotspot_cells,
+            'unique_devices':   len(device_registry),
+        }
+        with open(DATA_FILE, 'w') as f:
+            import json
+            json.dump(payload, f)
+    except Exception as e:
+        print(f"[Save] {e}")
+
+def load_state():
+    """Load state from JSON file on startup."""
+    global detection_log, detection_cells, hotspot_cells, stats
+    try:
+        import json
+        with open(DATA_FILE) as f:
+            d = json.load(f)
+        stats.update({k: v for k, v in d.get('stats', {}).items()
+                      if k in stats})
+        detection_log   = d.get('detection_log', [])
+        detection_cells = d.get('detection_cells', {})
+        hotspot_cells   = d.get('hotspot_cells', {})
+        print(f"[Loaded] {len(detection_log)} detections, "
+              f"{len(hotspot_cells)} hotspots, "
+              f"{stats['total_detections']} total")
+    except FileNotFoundError:
+        print("[Load] No saved state — starting fresh")
+    except Exception as e:
+        print(f"[Load] {e}")
+
 # ── Model weights (pre-seeded from HumBugDB + Abuzz) ─────────────────────────
 global_W = np.array([
     [ 2.8, 0.9, 1.2, 0.8],
@@ -152,6 +193,9 @@ def detection():
         detection_log.append(entry)
         if len(detection_log) > MAX_LOG: detection_log.pop(0)
     print(f"[Det] {species} conf={conf} freq={freq}Hz dev={h}")
+    # Save periodically (every 10th detection to avoid IO overhead)
+    if stats['total_detections'] % 10 == 0:
+        save_state()
     return jsonify({'received':True,**full_stats()})
 
 @app.route('/hotspots', methods=['GET'])
@@ -208,6 +252,10 @@ def index():
                                  '/log','/federated/upload','/federated/stats','/health']})
 
 if __name__ == '__main__':
+    load_state()  # restore persisted data on startup
     port = int(os.environ.get('PORT',5001))
     print(f'\nMosquitoNet v4 on :{port}\n')
     app.run(host='0.0.0.0', port=port, debug=False)
+
+# Also load on module import (for gunicorn workers)
+load_state()
