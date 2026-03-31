@@ -1399,34 +1399,16 @@ body::after {
 </div><!-- #app -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script>
-'use strict';
+<script>'use strict';
 
-// ── Server URL ───────────────────────────────────────────────────────────────
 const SERVER_URL = 'https://mosquito.charity';
-window.SERVER_URL = SERVER_URL;  // expose globally for class methods
 
-// ── Safe timeout signal (iOS Safari < 16.4 polyfill) ─────────────────────────
-// fetchWithTimeout: wraps fetch with a Promise.race timeout.
-// Does NOT pass AbortSignal into fetch, so service worker cloning never fails.
+// fetchWithTimeout: Promise.race with timeout, no AbortSignal
 function fetchWithTimeout(url, opts, ms) {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('timeout')), ms)
-  );
-  return Promise.race([fetch(url, opts), timeout]);
-}
-// Legacy alias used in some places — returns a resolved-immediately signal
-// (we no longer pass it to fetch; timeouts handled by fetchWithTimeout)
-function timeoutSignal(ms) {
-  // No-op: real timeout is done via fetchWithTimeout
-  return undefined;
+  const t = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+  return Promise.race([fetch(url, opts || {}), t]);
 }
 
-/* ════════════════════════════════════════════════════════════
-   MOSQUITO SPECIES DATABASE
-   Sources: Brogdon & McAllister 1998, Rompotis et al. 2015,
-            Pantula et al. 2021, Sinka et al. 2012
-════════════════════════════════════════════════════════════ */
 const SPECIES_DB = [
   // ═══════════════════════════════════════════════════════════════
   // SYMPTOMATIC — Disease vectors. Risk levels per WHO/CDC 2024.
@@ -1526,15 +1508,6 @@ const SPECIES_DB = [
 ];
 
 
-/* ════════════════════════════════════════════════════════════
-   CLASS: MosquitoAudioEngine
-   Handles mic capture, AnalyserNode setup, data extraction
-════════════════════════════════════════════════════════════ */
-// ═══════════════════════════════════════════════════════════════════
-//  MosquitoAudioEngine — captures mic, produces FFT data
-//  Key fix: smoothingTimeConstant = 0.75 for display smoothness
-//  (detection uses raw frames separately)
-// ═══════════════════════════════════════════════════════════════════
 class MosquitoAudioEngine {
   constructor() {
     this.ctx      = null;
@@ -1635,6 +1608,7 @@ class MosquitoAudioEngine {
 //  Sources: Pantula et al. 2021 (Sci Rep), Brogdon & McAllister 1998,
 //           Rompotis et al. 2015, Moore et al. 2018 (PLOS CB)
 // ═══════════════════════════════════════════════════════════════════
+
 class MosquitoClassifier {
   constructor(engine) {
     this.engine = engine;
@@ -1939,6 +1913,7 @@ class MosquitoClassifier {
 //  Harmonic guides (2f, 3f) appear as thin dashed lines,
 //  brightening when the harmonic is actually present.
 // ═══════════════════════════════════════════════════════════════════
+
 class SpectrogramRenderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -2353,6 +2328,7 @@ class SpectrogramRenderer {
   }
 }
 
+
 class FederatedLearningClient {
   constructor() {
     const N_FEATURES = 4;
@@ -2646,6 +2622,7 @@ class FederatedLearningClient {
    CLASS: MapController
    Global vector density map with heatmap overlay
 ════════════════════════════════════════════════════════════ */
+
 class MapController {
   constructor() {
     this.map          = null;
@@ -3438,6 +3415,7 @@ class MapController {
 /* ════════════════════════════════════════════════════════════
    CLASS: App  — Main orchestrator
 ════════════════════════════════════════════════════════════ */
+
 class App {
   constructor() {
     this.engine      = null;
@@ -4286,6 +4264,7 @@ document.addEventListener('touchstart', () => {
     }
   } catch(e) {}
 }, { passive: true });  // NOT once:true — iOS can re-suspend multiple times
+
 
 </script>
 </body>
