@@ -150,6 +150,14 @@ body::after {
 
 .spacer { flex: 1; }
 
+.srv-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  transition: background 0.4s, box-shadow 0.4s;
+}
+.srv-dot.connected    { background: #10b981; box-shadow: 0 0 7px #10b981; }
+.srv-dot.disconnected { background: var(--red); }
+.srv-dot.connecting   { background: var(--amber); animation: pulse-dot 1s infinite; }
+
 #btn-listen {
   display: flex; align-items: center; gap: 7px;
   padding: 8px 16px;
@@ -1007,6 +1015,10 @@ body::after {
     <div class="header-pill">
       <div class="status-dot" id="status-dot"></div>
       <span id="status-text">OFFLINE</span>
+    </div>
+    <div class="header-pill" id="server-pill">
+      <span class="srv-dot disconnected" id="server-dot"></span>
+      <span id="server-lbl">CONNECTING…</span>
     </div>
     <div class="spacer"></div>
     <button id="btn-listen">
@@ -3184,76 +3196,82 @@ class App {
       if (this.spectrogram) try { this.spectrogram.resize(); } catch(e){}
     });
 
-    // ── 6. Timers ─────────────────────────────────────────────────────────
+    // ── 6. Session timer ──────────────────────────────────────────────────────
     setInterval(() => this.updateFooter(), 1000);
-    // ── Live server stats (real data from mosquito.charity) ─────────────────
-    // Update net bar from server stats
-    const updateNetBar = (data) => {
-      const liveEl = document.getElementById('nb-live');
-      const everEl = document.getElementById('nb-ever');
-      if (liveEl) liveEl.textContent = `${data.active_now ?? data.unique_devices ?? 0} live now`;
-      if (everEl) everEl.textContent = `${data.unique_devices ?? 0} ever`;
+
+    // ── 7. Server connection — fires IMMEDIATELY on app open ──────────────────
+    // This updates the green/red dot, live-now counter, and all stats.
+    // setServerConnected() controls the green (true) / red (false) indicator.
+    const setServerConnected = (ok) => {
+      const dot  = document.getElementById('server-dot');
+      const lbl  = document.getElementById('server-lbl');
+      if (dot) {
+        dot.className = ok ? 'srv-dot connected' : 'srv-dot disconnected';
+      }
+      if (lbl) lbl.textContent = ok ? 'SERVER ONLINE' : 'SERVER OFFLINE';
     };
 
-    // Patch fetchServerStats to also update net bar
-    const origFetch = fetchServerStats;
-    const patchedFetch = async () => {
+    // Update all UI elements from a stats response
+    const applyStats = (data) => {
+      setServerConnected(true);
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      set('nb-live',           `${data.active_now ?? 0} live now`);
+      set('nb-ever',           `${data.unique_devices ?? 0} ever`);
+      set('stat-contrib',      data.unique_devices ?? '—');
+      set('stat-server-rounds', data.total_rounds ?? '—');
+      const contribSub = document.getElementById('stat-contrib-sub');
+      if (contribSub) contribSub.textContent =
+        `${data.active_now ?? 0} online now · ${data.total_detections ?? 0} detections`;
+      const nbDet = document.getElementById('nb-detections');
+      if (nbDet && data.total_detections)
+        nbDet.textContent = `${data.total_detections} detections`;
+    };
+
+    // Heartbeat: POST to /heartbeat — registers this device as online right now
+    const sendHeartbeat = async () => {
+      if (!SERVER_URL) { setServerConnected(false); return; }
+      try {
+        const resp = await fetch(`${SERVER_URL}/heartbeat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceId:     this.fedClient.getAnonymousId(),
+            sessionStart: this.sessionStart || null,
+            listening:    this.running,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          applyStats({ ...data,
+            unique_devices: data.ever_connected,
+            total_detections: data.total_detections || 0,
+          });
+        } else {
+          setServerConnected(false);
+        }
+      } catch {
+        setServerConnected(false);
+      }
+    };
+
+    // Fetch full stats (called less often)
+    const fetchStats = async () => {
       if (!SERVER_URL) return;
       try {
-        const resp = await fetch(`${SERVER_URL}/federated/stats`, { signal: AbortSignal.timeout(6000) });
-        if (!resp.ok) throw new Error(resp.status);
-        const data = await resp.json();
-        // Update stats panel
-        const contribEl = document.getElementById('stat-contrib');
-        const contribSub = document.getElementById('stat-contrib-sub');
-        const roundsEl  = document.getElementById('stat-server-rounds');
-        const roundsSub = document.getElementById('stat-server-sub');
-        // New server v2 fields
-        if (contribEl) contribEl.textContent = data.unique_devices ?? '—';
-        if (contribSub) contribSub.textContent =
-          `${data.active_now ?? 0} live now · ${data.total_detections ?? 0} detections · ` +
-          `uptime ${Math.floor((data.uptime_seconds ?? 0) / 3600)}h`;
-        if (roundsEl) roundsEl.textContent = data.total_rounds ?? '—';
-        if (roundsSub) roundsSub.textContent = data.last_aggregate
-          ? `Last update: ${new Date(data.last_aggregate).toLocaleTimeString()}`
-          : 'No aggregation yet';
-        // Update net bar
-        updateNetBar(data);
-      } catch(e) {
-        const contribEl = document.getElementById('stat-contrib');
-        const contribSub = document.getElementById('stat-contrib-sub');
-        if (contribEl) contribEl.textContent = '—';
-        if (contribSub) { contribSub.textContent = 'Server unreachable'; contribSub.style.color = 'var(--red)'; }
-      }
+        const resp = await fetch(`${SERVER_URL}/federated/stats`,
+          { signal: AbortSignal.timeout(6000) });
+        if (resp.ok) applyStats(await resp.json());
+      } catch { /* heartbeat will handle error state */ }
     };
 
-    // Fetch server stats immediately, then every 20 seconds
-    patchedFetch();
-    setInterval(patchedFetch, 20000);
+    // Fire IMMEDIATELY on open — this is what shows you online
+    sendHeartbeat();
+    fetchStats();
 
-    // ── Heartbeat: every 30s, whether listening or not ──────────────────────
-    // This is what makes "live now" work. Every open browser tab counts.
-    const sendHB = async () => {
-      const data = await this.fedClient.sendHeartbeat(
-        this.running,
-        this.sessionStart
-      );
-      if (data) {
-        // Update net bar directly from heartbeat response (faster than stats poll)
-        const liveEl = document.getElementById('nb-live');
-        const everEl = document.getElementById('nb-ever');
-        if (liveEl) liveEl.textContent = `${data.active_now ?? 0} live now`;
-        if (everEl) everEl.textContent = `${data.ever_connected ?? 0} ever`;
-        // Also update stats card
-        const contribEl = document.getElementById('stat-contrib');
-        if (contribEl) contribEl.textContent = data.ever_connected ?? '—';
-        const contribSub = document.getElementById('stat-contrib-sub');
-        if (contribSub) contribSub.textContent =
-          `${data.active_now ?? 0} listening right now · ${data.total_sessions ?? 0} total sessions`;
-      }
-    };
-    sendHB();  // immediately on load
-    setInterval(sendHB, 30000);
+    // Then repeat on schedule
+    setInterval(sendHeartbeat, 30000);  // heartbeat every 30s
+    setInterval(fetchStats,    60000);  // full stats every 60s
 
     // ── 7. Build persistent detection grid (ONCE) ─────────────────────────
     try { this.buildDetectionGrid(); } catch(e) { console.warn('det grid:', e); }
