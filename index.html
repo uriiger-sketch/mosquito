@@ -1508,43 +1508,154 @@ class MosquitoClassifier {
   constructor(engine) {
     this.engine = engine;
 
-    // ── Thresholds ────────────────────────────────────────────────
-    this.SNR_MIN              = 15;   // dB above noise floor
-    this.CONFIDENCE_THRESHOLD = 0.45; // temporal avg to report
-    this.Q_FACTOR_MIN         = 12;   // dB above ±200 Hz (guard-band measurement — 12 is safe)
-    this.AMBIENT_GATE_DB      = -38;  // reject if broadband too loud
-    this.TEMPORAL_FRAMES      = 20;   // ~0.8s at 25 fps
-    this.FREQ_STABILITY_WIN   = 15;
-    this.FREQ_STABILITY_THR   = 50;   // Hz tolerance
-    this.FREQ_STABILITY_MIN   = 0.35; // fraction of stable frames
+    // ── Detection gate thresholds ─────────────────────────────────
+    // Goertzel local-SNR: ratio of signal power to local noise power (linear)
+    this.GOERTZEL_SNR_MIN    = 6.0;   // signal must be 6× louder than local noise
+    this.CONFIDENCE_THRESHOLD= 0.50;  // temporal average before reporting
+    this.AMBIENT_GATE_DB     = -35;   // reject if broadband 200-4kHz too loud
 
-    // ── Temporal confidence buffers ───────────────────────────────
-    this.temporalBuffer = {};
-    this.freqHistory    = {};
+    // ── 500-frame sustained vote (≈20s at 25fps) ─────────────────
+    // A detection is only CONFIRMED after 500 frames of consistent signal.
+    // This eliminates all transient false positives completely.
+    this.VOTE_FRAMES    = 500;   // frames needed to confirm
+    this.VOTE_THRESHOLD = 0.60;  // fraction of frames that must pass
+    this.voteBuffer  = {};       // species.id → circular buffer of booleans
+    this.votePtr     = {};       // circular buffer write pointer
+    this.voteCount   = {};       // running count of positive votes in buffer
     SPECIES_DB.forEach(sp => {
-      this.temporalBuffer[sp.id] = new Float32Array(this.TEMPORAL_FRAMES);
-      this.freqHistory[sp.id]    = [];
+      this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
+      this.votePtr[sp.id]    = 0;
+      this.voteCount[sp.id]  = 0;
     });
-    this.frameIdx = 0;
 
-    // ── Hum blacklist: TIGHT ±2 Hz tolerance ─────────────────────
-    // Real electrical hum is rock-stable in frequency.
-    // Old ±9 Hz tolerance was blocking 3/4 species centres.
+    // ── Confidence accumulator (for charge-bar display) ───────────
+    // Separate from vote — updates every frame for live visual feedback
+    this.CONF_FRAMES = 30;
+    this.confBuffer  = {};
+    SPECIES_DB.forEach(sp => {
+      this.confBuffer[sp.id] = new Float32Array(this.CONF_FRAMES);
+    });
+    this.confIdx = 0;
+
+    // ── Per-species Goertzel parameters ──────────────────────────
+    // Pre-compute Goertzel coefficients for each frequency target.
+    // Goertzel gives exact power at a target Hz without FFT leakage.
+    // We evaluate: fundamental (f0), 2nd harmonic (2f0).
+    // Local SNR uses 4 reference bins at ±80Hz and ±160Hz offset.
+    this.goertzelParams = {};
+    this._buildGoertzelParams();
+
+    // ── Hum blacklist: ±2 Hz tolerance ───────────────────────────
     this.humSet = new Set();
     for (let h = 1; h <= 20; h++) {
       this.humSet.add(50 * h);
       this.humSet.add(60 * h);
     }
-    // Do NOT add 416, 667 — too close to Anopheles (410) and albopictus (668)
 
     // ── Diagnostics ───────────────────────────────────────────────
-    this.lastNoiseFloor = -70;
-    this.ambientRMS     = -80;
-    this.lastRejection  = {};
-    SPECIES_DB.forEach(sp => { this.lastRejection[sp.id] = ''; });
+    this.lastNoiseFloor  = -70;
+    this.ambientRMS      = -80;
+    this.lastRejection   = {};
+    this.lastGoertzelSNR = {};  // for display
+    SPECIES_DB.forEach(sp => {
+      this.lastRejection[sp.id]   = '';
+      this.lastGoertzelSNR[sp.id] = 0;
+    });
   }
 
-  // Noise floor: 15th percentile of 80–6000 Hz spectrum
+  // Pre-compute Goertzel params for each species + harmonics
+  // Goertzel block size = 2048 samples (shorter than FFT, runs faster)
+  _buildGoertzelParams() {
+    const BLOCK = 2048;
+    const SR    = 44100;
+    SPECIES_DB.forEach(sp => {
+      const makeCoeff = (targetHz) => {
+        const k   = Math.round(BLOCK * targetHz / SR);
+        const w   = (2 * Math.PI * k) / BLOCK;
+        return { k, w, coeff: 2 * Math.cos(w), targetHz, block: BLOCK };
+      };
+      this.goertzelParams[sp.id] = {
+        f0:  makeCoeff(sp.freq),
+        f2:  makeCoeff(sp.freq * 2),
+        // Reference bins for local SNR: ±80 Hz and ±160 Hz offsets
+        ref: [
+          makeCoeff(sp.freq - 160),
+          makeCoeff(sp.freq - 80),
+          makeCoeff(sp.freq + 80),
+          makeCoeff(sp.freq + 160),
+        ],
+      };
+    });
+    this._goertzelBlock = BLOCK;
+  }
+
+  // ── Goertzel algorithm ───────────────────────────────────────────
+  // Computes power at a single target frequency in a time-domain block.
+  // Returns power as a linear scale value.
+  // More precise than FFT bin lookup: no spectral leakage at target freq.
+  goertzelPower(timeSamples, param) {
+    const { coeff, k, block } = param;
+    let s0 = 0, s1 = 0, s2 = 0;
+    const N = Math.min(timeSamples.length, block);
+    for (let n = 0; n < N; n++) {
+      s0 = timeSamples[n] + coeff * s1 - s2;
+      s2 = s1; s1 = s0;
+    }
+    // Power = s1^2 + s2^2 - coeff*s1*s2
+    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+  }
+
+  // ── Local SNR via Goertzel ────────────────────────────────────────
+  // Compare power at target with average power at 4 reference offsets.
+  // This gives a frequency-local SNR, robust to spectrally-coloured noise.
+  goertzelLocalSNR(timeSamples, params) {
+    const sigPow  = this.goertzelPower(timeSamples, params.f0);
+    let   refSum  = 0;
+    for (const rp of params.ref) {
+      refSum += this.goertzelPower(timeSamples, rp);
+    }
+    const refAvg = refSum / params.ref.length;
+    // SNR ratio (linear). Add tiny epsilon to prevent div-by-zero.
+    return sigPow / (refAvg + 1e-12);
+  }
+
+  // ── Harmonic boost ────────────────────────────────────────────────
+  // If 2f is also present, compound SNR = geometric mean of f0 and 2f SNRs.
+  // Biological mosquito wingbeats always have 2f energy. Electronic tones may not.
+  compoundSNR(timeSamples, params) {
+    const snr0 = this.goertzelLocalSNR(timeSamples, params);
+    // Eval 2f using its own local ref (4 bins around 2f)
+    const pow2f = this.goertzelPower(timeSamples, params.f2);
+    const refPow0 = this.goertzelPower(timeSamples, params.ref[0]);
+    const refPow3 = this.goertzelPower(timeSamples, params.ref[3]);
+    const snr2f = pow2f / (((refPow0 + refPow3) / 2) + 1e-12);
+    // Compound: weight f0 more heavily (0.7 f0 + 0.3 2f)
+    // If 2f absent (pure test tone), snr2f≈1 (no boost, no penalty)
+    const snr2fClamped = Math.max(1, Math.min(snr2f, snr0 * 3));
+    return snr0 * 0.70 + snr2fClamped * 0.30;
+  }
+
+  // ── Broadband RMS ─────────────────────────────────────────────────
+  computeAmbientRMS(freqData) {
+    const lo = this.engine.freqToBin(200);
+    const hi = Math.min(this.engine.freqToBin(4000), freqData.length - 1);
+    let sumLin = 0, count = 0;
+    for (let i = lo; i <= hi; i++) {
+      if (isFinite(freqData[i])) { sumLin += Math.pow(10, freqData[i] / 10); count++; }
+    }
+    return count > 0 ? 10 * Math.log10(sumLin / count) : -80;
+  }
+
+  // ── Hum check ─────────────────────────────────────────────────────
+  isHum(hz) {
+    const r = Math.round(hz);
+    for (let d = -2; d <= 2; d++) {
+      if (this.humSet.has(r + d)) return true;
+    }
+    return false;
+  }
+
+  // ── Noise floor estimate (from FFT data, for legacy display) ──────
   estimateNoiseFloor(data) {
     const lo = this.engine.freqToBin(80);
     const hi = Math.min(this.engine.freqToBin(6000), data.length - 1);
@@ -1557,187 +1668,128 @@ class MosquitoClassifier {
     return slice[Math.floor(slice.length * 0.15)];
   }
 
-  // Broadband RMS gate — reject extremely loud environments
-  computeAmbientRMS(data) {
-    const lo = this.engine.freqToBin(200);
-    const hi = Math.min(this.engine.freqToBin(4000), data.length - 1);
-    let sumLin = 0, count = 0;
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(data[i])) { sumLin += Math.pow(10, data[i] / 10); count++; }
-    }
-    return count > 0 ? 10 * Math.log10(sumLin / count) : -80;
-  }
+  // ── Main analysis ─────────────────────────────────────────────────
+  // Called every frame (~25fps).
+  // Uses time-domain data for Goertzel, FFT data for ambient gate.
+  analyze(rawFreqData, timeData) {
+    if (!rawFreqData || !rawFreqData.length) return [];
 
-  // Hum check: ±2 Hz tolerance (was ±9 — was blocking species centres)
-  isHum(hz) {
-    const r = Math.round(hz);
-    for (let d = -2; d <= 2; d++) {
-      if (this.humSet.has(r + d)) return true;
-    }
-    return false;
-  }
+    // Update diagnostics
+    this.lastNoiseFloor = this.estimateNoiseFloor(rawFreqData);
+    this.ambientRMS     = this.computeAmbientRMS(rawFreqData);
 
-  // Find highest peak in frequency band
-  findPeak(data, loHz, hiHz) {
-    const lo = this.engine.freqToBin(loHz);
-    const hi = Math.min(this.engine.freqToBin(hiHz), data.length - 1);
-    let bin = lo, val = -130;
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(data[i]) && data[i] > val) { val = data[i]; bin = i; }
-    }
-    return { bin, hz: this.engine.binToHz(bin), db: val };
-  }
+    const confIdx = this.confIdx % this.CONF_FRAMES;
+    this.confIdx++;
 
-  // Q-factor: peak prominence over ±200 Hz window.
-  // GUARD BAND: skip ±5 bins (±27 Hz) around peak to avoid
-  // Hann-window spectral leakage polluting the measurement.
-  // Without guard: pure 668 Hz sine gives Q≈4-6 (leakage at ±1 bin).
-  // With guard: pure 668 Hz sine gives Q≈30+ (leakage falls off fast).
-  computeQFactor(data, peakBin, peakDb) {
-    const span  = Math.round(200 / this.engine.binHz);
-    const guard = 5;  // skip ±5 bins = ±27 Hz around peak
-    let nmax = -130;
-    for (let d = -span; d <= span; d++) {
-      if (Math.abs(d) < guard) continue;  // skip leakage zone
-      const b = peakBin + d;
-      if (b >= 0 && b < data.length && isFinite(data[b])) {
-        nmax = Math.max(nmax, data[b]);
-      }
-    }
-    return peakDb - nmax;
-  }
-
-  // Harmonic scoring — SCORING ONLY, not a hard gate
-  // Returns 0–1. Missing harmonics = 0 score, not rejection.
-  scoreHarmonics(data, fundamentalHz, fundamentalDb, noiseFloor) {
-    const tol = Math.round(35 / this.engine.binHz);
-    let score = 0;
-
-    for (const h of [2, 3]) {
-      const targetHz  = fundamentalHz * h;
-      if (targetHz > this.engine.ctx.sampleRate / 2) break;
-      const targetBin = this.engine.freqToBin(targetHz);
-      let maxDb = -130;
-      for (let d = -tol; d <= tol; d++) {
-        const b = targetBin + d;
-        if (b >= 0 && b < data.length && isFinite(data[b])) maxDb = Math.max(maxDb, data[b]);
-      }
-      const harmonicSNR = maxDb - noiseFloor;
-      if (harmonicSNR > 5) {
-        const ratio = fundamentalDb - maxDb; // positive = harmonic quieter
-        // Mosquito harmonics are typically 6–25 dB below fundamental
-        const ratioScore = ratio >= 4 && ratio <= 30 ? 1.0 : 0.5;
-        const w = h === 2 ? 0.70 : 0.30;
-        score += w * ratioScore * Math.min(1, (harmonicSNR - 5) / 20);
-      }
-    }
-    return Math.min(1, score);
-  }
-
-  // Frequency stability: fraction of history within ±THR Hz of median
-  computeFreqStability(speciesId, currentHz) {
-    const hist = this.freqHistory[speciesId];
-    hist.push(currentHz);
-    if (hist.length > this.FREQ_STABILITY_WIN) hist.shift();
-    if (hist.length < 3) return 0;
-    const sorted = [...hist].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const stable = hist.filter(f => Math.abs(f - median) <= this.FREQ_STABILITY_THR).length;
-    return stable / hist.length;
-  }
-
-  analyze(rawData) {
-    if (!rawData || !rawData.length) return [];
-
-    const noiseFloor    = this.estimateNoiseFloor(rawData);
-    this.lastNoiseFloor = noiseFloor;
-    this.ambientRMS     = this.computeAmbientRMS(rawData);
-
-    const frameIdx = this.frameIdx % this.TEMPORAL_FRAMES;
-    this.frameIdx++;
-
-    // Ambient gate: very loud room only
+    // Ambient gate: very loud room
     if (this.ambientRMS > this.AMBIENT_GATE_DB) {
       SPECIES_DB.forEach(sp => {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `loud: ${this.ambientRMS.toFixed(0)}dB`;
+        this.confBuffer[sp.id][confIdx] = 0;
+        this.lastRejection[sp.id] = `loud:${this.ambientRMS.toFixed(0)}dB`;
+        this._addVote(sp.id, false);
       });
       return [];
     }
 
-    const rawResults = [];
+    // Prefer time-domain for Goertzel; fall back to FFT-based if unavailable
+    const useGoertzel = timeData && timeData.length >= this._goertzelBlock;
 
-    for (const sp of SPECIES_DB) {
-      const peak = this.findPeak(rawData, sp.freqRange[0], sp.freqRange[1]);
-      const snr  = peak.db - noiseFloor;
-
-      // Hard gate A: SNR minimum
-      if (!isFinite(snr) || snr < this.SNR_MIN) {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `snr ${snr.toFixed(0)}dB<${this.SNR_MIN}`;
-        continue;
-      }
-
-      // Hard gate B: hum (tight ±2 Hz now)
-      if (this.isHum(peak.hz)) {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `hum@${peak.hz.toFixed(0)}Hz`;
-        continue;
-      }
-
-      // Hard gate C: Q-factor (must be somewhat tonal)
-      const qFactor = this.computeQFactor(rawData, peak.bin, peak.db);
-      if (qFactor < this.Q_FACTOR_MIN) {
-        this.temporalBuffer[sp.id][frameIdx] = 0;
-        this.lastRejection[sp.id] = `Q=${qFactor.toFixed(0)}<${this.Q_FACTOR_MIN}`;
-        continue;
-      }
-
-      // Soft scoring (no more hard harmonic gate)
-      const harmonicScore  = this.scoreHarmonics(rawData, peak.hz, peak.db, noiseFloor);
-      const freqStability  = this.computeFreqStability(sp.id, peak.hz);
-      const snrScore       = Math.min(1, (snr - this.SNR_MIN) / 25);
-      const qScore         = Math.min(1, (qFactor - this.Q_FACTOR_MIN) / 20);
-      const stabScore      = Math.min(1, freqStability / this.FREQ_STABILITY_MIN);
-
-      // Weighted confidence: SNR + Q-factor are primary; harmonics + stability boost
-      const confidence = (snrScore * 0.40) + (qScore * 0.25) +
-                         (harmonicScore * 0.20) + (stabScore * 0.15);
-
-      const conf = Math.max(0, Math.min(1, confidence));
-      this.temporalBuffer[sp.id][frameIdx] = conf;
-      this.lastRejection[sp.id] = '';
-
-      rawResults.push({ species: sp, frequency: peak.hz, snr, qFactor, harmonicScore, confidence: conf });
-    }
-
-    // Temporal smoothing
     const results = [];
+
     for (const sp of SPECIES_DB) {
-      const buf = this.temporalBuffer[sp.id];
-      const avg = buf.reduce((s, v) => s + v, 0) / buf.length;
-      if (avg >= this.CONFIDENCE_THRESHOLD) {
-        const raw = rawResults.find(r => r.species.id === sp.id);
-        if (raw) results.push({ ...raw, confidence: avg });
+      // Skip hum-frequency species centres
+      if (this.isHum(sp.freq)) {
+        this.confBuffer[sp.id][confIdx] = 0;
+        this.lastRejection[sp.id] = `hum@${sp.freq}Hz`;
+        this._addVote(sp.id, false);
+        continue;
+      }
+
+      let snrLinear;
+
+      if (useGoertzel) {
+        // ── Goertzel path (preferred) ─────────────────────────────
+        const params  = this.goertzelParams[sp.id];
+        snrLinear     = this.compoundSNR(timeData, params);
+        this.lastGoertzelSNR[sp.id] = snrLinear;
+      } else {
+        // ── FFT fallback ──────────────────────────────────────────
+        const loBin = this.engine.freqToBin(sp.freqRange[0]);
+        const hiBin = Math.min(this.engine.freqToBin(sp.freqRange[1]), rawFreqData.length-1);
+        let peak = -130;
+        for (let i = loBin; i <= hiBin; i++) {
+          if (isFinite(rawFreqData[i]) && rawFreqData[i] > peak) peak = rawFreqData[i];
+        }
+        const noiseFloor = this.lastNoiseFloor;
+        snrLinear = Math.pow(10, (peak - noiseFloor) / 10);
+      }
+
+      // Gate: Goertzel SNR must exceed threshold
+      if (snrLinear < this.GOERTZEL_SNR_MIN) {
+        this.confBuffer[sp.id][confIdx] = 0;
+        this.lastRejection[sp.id] = `snr×${snrLinear.toFixed(1)}<${this.GOERTZEL_SNR_MIN}`;
+        this._addVote(sp.id, false);
+        continue;
+      }
+
+      // Confidence: logarithmic scale, SNR-normalised
+      const conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
+                               (Math.log10(100) - Math.log10(this.GOERTZEL_SNR_MIN)));
+      this.confBuffer[sp.id][confIdx] = conf;
+      this.lastRejection[sp.id] = '';
+      this._addVote(sp.id, true);
+
+      // Check if 500-frame vote passes threshold
+      const voteFraction = this.voteCount[sp.id] / this.VOTE_FRAMES;
+      if (voteFraction >= this.VOTE_THRESHOLD) {
+        // Compute smoothed confidence from recent buffer
+        const buf     = this.confBuffer[sp.id];
+        const avgConf = buf.reduce((s, v) => s + v, 0) / this.CONF_FRAMES;
+        if (avgConf >= this.CONFIDENCE_THRESHOLD) {
+          results.push({
+            species:      sp,
+            frequency:    sp.freq,
+            snr:          10 * Math.log10(snrLinear),
+            snrLinear,
+            voteFraction,
+            confidence:   avgConf,
+          });
+        }
       }
     }
+
     return results.sort((a, b) => b.confidence - a.confidence);
   }
 
-  getStatus() {
-    return { noiseFloor: this.lastNoiseFloor, ambientRMS: this.ambientRMS,
-             gated: this.ambientRMS > this.AMBIENT_GATE_DB };
+  // Add one vote to species circular buffer
+  _addVote(spId, positive) {
+    const ptr = this.votePtr[spId];
+    const old = this.voteBuffer[spId][ptr];
+    const now = positive ? 1 : 0;
+    this.voteBuffer[spId][ptr] = now;
+    this.voteCount[spId]      += (now - old);
+    this.votePtr[spId]         = (ptr + 1) % this.VOTE_FRAMES;
   }
 
+  // ── Public getters ────────────────────────────────────────────────
+  getStatus() {
+    return {
+      noiseFloor: this.lastNoiseFloor,
+      ambientRMS: this.ambientRMS,
+      gated:      this.ambientRMS > this.AMBIENT_GATE_DB,
+    };
+  }
+
+  // Raw charge-bar values: vote fraction per species (0–1)
   getRawConfidences() {
     const result = {};
     SPECIES_DB.forEach(sp => {
-      const buf = this.temporalBuffer[sp.id];
-      result[sp.id] = buf ? buf.reduce((s, v) => s + v, 0) / buf.length : 0;
+      result[sp.id] = this.voteCount[sp.id] / this.VOTE_FRAMES;
     });
     return result;
   }
 }
+
 
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2395,26 +2447,38 @@ class FederatedLearningClient {
   }
 
   // ── Report a confirmed detection ──────────────────────────────────────────
-  // Called when the classifier confirms a mosquito with confidence >= threshold.
-  // Sends species, confidence, frequency — NO audio, NO exact GPS.
+  // Sends species, confidence, frequency, and DP-jittered location.
+  // Server enforces 60s per-device per-species cooldown server-side too.
   async reportDetection(det) {
     if (!SERVER_URL) return;
+    const app = window._app;
+    // DP jitter ±0.025° ≈ ±2.5km for privacy
+    let lat = null, lng = null;
+    if (app && app.deviceLat !== null) {
+      const jitter = 0.025;
+      lat = app.deviceLat + (Math.random() - 0.5) * jitter;
+      lng = app.deviceLng + (Math.random() - 0.5) * jitter;
+    }
     try {
-      await fetch(`${SERVER_URL}/detection`, {
+      const resp = await fetch(`${SERVER_URL}/detection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          deviceId:    this.getAnonymousId(),
-          species:     det.species.id,
-          confidence:  parseFloat(det.confidence.toFixed(3)),
-          frequency:   parseFloat(det.frequency.toFixed(1)),
-          // Coarse location hash — just continent-level grid cell (500km)
-          locationHash: window._app && window._app.deviceLat !== null
-            ? `${Math.round(window._app.deviceLat / 5)},${Math.round(window._app.deviceLng / 5)}`
-            : 'unknown',
+          deviceId:   this.getAnonymousId(),
+          species:    det.species.id,
+          confidence: parseFloat(det.confidence.toFixed(3)),
+          frequency:  parseFloat(det.frequency.toFixed(1)),
+          lat, lng,
         }),
         signal: timeoutSignal(5000),
       });
+      if (resp.ok) {
+        const data = await resp.json();
+        // Update hotspots on map if available
+        if (app && app.mapCtrl) {
+          app.mapCtrl.totalDetections = data.total_detections || app.mapCtrl.totalDetections;
+        }
+      }
     } catch { /* offline */ }
   }
 
@@ -2499,9 +2563,51 @@ class MapController {
 
     // Generate and cache all points; year-filtering happens on slider change
     this.allPoints = this.generateGlobalHotspots();
-    this.addSimpleHeatmap(this.allPoints, null);   // null = show all years
+    this.addSimpleHeatmap(this.allPoints, null);
 
     this.addLegend();
+
+    // Load server hotspots (cells with ≥100 user detections)
+    this.loadServerHotspots();
+  }
+
+  async loadServerHotspots() {
+    if (!window.SERVER_URL) return;
+    try {
+      const resp = await fetch(`${window.SERVER_URL}/hotspots`,
+        { signal: timeoutSignal(8000) });
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      const SP_COLORS = {'anopheles':'#f43f5e','aedes_aegypti':'#f59e0b',
+                         'aedes_albopictus':'#eab308','culex':'#3b82f6'};
+
+      // Draw confirmed hotspots (≥100 detections) as solid squares
+      for (const cell of (data.hotspots || [])) {
+        const color = SP_COLORS[cell.species] || '#00e8c0';
+        L.rectangle(
+          [[cell.lat - 0.025, cell.lng - 0.025],
+           [cell.lat + 0.025, cell.lng + 0.025]],
+          { color, fillColor: color, fillOpacity: 0.55,
+            weight: 2, opacity: 0.9 }
+        ).addTo(this.map)
+         .bindPopup(`<b>🔴 Confirmed Hotspot</b><br>${cell.species}<br>` +
+                    `${cell.total} user detections in this 5km zone`);
+      }
+
+      // Draw approaching cells (50-99) as faint outlines
+      for (const cell of (data.approaching || [])) {
+        const color = SP_COLORS[cell.species] || '#00e8c0';
+        L.rectangle(
+          [[cell.lat - 0.025, cell.lng - 0.025],
+           [cell.lat + 0.025, cell.lng + 0.025]],
+          { color, fillColor: color, fillOpacity: 0.15,
+            weight: 1, opacity: 0.5, dashArray: '4,4' }
+        ).addTo(this.map)
+         .bindPopup(`<b>⚠️ Emerging Zone</b><br>${cell.species}<br>` +
+                    `${cell.total}/100 detections`);
+      }
+    } catch(e) { console.warn('hotspots:', e); }
   }
 
   filterByYear(yr) {
@@ -3516,8 +3622,10 @@ self.addEventListener('fetch', e => {
         try { this.spectrogram.pushColumn(freqData, this.engine); } catch(e) {}
       }
 
-      // 2. Classifier uses RAW unsmoothed data
-      const detections = this.classifier ? this.classifier.analyze(rawFreqData) : [];
+      // 2. Classifier: Goertzel path uses time-domain; FFT data for ambient gate
+      const detections = this.classifier
+        ? this.classifier.analyze(rawFreqData, timeData)
+        : [];
       if (this.spectrogram) {
         try { this.spectrogram.drawMarkers(detections); } catch(e) {}
       }
@@ -3548,11 +3656,11 @@ self.addEventListener('fetch', e => {
       detections.forEach(det => {
         const labelIdx = SPECIES_DB.findIndex(sp => sp.id === det.species.id);
         if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
-        // Report to server (throttled to once per 10s per species)
-        const now = Date.now();
-        const rKey = `report_${det.species.id}`;
+        // Report to server: max 1 detection per species per user per minute
+        const now    = Date.now();
+        const rKey   = `report_${det.species.id}`;
         if (!this._lastReport) this._lastReport = {};
-        if (!this._lastReport[rKey] || now - this._lastReport[rKey] > 10000) {
+        if (!this._lastReport[rKey] || now - this._lastReport[rKey] > 60000) {
           this._lastReport[rKey] = now;
           this.fedClient.reportDetection(det);
         }
@@ -3740,23 +3848,28 @@ self.addEventListener('fetch', e => {
         if (snrEl)    snrEl.textContent     = '+' + det.snr.toFixed(1) + ' dB';
         if (reasonEl) reasonEl.textContent  = det.species.disease;
 
-      } else if (rawAvg > 0.15) {
-        // ── CHARGING — signal building but not yet locked ───────
+      } else if (rawAvg > 0.05) {
+        // ── CHARGING — vote buffer filling ──────────────────────
         cell.classList.remove('hot');
+        const votes = this.classifier ? this.classifier.voteCount[sp.id] : 0;
+        const vTotal = this.classifier ? this.classifier.VOTE_FRAMES : 500;
         if (confEl)   { confEl.textContent = barPct + '%'; confEl.style.opacity = '0.85'; }
-        if (statusEl) statusEl.textContent  = 'charging…';
-        const reason = rejection[sp.id] || '';
-        if (freqEl)   freqEl.textContent    = sp.freq + ' Hz';
-        if (snrEl)    snrEl.textContent     = reason ? '' : '—';
-        if (reasonEl) reasonEl.textContent  = reason || 'building confidence…';
+        if (statusEl) statusEl.textContent  = `${votes}/${vTotal} votes`;
+        const gSNR = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
+        if (freqEl)   freqEl.textContent    = gSNR > 1 ? `×${gSNR.toFixed(1)}` : sp.freq + ' Hz';
+        if (snrEl)    snrEl.textContent     = '—';
+        if (reasonEl) reasonEl.textContent  = 'accumulating…';
 
       } else {
         // ── IDLE — listening, no signal ─────────────────────────
         cell.classList.remove('hot');
         if (confEl)   { confEl.textContent = '—'; confEl.style.opacity = '0.4'; }
         const reason = rejection[sp.id] || '';
+        // Show Goertzel SNR if available
+        const gSNR = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
+        const snrDisplay = gSNR > 1 ? `×${gSNR.toFixed(1)} snr` : '';
         if (statusEl) statusEl.textContent  = `~${sp.freq} Hz`;
-        if (freqEl)   freqEl.textContent    = '—';
+        if (freqEl)   freqEl.textContent    = snrDisplay || '—';
         if (snrEl)    snrEl.textContent     = '—';
         if (reasonEl) reasonEl.textContent  = reason.length > 22 ? reason.slice(0,21)+'…' : reason;
       }
