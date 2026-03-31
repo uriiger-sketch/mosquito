@@ -2,732 +2,887 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MosquitoNet">
-  <meta name="theme-color" content="#020912">
-  <meta name="description" content="Passive crowd-sourced mosquito acoustic surveillance network">
-  <title>MosquitoNet — Vector Surveillance</title>
-
-  <!-- Apple touch icons (required for PWA install on iPhone) -->
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23020912'/><text y='.9em' font-size='90'>🦟</text></svg>">
-
-  <!-- Leaflet -->
+  <meta name="theme-color" content="#030b14">
+  <title>MosquitoNet</title>
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23030b14'/><text y='.9em' font-size='78' x='10'>🦟</text></svg>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-
-  <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;1,300&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syne+Mono&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 
-  <style>
-    /* ═══════════════════════════════════════════════
-       DESIGN SYSTEM — "Deep Vector Lab"
-       Dark navy + bioluminescent cyan + thermal reds
-       ═══════════════════════════════════════════════ */
-    :root {
-      --bg:          #020912;
-      --surface:     #060f20;
-      --surface2:    #091628;
-      --border:      rgba(0,200,170,0.13);
-      --border2:     rgba(0,200,170,0.06);
-      --accent:      #00ffc8;
-      --accent-dim:  rgba(0,255,200,0.08);
-      --accent-glow: rgba(0,255,200,0.3);
-      --text:        #b8d4ec;
-      --text2:       #4d6a82;
-      --text3:       #2a3f52;
-      --danger:      #ff2d55;
-      --warning:     #ff8c00;
-      --info:        #3d9eff;
-      --success:     #00e57a;
+<style>
+/* ═══════════════════════════════════════════════════════════
+   DESIGN SYSTEM — MosquitoNet v2
+   Direction: Precision Machine
+   "A WHO outbreak dashboard crossed with a submarine sonar"
 
-      /* Per-species palette */
-      --sp-anopheles:  #ff2d55;
-      --sp-aegypti:    #ff8c00;
-      --sp-albopictus: #f5d000;
-      --sp-culex:      #3d9eff;
-    }
+   Palette roles:
+   --bg          Background (deepest surface)
+   --s1          Surface 1 (panels)
+   --s2          Surface 2 (raised elements)
+   --s3          Surface 3 (inputs, chips)
+   --border      Subtle divider
+   --border2     Emphasis border
+   --accent      Bioluminescent cyan (primary interactive)
+   --accent2     Amber (warning / secondary)
+   --text1       Primary text
+   --text2       Secondary text
+   --text3       Disabled / tertiary
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+   Type scale:
+   --f-display   Syne 800 — logo only
+   --f-ui        Space Grotesk — all UI
+   --f-mono      Syne Mono — data values
+═══════════════════════════════════════════════════════════ */
+:root {
+  --bg:        #030b14;
+  --s1:        #061422;
+  --s2:        #0a1e30;
+  --s3:        #0f2840;
+  --border:    rgba(0,220,180,0.10);
+  --border2:   rgba(0,220,180,0.22);
+  --border3:   rgba(0,220,180,0.05);
+  --accent:    #00e8c0;
+  --accent-d:  #00b899;
+  --accent-g:  rgba(0,232,192,0.18);
+  --accent-g2: rgba(0,232,192,0.06);
+  --amber:     #f59e0b;
+  --amber-g:   rgba(245,158,11,0.12);
+  --red:       #f43f5e;
+  --red-g:     rgba(244,63,94,0.10);
+  --green:     #10b981;
+  --text1:     #c8dff0;
+  --text2:     #4d7a99;
+  --text3:     #1e3a52;
 
-    html { font-size: 14px; -webkit-text-size-adjust: 100%; }
+  /* Species */
+  --sp0: #f43f5e;  /* Anopheles — malaria — red */
+  --sp1: #f59e0b;  /* Ae. aegypti — dengue — amber */
+  --sp2: #eab308;  /* Ae. albopictus — tiger — yellow */
+  --sp3: #3b82f6;  /* Culex — WNV — blue */
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'JetBrains Mono', 'Courier New', monospace;
-      min-height: 100dvh;
-      overflow-x: hidden;
-    }
+  /* Layout */
+  --header-h:   52px;
+  --tab-bar-h:  52px;
+  --r:          8px;
+  --r-lg:       12px;
+}
 
-    /* CRT scanlines */
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background: repeating-linear-gradient(
-        0deg, transparent 0, transparent 2px,
-        rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px
-      );
-      pointer-events: none;
-      z-index: 9999;
-    }
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ─── Splash screen ─── */
-    #splash {
-      position: fixed; inset: 0;
-      background: var(--bg);
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      z-index: 500;
-      gap: 24px;
-      transition: opacity 0.6s ease;
-    }
-    #splash.hidden { opacity: 0; pointer-events: none; }
+html, body {
+  height: 100%; width: 100%;
+  background: var(--bg);
+  color: var(--text1);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden; /* NO page-level scroll — panels scroll internally */
+}
 
-    .splash-logo {
-      font-family: 'Unbounded', sans-serif;
-      font-size: 2rem;
-      font-weight: 900;
-      color: var(--accent);
-      text-shadow: 0 0 40px var(--accent-glow);
-      letter-spacing: -0.02em;
-    }
-    .splash-sub {
-      font-size: 0.75rem;
-      color: var(--text2);
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-    }
-    .splash-pulse {
-      width: 60px; height: 60px;
-      border: 2px solid var(--accent);
-      border-radius: 50%;
-      position: relative;
-      animation: pulse-ring 2s ease-out infinite;
-    }
-    .splash-pulse::after {
-      content: '';
-      position: absolute; inset: 8px;
-      background: var(--accent);
-      border-radius: 50%;
-      animation: pulse-core 2s ease-out infinite;
-    }
-    @keyframes pulse-ring {
-      0%   { transform: scale(0.8); opacity: 1; }
-      100% { transform: scale(1.4); opacity: 0; }
-    }
-    @keyframes pulse-core {
-      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
-    }
+/* CRT overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg,
+    transparent 0, transparent 3px,
+    rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 9000;
+}
 
-    /* ─── App shell ─── */
-    #app {
-      display: flex;
-      flex-direction: column;
-      min-height: 100dvh;
-    }
+/* ─────────── APP SHELL ─────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
 
-    /* ─── Header ─── */
-    header {
-      position: sticky; top: 0; z-index: 100;
-      background: rgba(2, 9, 18, 0.92);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
-      display: flex; align-items: center; gap: 12px;
-    }
+/* ─────────── HEADER ─────────── */
+#header {
+  flex-shrink: 0;
+  height: var(--header-h);
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px;
+  background: rgba(3,11,20,0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  z-index: 100;
+}
 
-    .logo {
-      font-family: 'Unbounded', sans-serif;
-      font-weight: 900;
-      font-size: 1.1rem;
-      color: var(--accent);
-      letter-spacing: -0.02em;
-      flex-shrink: 0;
-    }
-    .logo span { color: var(--text2); font-weight: 700; }
+.logo-mark {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: var(--accent);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.logo-mark span { color: var(--text2); }
 
-    .status-badge {
-      display: flex; align-items: center; gap: 6px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 4px 10px;
-      font-size: 0.68rem;
-      color: var(--text2);
-      flex-shrink: 0;
-    }
-    .status-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--text3);
-      transition: background 0.3s;
-    }
-    .status-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: blink 1.5s ease-in-out infinite; }
-    .status-dot.error  { background: var(--danger); }
-    @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+.header-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--text2);
+  flex-shrink: 0;
+}
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text3);
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.status-dot.live   { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
+.status-dot.error  { background: var(--red); }
+.status-dot.warn   { background: var(--amber); }
+@keyframes pulse-dot { 0%,100%{opacity:1}50%{opacity:0.35} }
 
-    .header-spacer { flex: 1; }
+.spacer { flex: 1; }
 
-    .btn-mic {
-      display: flex; align-items: center; gap: 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      color: var(--text);
-      font-family: inherit;
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      flex-shrink: 0;
-    }
-    .btn-mic:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-mic.active {
-      background: rgba(0,255,200,0.08);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-    .btn-mic.active .mic-icon { animation: blink 1.5s ease-in-out infinite; }
+#btn-listen {
+  display: flex; align-items: center; gap: 7px;
+  padding: 8px 16px;
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  color: var(--accent);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+#btn-listen:hover { background: var(--accent-g); }
+#btn-listen.active {
+  background: var(--accent-g);
+  border-color: var(--accent);
+  box-shadow: 0 0 16px rgba(0,232,192,0.15);
+}
+#btn-listen.active .btn-mic-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+.btn-mic-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
 
-    /* ─── Main content ─── */
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 0;
-      padding: 0;
-    }
+/* ─────────── TAB BAR ─────────── */
+#tab-bar {
+  flex-shrink: 0;
+  height: var(--tab-bar-h);
+  display: flex;
+  background: var(--s1);
+  border-bottom: 1px solid var(--border);
+}
 
-    @media (min-width: 900px) {
-      main {
-        grid-template-columns: 1fr 1fr;
-      }
-    }
+.tab {
+  flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  border: none; background: none;
+  color: var(--text3);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: color 0.2s;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 20%; right: 20%; height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  transform: scaleX(0);
+  transition: transform 0.2s;
+}
+.tab.active { color: var(--accent); }
+.tab.active::after { transform: scaleX(1); }
+.tab-icon { font-size: 1.1rem; line-height: 1; }
 
-    /* ─── Section cards ─── */
-    .section {
-      border-bottom: 1px solid var(--border2);
-      padding: 14px 16px;
-    }
-    .section:last-child { border-bottom: none; }
+/* ─────────── VIEWS ─────────── */
+#views {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
 
-    @media (min-width: 900px) {
-      .section { border-right: 1px solid var(--border2); border-bottom: 1px solid var(--border2); }
-    }
+.view {
+  position: absolute; inset: 0;
+  overflow: hidden;
+  display: none;
+  flex-direction: column;
+}
+.view.active { display: flex; }
 
-    .section-label {
-      font-size: 0.6rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--text2);
-      margin-bottom: 10px;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .section-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: var(--border);
-    }
+/* ─────────── VIEW: LISTEN ─────────── */
+/* Split: spectrogram top, detection bottom — BOTH FIXED HEIGHT */
+#view-listen {
+  gap: 0;
+}
 
-    /* ─── Spectrogram ─── */
-    .spectrogram-wrap {
-      position: relative;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-      background: #000;
-    }
-    #spectrogram {
-      display: block;
-      width: 100%;
-      height: 200px;
-      image-rendering: pixelated;
-    }
-    .freq-labels {
-      position: absolute;
-      right: 6px; top: 0; bottom: 0;
-      display: flex; flex-direction: column;
-      justify-content: space-between;
-      padding: 4px 0;
-      pointer-events: none;
-    }
-    .freq-label {
-      font-size: 0.55rem;
-      color: rgba(255,255,255,0.4);
-      line-height: 1;
-    }
-    /* Species frequency markers */
-    .freq-marker {
-      position: absolute;
-      left: 0; right: 50px;
-      height: 1px;
-      opacity: 0.4;
-      pointer-events: none;
-    }
-    .freq-marker-label {
-      position: absolute;
-      right: 52px;
-      font-size: 0.5rem;
-      transform: translateY(-50%);
-      pointer-events: none;
-      opacity: 0.6;
-    }
+.listen-top {
+  flex-shrink: 0;
+  height: 220px;
+  padding: 12px 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
 
-    /* Time axis */
-    .time-axis {
-      display: flex; justify-content: space-between;
-      padding: 4px 0 0;
-      font-size: 0.55rem;
-      color: var(--text2);
-    }
+.panel-label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text2);
+  display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0;
+}
+.panel-label::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: var(--border);
+}
 
-    /* ─── Detection cards ─── */
-    .detections-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 80px;
-    }
+.spectrogram-container {
+  flex: 1;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: #000;
+  min-height: 0;
+}
+#spectrogram {
+  display: block; width: 100%; height: 100%;
+  image-rendering: pixelated;
+}
+.freq-overlay {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
 
-    .detection-card {
-      display: flex; align-items: center; gap: 12px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
-      transition: all 0.3s;
-      animation: slide-in 0.3s ease-out;
-    }
-    @keyframes slide-in {
-      from { opacity: 0; transform: translateY(-6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
+/* waveform strip */
+.waveform-strip {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 14px 10px;
+  display: flex; align-items: stretch; gap: 8px;
+}
+#waveform {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--s1);
+  display: block;
+}
+.waveform-info {
+  flex-shrink: 0;
+  display: flex; flex-direction: column;
+  justify-content: center;
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.52rem;
+  color: var(--text2);
+  gap: 2px;
+}
 
-    .detect-ring {
-      flex-shrink: 0;
-      width: 44px; height: 44px;
-      position: relative;
-    }
-    .detect-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-    .detect-ring .ring-bg  { fill: none; stroke: var(--border);  stroke-width: 3; }
-    .detect-ring .ring-val { fill: none; stroke-width: 3; stroke-linecap: round; transition: stroke-dashoffset 0.5s ease; }
-    .detect-ring .ring-label {
-      position: absolute; inset: 0;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 0.6rem;
-      font-weight: 700;
-      transform: none;
-    }
+/* Detection zone — FIXED HEIGHT, internal scroll if overflow */
+.listen-bottom {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 14px 14px;
+  gap: 8px;
+  overflow: hidden; /* critical — never grows the parent */
+}
 
-    .detect-info { flex: 1; }
-    .detect-species { font-size: 0.75rem; font-weight: 700; line-height: 1.2; }
-    .detect-disease { font-size: 0.6rem; color: var(--text2); margin-top: 2px; }
-    .detect-freq    { font-size: 0.6rem; color: var(--text2); margin-top: 2px; font-style: italic; }
+/* Detection grid: 4 fixed-size cells, always present */
+.detection-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
 
-    .detect-snr {
-      text-align: right;
-      flex-shrink: 0;
-    }
-    .snr-val { font-size: 1rem; font-weight: 700; }
-    .snr-label { font-size: 0.55rem; color: var(--text2); }
+.detect-cell {
+  background: var(--s1);
+  border: 1px solid var(--border3);
+  border-radius: var(--r);
+  padding: 9px 11px;
+  display: flex; flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.3s, background 0.3s;
+  overflow: hidden; /* never expands */
+  min-height: 0;
+  position: relative;
+}
+.detect-cell.hot {
+  border-color: var(--cell-color, var(--accent));
+  background: color-mix(in srgb, var(--cell-color, var(--accent)) 6%, var(--s1));
+}
+.detect-cell.hot::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: var(--cell-color, var(--accent));
+  border-radius: var(--r) var(--r) 0 0;
+}
 
-    .no-detection {
-      display: flex; flex-direction: column; align-items: center;
-      justify-content: center; gap: 6px;
-      padding: 20px;
-      color: var(--text3);
-      font-size: 0.7rem;
-      text-align: center;
-    }
-    .no-detection .nd-icon { font-size: 1.5rem; opacity: 0.4; }
+.dc-header {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.dc-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--cell-color, var(--text3));
+  flex-shrink: 0;
+}
+.dc-species {
+  font-size: 0.62rem; font-weight: 600;
+  color: var(--text2);
+  flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dc-disease {
+  font-size: 0.52rem; color: var(--text3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 
-    /* ─── Stats grid ─── */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-    }
+.dc-body {
+  flex: 1; min-height: 0;
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 4px;
+}
 
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      position: relative;
-      overflow: hidden;
-    }
-    .stat-card::before {
-      content: '';
-      position: absolute;
-      left: 0; top: 0; bottom: 0;
-      width: 3px;
-    }
-    .stat-species { font-size: 0.58rem; color: var(--text2); margin-bottom: 4px; }
-    .stat-count   { font-size: 1.4rem; font-weight: 700; line-height: 1; }
-    .stat-sub     { font-size: 0.55rem; color: var(--text2); margin-top: 2px; }
+.dc-conf {
+  font-family: 'Syne Mono', monospace;
+  font-size: 1.4rem; font-weight: 700; line-height: 1;
+  color: var(--text3);
+  transition: color 0.3s;
+}
+.detect-cell.hot .dc-conf {
+  color: var(--cell-color, var(--accent));
+}
 
-    /* ─── Federated status ─── */
-    .fed-status {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .fed-icon { font-size: 1.2rem; flex-shrink: 0; }
-    .fed-info { flex: 1; }
-    .fed-title { font-size: 0.7rem; font-weight: 700; }
-    .fed-desc  { font-size: 0.6rem; color: var(--text2); margin-top: 2px; }
-    .fed-bar-wrap {
-      width: 80px;
-      flex-shrink: 0;
-    }
-    .fed-bar {
-      height: 4px;
-      background: var(--surface2);
-      border-radius: 2px;
-      overflow: hidden;
-      margin-bottom: 2px;
-    }
-    .fed-bar-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 2px;
-      transition: width 0.5s ease;
-    }
-    .fed-pct { font-size: 0.55rem; color: var(--text2); text-align: right; }
+.dc-meta {
+  display: flex; flex-direction: column;
+  align-items: flex-end; gap: 1px;
+}
+.dc-freq {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.55rem; color: var(--text2);
+}
+.dc-snr {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.55rem; color: var(--text2);
+}
 
-    /* ─── DP Noise indicator ─── */
-    .dp-badge {
-      display: inline-flex; align-items: center; gap: 4px;
-      background: rgba(0,255,200,0.06);
-      border: 1px solid rgba(0,255,200,0.2);
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-size: 0.55rem;
-      color: var(--accent);
-    }
+/* Confidence bar at bottom of cell */
+.dc-bar {
+  width: 100%; height: 2px;
+  background: var(--border3);
+  border-radius: 1px;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.dc-bar-fill {
+  height: 100%;
+  background: var(--cell-color, var(--text3));
+  border-radius: 1px;
+  transition: width 0.4s ease;
+}
 
-    /* ─── Map ─── */
-    #map {
-      height: 260px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-    }
+/* Legend strip below detection grid */
+.detect-legend {
+  flex-shrink: 0;
+  display: flex; gap: 12px; flex-wrap: wrap;
+  font-size: 0.55rem; color: var(--text2);
+  padding-top: 2px;
+}
+.dl-item { display: flex; align-items: center; gap: 4px; }
+.dl-dot  { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 
-    /* Leaflet dark theme override */
-    .leaflet-container {
-      background: #0a1020 !important;
-      font-family: 'JetBrains Mono', monospace !important;
-    }
-    .leaflet-tile { filter: invert(1) hue-rotate(195deg) brightness(0.7) saturate(1.2); }
-    .leaflet-control-zoom-in, .leaflet-control-zoom-out {
-      background: var(--surface2) !important;
-      color: var(--text) !important;
-      border-color: var(--border) !important;
-    }
-    .leaflet-control-attribution { display: none; }
+/* ─────────── VIEW: MAP ─────────── */
+#view-map {
+  gap: 0;
+}
 
-    /* ─── Waveform mini display ─── */
-    #waveform {
-      display: block;
-      width: 100%;
-      height: 48px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
-    }
+.map-controls {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--s1);
+}
 
-    /* ─── Session stats footer ─── */
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 10px 16px;
-      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
-      font-size: 0.6rem;
-      color: var(--text2);
-      background: var(--surface);
-    }
-    .privacy-badge {
-      display: flex; align-items: center; gap: 4px;
-      color: var(--success);
-    }
+.year-row {
+  display: flex; align-items: center; gap: 10px;
+}
+.year-lbl {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.58rem; color: var(--text2);
+  letter-spacing: 0.12em;
+  flex-shrink: 0; white-space: nowrap;
+}
+#year-slider {
+  flex: 1;
+  -webkit-appearance: none; appearance: none;
+  height: 4px; background: var(--s3);
+  border-radius: 2px; outline: none;
+  cursor: pointer;
+}
+#year-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(0,232,192,0.4);
+  cursor: pointer;
+}
+#year-label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.82rem; font-weight: 700;
+  color: var(--accent);
+  min-width: 36px; text-align: right;
+  flex-shrink: 0;
+}
 
-    /* ─── Alert overlay ─── */
-    .alert-toast {
-      position: fixed;
-      top: 70px; left: 50%; transform: translateX(-50%) translateY(-20px);
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 20px;
-      font-size: 0.75rem;
-      z-index: 200;
-      opacity: 0;
-      transition: all 0.3s ease;
-      max-width: 90vw;
-      text-align: center;
-    }
-    .alert-toast.show {
-      opacity: 1; transform: translateX(-50%) translateY(0);
-    }
+.year-ticks {
+  display: flex; justify-content: space-between;
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.45rem; color: var(--text3);
+  padding: 0 2px;
+}
 
-    /* ── Year slider ── */
-    .year-bar {
-      display: flex; align-items: center; gap: 8px;
-      margin-bottom: 4px;
-    }
-    .year-bar-label {
-      font-size: 0.58rem; color: var(--text2); flex-shrink: 0;
-      letter-spacing: 0.12em;
-    }
-    #year-slider {
-      flex: 1; height: 3px; cursor: pointer;
-      accent-color: var(--accent);
-      -webkit-appearance: none; appearance: none;
-      background: var(--border); border-radius: 2px; outline: none;
-    }
-    #year-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; width: 14px; height: 14px;
-      border-radius: 50%; background: var(--accent);
-      box-shadow: 0 0 6px var(--accent-glow); cursor: pointer;
-    }
-    .year-value {
-      font-size: 0.78rem; font-weight: 700; color: var(--accent);
-      min-width: 34px; text-align: right; flex-shrink: 0;
-    }
-    .year-ticks {
-      display: flex; justify-content: space-between;
-      font-size: 0.48rem; color: var(--text3);
-      margin-bottom: 8px; padding: 0 1px;
-    }
+.map-legend-row {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.ml-item { display: flex; align-items: center; gap: 5px; font-size: 0.58rem; color: var(--text2); }
+.ml-circle { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; opacity: 0.85; }
 
-    /* ── Map legend row ── */
-    .map-legend-row {
-      display: flex; gap: 10px; flex-wrap: wrap;
-      font-size: 0.58rem; color: var(--text2);
-      margin-top: 6px;
-    }
+/* map key explanation */
+.map-key-banner {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  font-size: 0.57rem; color: var(--text2);
+  line-height: 1.55;
+}
+.map-key-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
 
-    /* ── Data sources panel ── */
-    .sources-panel {
-      margin-top: 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--surface);
-      overflow: hidden;
-    }
-    .sources-summary {
-      padding: 7px 11px;
-      font-size: 0.62rem; color: var(--text2);
-      cursor: pointer; user-select: none;
-      list-style: none;
-    }
-    .sources-summary::-webkit-details-marker { display: none; }
-    .sources-summary:hover { color: var(--accent); }
-    .sources-body {
-      padding: 0 12px 12px;
-      font-size: 0.58rem; color: var(--text2);
-      line-height: 1.75;
-      border-top: 1px solid var(--border2);
-    }
-    .sources-body p { margin: 8px 0 4px; }
-    .sources-body ul { padding-left: 14px; }
-    .sources-body li { margin-bottom: 4px; }
-    .sources-body em { color: var(--text3); font-style: normal; }
-    .sources-note { color: var(--text3) !important; font-size: 0.55rem !important; margin-top: 8px !important; }
+#map-container {
+  flex: 1; min-height: 0;
+  position: relative;
+}
+#map { width: 100%; height: 100%; }
 
-    /* Permission screen */
-    /* Permission screen */
-    #permission-screen {
-      position: fixed; inset: 0;
-      background: var(--bg);
-      display: none;
-      flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 20px;
-      padding: 40px 24px;
-      z-index: 400;
-      text-align: center;
-    }
-    #permission-screen.show { display: flex; }
-    .perm-title { font-family: 'Unbounded', sans-serif; font-size: 1.3rem; color: var(--accent); }
-    .perm-desc { font-size: 0.75rem; color: var(--text2); line-height: 1.7; max-width: 340px; }
-    .btn-allow {
-      background: var(--accent);
-      color: var(--bg);
-      border: none;
-      border-radius: 10px;
-      padding: 14px 32px;
-      font-family: inherit;
-      font-size: 0.85rem;
-      font-weight: 700;
-      cursor: pointer;
-      letter-spacing: 0.05em;
-    }
-    .btn-allow:hover { opacity: 0.9; }
-    .perm-note { font-size: 0.6rem; color: var(--text3); }
+/* Leaflet dark skin */
+.leaflet-container { background: #061422 !important; font-family: 'Space Grotesk', sans-serif !important; }
+.leaflet-tile { filter: invert(1) hue-rotate(195deg) brightness(0.65) saturate(1.3); }
+.leaflet-control-zoom-in, .leaflet-control-zoom-out {
+  background: var(--s2) !important; color: var(--text1) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-attribution { display: none; }
 
-    /* Loading bar */
-    .loading-bar {
-      width: 200px; height: 2px;
-      background: var(--border);
-      border-radius: 2px;
-      overflow: hidden;
-    }
-    .loading-bar-fill {
-      height: 100%;
-      background: var(--accent);
-      border-radius: 2px;
-      animation: loading-anim 2s ease-in-out infinite;
-    }
-    @keyframes loading-anim {
-      0%   { width: 0%; margin-left: 0; }
-      50%  { width: 60%; margin-left: 20%; }
-      100% { width: 0%; margin-left: 100%; }
-    }
-  </style>
+/* ─────────── VIEW: STATS ─────────── */
+#view-stats {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px;
+  gap: 12px;
+}
+
+.stats-section-title {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.6rem; letter-spacing: 0.18em;
+  text-transform: uppercase; color: var(--text2);
+  margin-bottom: 8px;
+}
+
+.species-stat-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sp-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 12px;
+  position: relative;
+  overflow: hidden;
+}
+.sp-card::after {
+  content: '';
+  position: absolute; top: 0; left: 0; bottom: 0; width: 3px;
+  background: var(--sp-color, var(--accent));
+  border-radius: var(--r-lg) 0 0 var(--r-lg);
+}
+.sp-card-name { font-size: 0.58rem; color: var(--text2); margin-bottom: 4px; }
+.sp-card-count {
+  font-family: 'Syne Mono', monospace;
+  font-size: 1.6rem; font-weight: 700; line-height: 1;
+  color: var(--sp-color, var(--accent));
+  transition: color 0.3s;
+}
+.sp-card-disease { font-size: 0.5rem; color: var(--text3); margin-top: 3px; }
+
+.info-cards { display: flex; flex-direction: column; gap: 8px; }
+
+.info-card {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 12px 14px;
+}
+.ic-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ic-title { font-size: 0.68rem; font-weight: 600; color: var(--text1); }
+.ic-value {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.82rem; color: var(--accent);
+}
+.ic-sub { font-size: 0.55rem; color: var(--text2); margin-top: 3px; }
+
+.fed-bar-wrap { margin-top: 8px; }
+.fed-bar {
+  height: 3px; background: var(--s3); border-radius: 2px;
+  overflow: hidden; margin-bottom: 4px;
+}
+.fed-bar-fill {
+  height: 100%; background: var(--accent);
+  border-radius: 2px; transition: width 0.5s ease;
+}
+.fed-sub-row {
+  display: flex; justify-content: space-between;
+  font-size: 0.52rem; color: var(--text3);
+}
+.dp-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(0,232,192,0.07);
+  border: 1px solid rgba(0,232,192,0.18);
+  border-radius: 4px; padding: 2px 7px;
+  font-size: 0.52rem; color: var(--accent);
+  margin-top: 6px;
+}
+
+/* ─────────── VIEW: INFO ─────────── */
+#view-info {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px;
+  gap: 12px;
+}
+
+.info-section {
+  background: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.info-section-header {
+  padding: 12px 14px;
+  background: var(--s2);
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.info-section-header .ish-icon { font-size: 1.1rem; flex-shrink: 0; }
+.info-section-header .ish-title { font-size: 0.72rem; font-weight: 600; color: var(--text1); flex: 1; }
+.info-section-header .ish-chevron { font-size: 0.7rem; color: var(--text2); transition: transform 0.2s; flex-shrink: 0; }
+.info-section[open] .ish-chevron { transform: rotate(90deg); }
+.info-section-body { padding: 12px 14px; font-size: 0.62rem; color: var(--text2); line-height: 1.75; }
+.info-section-body ul { padding-left: 14px; }
+.info-section-body li { margin-bottom: 5px; }
+.info-section-body strong { color: var(--text1); }
+.info-section-body a { color: var(--accent); text-decoration: none; }
+.info-section-body .tag {
+  display: inline-block;
+  background: var(--s3); border-radius: 4px;
+  padding: 1px 6px; font-size: 0.55rem;
+  font-family: 'Syne Mono', monospace;
+  color: var(--accent); margin: 0 2px;
+}
+
+/* Species table */
+.sp-table { width: 100%; border-collapse: collapse; font-size: 0.58rem; }
+.sp-table th { text-align: left; color: var(--text3); font-weight: 500; padding: 4px 6px; border-bottom: 1px solid var(--border); font-family: 'Syne Mono', monospace; font-size: 0.52rem; }
+.sp-table td { padding: 6px 6px; border-bottom: 1px solid var(--border3); color: var(--text2); vertical-align: middle; }
+.sp-table td:first-child { color: var(--text1); font-weight: 600; }
+.sp-dot-cell { display: flex; align-items: center; gap: 6px; }
+.sp-dot-sm { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+/* ─────────── SPLASH ─────────── */
+#splash {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 20px;
+  transition: opacity 0.5s ease;
+}
+#splash.out { opacity: 0; pointer-events: none; }
+.splash-logo-text {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800;
+  font-size: 1.8rem;
+  color: var(--accent);
+  letter-spacing: -0.04em;
+}
+.splash-sub {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.62rem;
+  color: var(--text2);
+  letter-spacing: 0.2em;
+}
+.splash-ring {
+  width: 56px; height: 56px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  position: relative;
+  animation: splash-pulse 1.8s ease-out infinite;
+}
+.splash-ring::after {
+  content: '';
+  position: absolute; inset: 10px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: splash-core 1.8s ease-in-out infinite;
+}
+@keyframes splash-pulse { 0%{transform:scale(0.85);opacity:1} 100%{transform:scale(1.35);opacity:0} }
+@keyframes splash-core  { 0%,100%{opacity:1}50%{opacity:0.3} }
+.splash-progress {
+  width: 180px; height: 2px;
+  background: var(--border);
+  border-radius: 1px; overflow: hidden;
+}
+.splash-progress-fill {
+  height: 100%; width: 0;
+  background: var(--accent);
+  border-radius: 1px;
+  animation: splash-load 1.5s ease-in-out forwards;
+}
+@keyframes splash-load { to { width: 100%; } }
+
+/* ─────────── PERMISSION SCREEN ─────────── */
+#perm-screen {
+  position: fixed; inset: 0; z-index: 8000;
+  background: rgba(3,11,20,0.97);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 18px; padding: 32px 24px;
+  text-align: center;
+}
+#perm-screen.show { display: flex; }
+.perm-icon { font-size: 2.5rem; }
+.perm-title {
+  font-family: 'Syne', sans-serif;
+  font-weight: 800; font-size: 1.2rem;
+  color: var(--accent);
+}
+.perm-body { font-size: 0.7rem; color: var(--text2); line-height: 1.7; max-width: 320px; }
+.perm-btn {
+  background: var(--accent); color: var(--bg);
+  border: none; border-radius: var(--r);
+  padding: 14px 36px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.85rem; font-weight: 700;
+  cursor: pointer; letter-spacing: 0.04em;
+}
+.perm-note { font-size: 0.55rem; color: var(--text3); max-width: 280px; line-height: 1.6; }
+
+/* ─────────── TOAST ─────────── */
+#toast {
+  position: fixed; top: 64px; left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: var(--s2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 10px 18px;
+  font-size: 0.7rem; color: var(--text1);
+  z-index: 7000; max-width: 90vw;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  text-align: center; white-space: nowrap;
+}
+#toast.show {
+  opacity: 1; pointer-events: auto;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ─────────── FOOTER ─────────── */
+#footer {
+  flex-shrink: 0;
+  height: 32px;
+  display: flex; align-items: center;
+  padding: 0 14px; gap: 12px;
+  border-top: 1px solid var(--border);
+  background: var(--s1);
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.52rem; color: var(--text3);
+  overflow: hidden;
+}
+.footer-kv { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.footer-val { color: var(--text2); }
+.footer-dot { width: 1px; height: 10px; background: var(--border); flex-shrink: 0; }
+.footer-spacer { flex: 1; }
+.privacy-mark { color: var(--green); }
+</style>
 </head>
-
 <body>
 
-<!-- ════════════════════════════════════════
-     SPLASH SCREEN
-════════════════════════════════════════ -->
+<!-- SPLASH -->
 <div id="splash">
-  <div class="splash-logo">🦟 MosquitoNet</div>
-  <div class="splash-sub">Vector Acoustic Surveillance Network</div>
-  <div class="splash-pulse"></div>
-  <div class="loading-bar"><div class="loading-bar-fill"></div></div>
-  <div style="font-size:0.6rem;color:var(--text2);">Initializing signal processing engine...</div>
+  <div class="splash-logo-text">🦟 MosquitoNet</div>
+  <div class="splash-sub">Vector Acoustic Surveillance</div>
+  <div class="splash-ring"></div>
+  <div class="splash-progress"><div class="splash-progress-fill"></div></div>
+  <div style="font-family:'Syne Mono',monospace;font-size:0.58rem;color:var(--text2)">Initializing…</div>
 </div>
 
-<!-- ════════════════════════════════════════
-     PERMISSION SCREEN
-════════════════════════════════════════ -->
-<div id="permission-screen">
-  <div style="font-size:3rem;">🎙️</div>
+<!-- PERMISSION -->
+<div id="perm-screen">
+  <div class="perm-icon">🎙️</div>
   <div class="perm-title">Microphone Access</div>
-  <div class="perm-desc">
-    MosquitoNet listens passively at night for mosquito wingbeat frequencies
-    (200–800 Hz). <strong>No audio is ever stored or transmitted.</strong>
-    Only anonymized density estimates contribute to the global map.
-    All processing happens entirely on this device.
+  <div class="perm-body">
+    MosquitoNet passively listens for mosquito wingbeat frequencies (200–800 Hz).
+    <strong>No audio is ever stored or transmitted.</strong>
+    All classification runs entirely on this device.
   </div>
-  <div class="dp-badge">🔒 Differential Privacy ε=1.0 enforced</div>
-  <button class="btn-allow" id="btn-allow">Grant Microphone Access</button>
-  <div class="perm-note">
-    Microphone permission is required for acoustic vector detection.<br>
-    Audio is processed locally only — never recorded or uploaded.
-  </div>
+  <div class="dp-badge">🔒 Differential Privacy ε=1.0</div>
+  <button class="perm-btn" id="btn-allow">Allow Microphone</button>
+  <div class="perm-note">Audio is processed locally only — never recorded or uploaded to any server.</div>
 </div>
 
-<!-- ════════════════════════════════════════
-     ALERT TOAST
-════════════════════════════════════════ -->
-<div class="alert-toast" id="toast"></div>
+<!-- TOAST -->
+<div id="toast"></div>
 
-<!-- ════════════════════════════════════════
-     MAIN APP
-════════════════════════════════════════ -->
+<!-- APP -->
 <div id="app">
 
-  <!-- Header -->
-  <header>
-    <div class="logo">Mosquito<span>Net</span></div>
-    <div class="status-badge">
+  <!-- HEADER -->
+  <header id="header">
+    <div class="logo-mark">Mosquito<span>Net</span></div>
+    <div class="header-pill">
       <div class="status-dot" id="status-dot"></div>
       <span id="status-text">OFFLINE</span>
     </div>
-    <div class="header-spacer"></div>
-    <button class="btn-mic" id="btn-mic">
-      <span class="mic-icon">🎙</span>
-      <span id="mic-label">START</span>
+    <div class="spacer"></div>
+    <button id="btn-listen">
+      <div class="btn-mic-dot"></div>
+      <span id="btn-listen-label">START</span>
     </button>
   </header>
 
-  <main>
+  <!-- TAB BAR -->
+  <nav id="tab-bar">
+    <button class="tab active" data-tab="listen">
+      <span class="tab-icon">📡</span>LISTEN
+    </button>
+    <button class="tab" data-tab="map">
+      <span class="tab-icon">🗺</span>MAP
+    </button>
+    <button class="tab" data-tab="stats">
+      <span class="tab-icon">📊</span>STATS
+    </button>
+    <button class="tab" data-tab="info">
+      <span class="tab-icon">ℹ️</span>INFO
+    </button>
+  </nav>
 
-    <!-- ── LEFT COLUMN ── -->
-    <div>
+  <!-- VIEWS -->
+  <div id="views">
 
-      <!-- Spectrogram -->
-      <div class="section">
-        <div class="section-label">Real-Time Spectrogram</div>
-        <div class="spectrogram-wrap" id="spec-wrap">
+    <!-- ══ LISTEN VIEW ══ -->
+    <div class="view active" id="view-listen">
+
+      <!-- Spectrogram panel (fixed height 220px) -->
+      <div class="listen-top">
+        <div class="panel-label">Live Spectrogram · 80–1200 Hz</div>
+        <div class="spectrogram-container">
           <canvas id="spectrogram"></canvas>
-          <div class="freq-labels" id="freq-labels"></div>
-          <!-- Species markers injected by JS -->
-        </div>
-        <div class="time-axis">
-          <span>−10s</span><span>−7.5s</span>
-          <span>−5s</span><span>−2.5s</span><span>NOW</span>
+          <div class="freq-overlay" id="freq-overlay"></div>
         </div>
       </div>
 
-      <!-- Waveform -->
-      <div class="section">
-        <div class="section-label">Waveform Monitor</div>
+      <!-- Waveform (fixed 44px) -->
+      <div class="waveform-strip">
         <canvas id="waveform"></canvas>
-      </div>
-
-      <!-- Current detections -->
-      <div class="section">
-        <div class="section-label">Live Detections</div>
-        <div class="detections-list" id="detections">
-          <div class="no-detection">
-            <div class="nd-icon">🔇</div>
-            <div>Listening for mosquito wingbeat signatures…</div>
-            <div style="font-size:0.6rem;color:var(--text3);margin-top:4px;">
-              Best results in quiet environment after dark
-            </div>
-          </div>
+        <div class="waveform-info">
+          <span id="wf-rms" style="font-family:'Syne Mono',monospace;font-size:0.6rem;color:var(--text2)">– dB</span>
+          <span style="font-size:0.5rem;color:var(--text3)">44.1 kHz</span>
         </div>
       </div>
 
+      <!-- Detection grid (fills remaining height, NEVER changes height) -->
+      <div class="listen-bottom">
+        <div class="panel-label">Species Detection · 4 Targets</div>
+
+        <!-- 4 fixed cells — one per species, always present -->
+        <div class="detection-grid" id="detection-grid">
+          <!-- Populated by JS once -->
+        </div>
+
+        <!-- Legend -->
+        <div class="detect-legend">
+          <div class="dl-item"><div class="dl-dot" style="background:var(--sp0)"></div>Anopheles → Malaria</div>
+          <div class="dl-item"><div class="dl-dot" style="background:var(--sp1)"></div>Ae. aegypti → Dengue</div>
+          <div class="dl-item"><div class="dl-dot" style="background:var(--sp2)"></div>Ae. albopictus → Chik.</div>
+          <div class="dl-item"><div class="dl-dot" style="background:var(--sp3)"></div>Culex → WNV</div>
+        </div>
+      </div>
     </div>
 
-    <!-- ── RIGHT COLUMN ── -->
-    <div>
+    <!-- ══ MAP VIEW ══ -->
+    <div class="view" id="view-map">
 
-      <!-- Session statistics -->
-      <div class="section">
-        <div class="section-label">Session Statistics</div>
-        <div class="stats-grid" id="stats-grid">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-
-      <!-- Federated learning status -->
-      <div class="section">
-        <div class="section-label">Federated Learning</div>
-        <div class="fed-status">
-          <div class="fed-icon">🧠</div>
-          <div class="fed-info">
-            <div class="fed-title">Local Model Update</div>
-            <div class="fed-desc" id="fed-desc">Awaiting detections to train on…</div>
-            <div style="margin-top:5px;" class="dp-badge">🔒 ε=1.0 DP-SGD active</div>
-          </div>
-          <div class="fed-bar-wrap">
-            <div class="fed-bar"><div class="fed-bar-fill" id="fed-bar" style="width:0%"></div></div>
-            <div class="fed-pct" id="fed-pct">0 / 100 steps</div>
+      <div class="map-controls">
+        <!-- What the circles mean -->
+        <div class="map-key-banner">
+          <div class="map-key-icon">🔵</div>
+          <div>
+            <strong style="color:var(--text1);font-size:0.62rem;">What each circle represents:</strong>
+            Each coloured dot = one city-level vector presence record from WHO/PAHO/CDC/ECDC surveillance data.
+            Colour = species. Opacity = relative burden intensity.
+            <span class="tag">drag to pan</span> <span class="tag">pinch to zoom</span>
           </div>
         </div>
-      </div>
 
-      <!-- Global density map -->
-      <div class="section">
-        <div class="section-label">Global Vector Density Map</div>
-
-        <!-- Year controls -->
-        <div class="year-bar">
-          <span class="year-bar-label">YEAR</span>
+        <!-- Year slider -->
+        <div class="year-row">
+          <span class="year-lbl">YEAR</span>
           <input type="range" id="year-slider" min="0" max="10" value="10" step="1">
-          <span id="year-label" class="year-value">ALL</span>
+          <span id="year-label">ALL</span>
         </div>
         <div class="year-ticks">
           <span>1996</span><span>2000</span><span>2005</span><span>2010</span>
@@ -735,60 +890,181 @@
           <span>2023</span><span>2024</span><span>ALL</span>
         </div>
 
-        <div id="map"></div>
-
-        <!-- Species legend -->
+        <!-- Legend -->
         <div class="map-legend-row">
-          <span style="color:var(--sp-anopheles);">● Anopheles</span>
-          <span style="color:var(--sp-aegypti);">● Ae. aegypti</span>
-          <span style="color:var(--sp-albopictus);">● Ae. albopictus</span>
-          <span style="color:var(--sp-culex);">● Culex</span>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp0)"></div>Anopheles (Malaria)</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp1)"></div>Ae. aegypti (Dengue)</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp2)"></div>Ae. albopictus (Dengue/Chik.)</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp3)"></div>Culex (West Nile / JE)</div>
         </div>
-
-        <!-- Data sources -->
-        <details class="sources-panel">
-          <summary class="sources-summary">📖 Data Sources &amp; Methodology</summary>
-          <div class="sources-body">
-            <p><strong>All data is free, public, and peer-reviewed.</strong> Each dot represents a city-level vector presence record; radii are pre-validated to keep all scatter on land.</p>
-            <ul>
-              <li><strong>WHO World Malaria Report 2025</strong> — country-level burden data (282M cases, 610K deaths in 2024). Top 11 high-burden countries listed explicitly. <em>who.int/malaria/reports</em></li>
-              <li><strong>PAHO Dengue Multi-Country Outbreak 2024</strong> — 14.4M Americas cases (record). Country breakdown: Brazil 10M+, Argentina 582K, Mexico 559K, Colombia 321K, Paraguay 296K, Peru 272K, Guatemala 189K, Honduras 177K. <em>paho.org</em></li>
-              <li><strong>WHO Weekly Epidemiological Record WER-10052 (2025)</strong> — Global dengue 2024 country data including SE Asia / Western Pacific. <em>who.int/wer</em></li>
-              <li><strong>CDC ArboNET West Nile Virus 2024</strong> — 1,466 US WNV cases; South Dakota has highest cumulative seroprevalence (13% population). <em>cdc.gov/west-nile-virus</em></li>
-              <li><strong>ECDC Mosquito Distribution Maps (May 2024)</strong> — Ae. albopictus established in 13 EU countries; newly introduced 2024 in France (6 regions), Germany, Netherlands, Portugal, Slovenia. Ae. aegypti introduced Gran Canaria (Spain) 2024. <em>ecdc.europa.eu/mosquito-maps</em></li>
-              <li><strong>ECDC West Nile Virus Surveillance 2024</strong> — 1,200 European WNV cases; Italy leading (767 cases in 2025 ytd). Northward expansion to Germany and Netherlands documented. <em>ecdc.europa.eu/west-nile</em></li>
-              <li><strong>Kraemer et al. 2015 (eLife, DOI: 10.7554/eLife.08347)</strong> — Largest peer-reviewed global compendium of Aedes aegypti &amp; albopictus occurrence records. Used for Japan, Korea, China, Turkey distributions.</li>
-              <li><strong>WHO Malaria Fact Sheet 2025</strong> — An. stephensi urban spread in Horn of Africa and India. <em>who.int/fact-sheets/malaria</em></li>
-            </ul>
-            <p class="sources-note"><strong>Historical data (1996–2023):</strong> Same agencies' archived annual reports, accessed via WHO IRIS, PAHO Pan-Docs, and ECDC Technical Documents repositories. All city centroids verified against OpenStreetMap (OSM) node coordinates. Coastal and island cities use r ≤ 0.22° to stay on land.</p>
-          </div>
-        </details>
       </div>
+
+      <div id="map-container">
+        <div id="map"></div>
+      </div>
+    </div>
+
+    <!-- ══ STATS VIEW ══ -->
+    <div class="view" id="view-stats">
+      <div class="stats-section-title">Session Detections</div>
+
+      <div class="species-stat-cards" id="sp-stat-cards">
+        <!-- Built by JS -->
+      </div>
+
+      <div class="stats-section-title">Session Info</div>
+      <div class="info-cards">
+        <div class="info-card">
+          <div class="ic-row">
+            <span class="ic-title">⏱ Session Duration</span>
+            <span class="ic-value" id="stat-session">00:00</span>
+          </div>
+          <div class="ic-sub">Time since monitoring started</div>
+        </div>
+        <div class="info-card">
+          <div class="ic-row">
+            <span class="ic-title">🔬 FFT Samples</span>
+            <span class="ic-value" id="stat-samples">0</span>
+          </div>
+          <div class="ic-sub">4096-point FFT frames analysed</div>
+        </div>
+        <div class="info-card" style="border-color:rgba(245,158,11,0.25);background:rgba(245,158,11,0.04)">
+          <div class="ic-row">
+            <span class="ic-title">📱 Network</span>
+            <span class="ic-value" style="color:var(--amber)">1 device</span>
+          </div>
+          <div class="ic-sub" style="color:var(--text2)">
+            <strong style="color:var(--amber)">This is your device only.</strong>
+            The federated server (federated_server.py) is not running —
+            no other devices have joined. Contributor count would update here
+            if the server were deployed. The number you saw earlier (4,821) was
+            a fake placeholder. It has been removed.
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-section-title" style="margin-top:4px;">Federated Learning</div>
+      <div class="info-cards">
+        <div class="info-card">
+          <div class="ic-row">
+            <span class="ic-title">🧠 Model Training</span>
+            <span class="ic-value" id="fed-round">Round 0</span>
+          </div>
+          <div class="fed-bar-wrap">
+            <div class="fed-bar"><div class="fed-bar-fill" id="fed-bar" style="width:0%"></div></div>
+            <div class="fed-sub-row">
+              <span id="fed-steps">0 / 100 steps</span>
+              <span id="fed-upload">pending upload</span>
+            </div>
+          </div>
+          <div class="dp-badge">🔒 DP-SGD ε=1.0 δ=1e-5 · Gaussian noise σ=0.012</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ INFO VIEW ══ -->
+    <div class="view" id="view-info">
+
+      <details class="info-section" open>
+        <summary class="info-section-header">
+          <span class="ish-icon">🎯</span>
+          <span class="ish-title">How Detection Works</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <p>Each mosquito species beats its wings at a characteristic frequency. The app listens passively through your microphone, computes a real-time FFT spectrogram, and looks for narrow tonal peaks with the right harmonic structure.</p>
+          <table class="sp-table" style="margin-top:10px">
+            <thead>
+              <tr><th>Species</th><th>Freq (Hz)</th><th>Disease</th><th>Risk</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp0)"></div>Anopheles gambiae</div></td><td>~410</td><td>Malaria</td><td style="color:var(--red)">CRITICAL</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp1)"></div>Aedes aegypti</div></td><td>~625</td><td>Dengue/Zika</td><td style="color:var(--amber)">HIGH</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp2)"></div>Ae. albopictus</div></td><td>~668</td><td>Dengue/Chik.</td><td style="color:var(--amber)">HIGH</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp3)"></div>Culex quinquefasciatus</div></td><td>~453</td><td>West Nile</td><td style="color:var(--text2)">MEDIUM</td></tr>
+            </tbody>
+          </table>
+          <p style="margin-top:10px">The classifier scores each species across four factors: SNR (35%), harmonic structure at 2f and 3f (30%), spectral tonality (20%), and peak sharpness (15%). A 5-frame temporal buffer (~200 ms) prevents false positives from brief tones.</p>
+        </div>
+      </details>
+
+      <details class="info-section">
+        <summary class="info-section-header">
+          <span class="ish-icon">🗺️</span>
+          <span class="ish-title">About the Map Data</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <p><strong>Each circle on the map = one city-level vector presence record.</strong> Colour indicates species. Opacity reflects relative burden.</p>
+          <p>All data is from free, public, peer-reviewed sources. Radii are pre-validated to keep scatter on land (coastal cities ≤0.22°).</p>
+          <ul>
+            <li><strong>WHO World Malaria Report 2025</strong> — 282M cases, 610K deaths in 2024. <a href="https://who.int/malaria/reports" target="_blank">who.int</a></li>
+            <li><strong>PAHO Dengue Bulletin 2024</strong> — 14.4M Americas cases (record). Brazil 10M+. <a href="https://paho.org" target="_blank">paho.org</a></li>
+            <li><strong>WHO WER-10052 (2025)</strong> — Global dengue country breakdown.</li>
+            <li><strong>CDC ArboNET 2024</strong> — 1,466 US WNV cases. SD highest seroprevalence. <a href="https://cdc.gov/west-nile-virus" target="_blank">cdc.gov</a></li>
+            <li><strong>ECDC Mosquito Maps (May 2024)</strong> — EU Ae. albopictus distribution. <a href="https://ecdc.europa.eu" target="_blank">ecdc.europa.eu</a></li>
+            <li><strong>Kraemer et al. 2015 (eLife, DOI:10.7554/eLife.08347)</strong> — Global Aedes compendium.</li>
+          </ul>
+          <p>Historical slider spans 1996 (Romania WNV) through 2024. All city centroids verified against OpenStreetMap.</p>
+        </div>
+      </details>
+
+      <details class="info-section">
+        <summary class="info-section-header">
+          <span class="ish-icon">🔒</span>
+          <span class="ish-title">Privacy &amp; Federated Learning</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <ul>
+            <li><strong>No audio stored or transmitted.</strong> Microphone data is processed in real-time and immediately discarded.</li>
+            <li><strong>No audio transmitted.</strong> Only gradient weight updates leave the device.</li>
+            <li><strong>Differential Privacy:</strong> Gaussian mechanism with ε=1.0, δ=1e-5. Gradient L2 norm clipped to 1.0 before noise injection.</li>
+            <li><strong>Anonymous device ID:</strong> Random 128-bit value, SHA-256 hashed before any upload. Never linked to identity.</li>
+            <li><strong>FedAvg:</strong> Aggregates every 100 local steps, weighted by step count.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="info-section">
+        <summary class="info-section-header">
+          <span class="ish-icon">📱</span>
+          <span class="ish-title">Install as iPhone App</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <ul>
+            <li>Open this page in <strong>Safari</strong> (not Chrome)</li>
+            <li>Tap the <strong>Share</strong> button (□↑) at the bottom</li>
+            <li>Tap <strong>"Add to Home Screen"</strong></li>
+            <li>Tap <strong>"Add"</strong></li>
+          </ul>
+          <p>The app will appear on your home screen and run fullscreen without browser chrome. Microphone access works because GitHub Pages serves HTTPS automatically.</p>
+        </div>
+      </details>
 
     </div>
 
-  </main>
+  </div><!-- #views -->
 
-  <!-- Footer -->
-  <footer>
-    <div class="privacy-badge">🔒 No audio stored or transmitted</div>
-    <span>·</span>
-    <span>Session: <span id="session-time">00:00</span></span>
-    <span>·</span>
-    <span>Samples: <span id="sample-count">0</span></span>
-    <span>·</span>
-    <span>Contributors: <span id="contrib-count">4,821</span></span>
-    <span style="margin-left:auto;color:var(--text3);">v1.0.0 — MosquitoNet PWA</span>
+  <!-- FOOTER -->
+  <footer id="footer">
+    <div class="footer-kv privacy-mark">🔒 No audio stored</div>
+    <div class="footer-dot"></div>
+    <div class="footer-kv"><span class="footer-val" id="footer-session">00:00</span></div>
+    <div class="footer-dot"></div>
+    <div class="footer-kv">FFT<span class="footer-val" id="footer-samples">0</span></div>
+    <div class="footer-spacer"></div>
+    <div style="font-family:'Syne Mono',monospace;font-size:0.45rem;color:var(--text3)">v2.0 · MosquitoNet</div>
   </footer>
 
 </div><!-- #app -->
 
-<!-- ════════════════════════════════════════
-     SCRIPTS
-════════════════════════════════════════ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-
 <script>
+'use strict';
+
+
 'use strict';
 
 /* ════════════════════════════════════════════════════════════
@@ -1463,15 +1739,29 @@ class MapController {
   }
 
   init() {
+    // maxBounds prevents panning off the single world copy.
+    // noWrap on tile layer stops horizontal repetition.
+    const WORLD_BOUNDS = L.latLngBounds(
+      L.latLng(-85.05, -180),   // SW corner
+      L.latLng(85.05,   180)    // NE corner
+    );
+
     this.map = L.map('map', {
       center: [15, 20],
       zoom: 2,
+      minZoom: 2,
+      maxZoom: 18,
       zoomControl: true,
       attributionControl: false,
+      worldCopyJump: false,      // disable auto-jump to copied worlds
+      maxBounds: WORLD_BOUNDS,
+      maxBoundsViscosity: 1.0,  // hard wall — cannot drag past edge
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 18,
+      noWrap: true,              // single world copy only
+      bounds: WORLD_BOUNDS,
     }).addTo(this.map);
 
     // Generate and cache all points; year-filtering happens on slider change
@@ -1539,497 +1829,396 @@ class MapController {
     // ══════════════════════════════════════════════════════════════════════════
     const points = [];
     const centers = [
-
-      // ════════════════════════════════════════════════════════════════════════
-      // ANOPHELES — MALARIA  [SOURCE A, SOURCE H]
-      // WHO 2025: 282M cases in 2024; 11 highest-burden countries:
-      // Nigeria, DRC, Niger, Uganda, Tanzania, Burkina Faso, Cameroon,
-      // Ghana, Mali, Mozambique, Sudan
-      // ════════════════════════════════════════════════════════════════════════
-
-      // ── Nigeria (31.9% global malaria deaths 2024) ──
-      { lat:  6.524, lng:  3.379, r: 0.25, n: 55, sp: 0, yr: 2024 },  // Lagos (coastal — r limited to city land)
-      { lat:  9.072, lng:  7.491, r: 0.35, n: 40, sp: 0, yr: 2024 },  // Abuja
-      { lat: 12.002, lng:  8.592, r: 0.35, n: 35, sp: 0, yr: 2024 },  // Kano
-      { lat:  7.376, lng:  3.947, r: 0.35, n: 35, sp: 0, yr: 2024 },  // Ibadan
-      { lat:  6.335, lng:  5.627, r: 0.30, n: 28, sp: 0, yr: 2024 },  // Benin City
-      { lat:  4.815, lng:  7.049, r: 0.20, n: 25, sp: 0, yr: 2024 },  // Port Harcourt (Niger delta — constrained)
-      { lat:  8.492, lng:  4.541, r: 0.35, n: 20, sp: 0, yr: 2024 },  // Ilorin
-      { lat: 10.298, lng: 13.283, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Maiduguri (NE Nigeria)
-
-      // ── DRC (11.7% global malaria deaths 2024) ──
-      { lat: -4.322, lng: 15.322, r: 0.45, n: 60, sp: 0, yr: 2024 },  // Kinshasa
-      { lat: -1.679, lng: 29.222, r: 0.25, n: 30, sp: 0, yr: 2024 },  // Goma (Lake Kivu coast — tight r)
-      { lat:  0.517, lng: 25.198, r: 0.40, n: 28, sp: 0, yr: 2023 },  // Kisangani
-      { lat:-11.663, lng: 27.479, r: 0.40, n: 22, sp: 0, yr: 2023 },  // Lubumbashi
-
-      // ── Niger (6.1% global malaria deaths) ──
-      { lat: 13.512, lng:  2.125, r: 0.40, n: 40, sp: 0, yr: 2024 },  // Niamey
-      { lat: 13.808, lng:  8.988, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Zinder
-
-      // ── Uganda ──
-      { lat:  0.316, lng: 32.582, r: 0.35, n: 40, sp: 0, yr: 2024 },  // Kampala
-      { lat:  0.451, lng: 33.200, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Jinja
-      { lat:  2.774, lng: 32.299, r: 0.30, n: 15, sp: 0, yr: 2023 },  // Gulu
-
-      // ── Tanzania (4.3% global malaria deaths) ──
-      { lat: -6.792, lng: 39.208, r: 0.20, n: 42, sp: 0, yr: 2024 },  // Dar es Salaam (coastal — r=0.20 max)
-      { lat: -3.355, lng: 37.339, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Moshi
-      { lat: -8.900, lng: 33.460, r: 0.35, n: 15, sp: 0, yr: 2023 },  // Mbeya
-
-      // ── Burkina Faso ──
-      { lat: 12.365, lng: -1.533, r: 0.40, n: 38, sp: 0, yr: 2024 },  // Ouagadougou
-      { lat: 11.177, lng: -4.299, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Bobo-Dioulasso
-
-      // ── Mali ──
-      { lat: 12.650, lng: -8.000, r: 0.40, n: 35, sp: 0, yr: 2024 },  // Bamako
-      { lat: 14.500, lng: -4.000, r: 0.25, n: 15, sp: 0, yr: 2022 },  // Mopti (near Niger river — tight)
-
-      // ── Ghana ──
-      { lat:  5.559, lng: -0.197, r: 0.20, n: 35, sp: 0, yr: 2024 },  // Accra (coastal — r limited)
-      { lat:  6.688, lng: -1.624, r: 0.35, n: 18, sp: 0, yr: 2023 },  // Kumasi
-
-      // ── Mozambique ──
-      { lat:-25.966, lng: 32.573, r: 0.20, n: 22, sp: 0, yr: 2024 },  // Maputo (bay — r=0.20)
-      { lat:-19.843, lng: 34.838, r: 0.18, n: 18, sp: 0, yr: 2023 },  // Beira (coastal — r=0.18)
-      { lat:-15.116, lng: 39.267, r: 0.30, n: 15, sp: 0, yr: 2023 },  // Nampula
-
-      // ── Cameroon ──
-      { lat:  3.866, lng: 11.517, r: 0.40, n: 35, sp: 0, yr: 2024 },  // Yaoundé
-      { lat:  4.050, lng:  9.700, r: 0.18, n: 28, sp: 0, yr: 2023 },  // Douala (coastal delta — r=0.18)
-
-      // ── Sudan ──
-      { lat: 15.552, lng: 32.532, r: 0.40, n: 35, sp: 0, yr: 2024 },  // Khartoum
-      { lat: 13.628, lng: 25.349, r: 0.35, n: 15, sp: 0, yr: 2022 },  // El Fasher (Darfur)
-
-      // ── Ethiopia ──
-      { lat:  9.032, lng: 38.740, r: 0.35, n: 25, sp: 0, yr: 2024 },  // Addis Ababa (peri-urban lowlands)
-      { lat:  7.666, lng: 36.834, r: 0.30, n: 18, sp: 0, yr: 2023 },  // Jimma
-      { lat:  7.060, lng: 38.477, r: 0.30, n: 15, sp: 0, yr: 2023 },  // Hawassa
-
-      // ── Kenya ──
-      { lat: -1.292, lng: 36.822, r: 0.30, n: 20, sp: 0, yr: 2024 },  // Nairobi (peri-urban)
-      { lat: -4.043, lng: 39.668, r: 0.18, n: 22, sp: 0, yr: 2023 },  // Mombasa (coastal — r=0.18)
-      { lat:  0.091, lng: 34.768, r: 0.30, n: 15, sp: 0, yr: 2023 },  // Kisumu
-
-      // ── Angola ──
-      { lat: -8.839, lng: 13.234, r: 0.18, n: 32, sp: 0, yr: 2024 },  // Luanda (coastal — r=0.18)
-      { lat:-12.775, lng: 15.739, r: 0.35, n: 15, sp: 0, yr: 2023 },  // Huambo
-
-      // ── Senegal ──
-      { lat: 14.716, lng:-17.467, r: 0.15, n: 22, sp: 0, yr: 2024 },  // Dakar (peninsula — r=0.15 critical)
-      { lat: 14.163, lng:-15.574, r: 0.30, n: 12, sp: 0, yr: 2022 },  // Kaolack (inland Senegal)
-
-      // ── Madagascar ──
-      { lat:-18.910, lng: 47.536, r: 0.35, n: 18, sp: 0, yr: 2023 },  // Antananarivo
-      { lat:-12.352, lng: 49.301, r: 0.20, n: 12, sp: 0, yr: 2022 },  // Antsiranana (coastal — r=0.20)
-
-      // ── South Sudan ──
-      { lat:  4.859, lng: 31.571, r: 0.35, n: 30, sp: 0, yr: 2024 },  // Juba
-
-      // ── CAR ──
-      { lat:  4.361, lng: 18.555, r: 0.35, n: 25, sp: 0, yr: 2023 },  // Bangui
-
-      // ── Côte d'Ivoire / Guinea ──
-      { lat:  9.538, lng:-13.677, r: 0.15, n: 20, sp: 0, yr: 2023 },  // Conakry (peninsula — r=0.15)
-      { lat:  5.354, lng: -4.008, r: 0.22, n: 25, sp: 0, yr: 2024 },  // Abidjan (coastal lagoon — r=0.22)
-
-      // ── Zambia / Zimbabwe ──
-      { lat:-15.417, lng: 28.283, r: 0.40, n: 22, sp: 0, yr: 2023 },  // Lusaka
-      { lat:-17.829, lng: 31.052, r: 0.35, n: 18, sp: 0, yr: 2023 },  // Harare
-
-      // ── West Africa coastal ──
-      { lat:  6.300, lng:-10.797, r: 0.20, n: 20, sp: 0, yr: 2023 },  // Monrovia (coastal — r=0.20)
-      { lat:  8.484, lng:-13.228, r: 0.18, n: 18, sp: 0, yr: 2023 },  // Freetown (peninsula — r=0.18)
-
-      // ── India — An. stephensi [SOURCE H] ──
-      { lat: 19.076, lng: 72.878, r: 0.18, n: 28, sp: 0, yr: 2024 },  // Mumbai (peninsula — r=0.18)
-      { lat: 28.644, lng: 77.216, r: 0.45, n: 22, sp: 0, yr: 2024 },  // Delhi
-      { lat: 15.358, lng: 75.135, r: 0.35, n: 15, sp: 0, yr: 2022 },  // Hubli-Dharwad
-
-      // ── Pakistan ──
-      { lat: 25.396, lng: 68.374, r: 0.35, n: 20, sp: 0, yr: 2022 },  // Hyderabad Sindh
-      { lat: 30.183, lng: 66.998, r: 0.40, n: 15, sp: 0, yr: 2022 },  // Quetta
-
-      // ── Papua New Guinea ──
-      { lat: -9.443, lng:147.180, r: 0.18, n: 22, sp: 0, yr: 2023 },  // Port Moresby (coastal — r=0.18)
-      { lat: -6.315, lng:143.955, r: 0.35, n: 15, sp: 0, yr: 2022 },  // Highlands fringe
-
-      // ── Solomon Islands / Vanuatu ──
-      { lat: -9.428, lng:160.033, r: 0.08, n: 12, sp: 0, yr: 2022 },  // Honiara (small island — r=0.08)
-      { lat:-17.738, lng:168.321, r: 0.08, n: 10, sp: 0, yr: 2022 },  // Port Vila (small island)
-
-      // ── Myanmar ──
-      { lat: 16.871, lng: 96.152, r: 0.30, n: 22, sp: 0, yr: 2023 },  // Yangon
-      { lat: 21.974, lng: 96.084, r: 0.35, n: 15, sp: 0, yr: 2022 },  // Mandalay
-
-      // ── Amazon Basin (Anopheles darlingi) ──
-      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 0, yr: 2024 },  // Manaus
-      { lat: -1.455, lng:-48.503, r: 0.25, n: 18, sp: 0, yr: 2023 },  // Belém (coastal estuary — r=0.25)
-
-      // Historical data points (earlier WHO reports)
-      { lat:  0.316, lng: 32.582, r: 0.30, n: 25, sp: 0, yr: 2020 },  // Kampala 2020
-      { lat: -4.322, lng: 15.322, r: 0.40, n: 45, sp: 0, yr: 2020 },  // Kinshasa 2020
-      { lat:  6.524, lng:  3.379, r: 0.22, n: 40, sp: 0, yr: 2020 },  // Lagos 2020
-      { lat: 12.650, lng: -8.000, r: 0.38, n: 28, sp: 0, yr: 2018 },  // Bamako 2018
-      { lat: 12.365, lng: -1.533, r: 0.38, n: 32, sp: 0, yr: 2018 },  // Ouagadougou 2018
-      { lat: -6.792, lng: 39.208, r: 0.18, n: 35, sp: 0, yr: 2018 },  // Dar es Salaam 2018
-      { lat:  9.032, lng: 38.740, r: 0.32, n: 20, sp: 0, yr: 2015 },  // Addis Ababa 2015
-      { lat: 15.552, lng: 32.532, r: 0.38, n: 28, sp: 0, yr: 2015 },  // Khartoum 2015
-      { lat: 13.512, lng:  2.125, r: 0.38, n: 32, sp: 0, yr: 2015 },  // Niamey 2015
-      { lat: -9.443, lng:147.180, r: 0.15, n: 18, sp: 0, yr: 2015 },  // Port Moresby 2015
-      { lat: -3.100, lng:-60.025, r: 0.30, n: 20, sp: 0, yr: 2010 },  // Manaus 2010
-      { lat:  0.316, lng: 32.582, r: 0.28, n: 20, sp: 0, yr: 2010 },  // Kampala 2010
-      { lat: -4.322, lng: 15.322, r: 0.38, n: 35, sp: 0, yr: 2010 },  // Kinshasa 2010
-      { lat:  6.524, lng:  3.379, r: 0.20, n: 30, sp: 0, yr: 2010 },  // Lagos 2010
-      { lat: 12.650, lng: -8.000, r: 0.35, n: 22, sp: 0, yr: 2005 },  // Bamako 2005
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 28, sp: 0, yr: 2000 },  // Kinshasa 2000
-      { lat:  6.524, lng:  3.379, r: 0.18, n: 22, sp: 0, yr: 2000 },  // Lagos 2000
-      { lat: 12.365, lng: -1.533, r: 0.35, n: 25, sp: 0, yr: 2000 },  // Ouagadougou 2000
-
-      // ════════════════════════════════════════════════════════════════════════
-      // AEDES AEGYPTI — DENGUE / ZIKA / CHIKUNGUNYA  [SOURCES B, C, G]
-      // PAHO 2024: 14.4M cases globally. WHO WER 2025 country breakdown.
-      // ════════════════════════════════════════════════════════════════════════
-
-      // ── Brazil 2024 (10M+ cases, WHO WER) ──
-      { lat:-15.793, lng:-47.882, r: 0.50, n: 65, sp: 1, yr: 2024 },  // Brasília
-      { lat:-22.908, lng:-43.172, r: 0.25, n: 70, sp: 1, yr: 2024 },  // Rio de Janeiro (coastal bay — r=0.25)
-      { lat:-23.550, lng:-46.633, r: 0.50, n: 65, sp: 1, yr: 2024 },  // São Paulo
-      { lat:-19.917, lng:-43.934, r: 0.45, n: 50, sp: 1, yr: 2024 },  // Belo Horizonte
-      { lat: -8.054, lng:-34.881, r: 0.18, n: 40, sp: 1, yr: 2024 },  // Recife (coastal — r=0.18)
-      { lat: -3.717, lng:-38.543, r: 0.18, n: 38, sp: 1, yr: 2024 },  // Fortaleza (coastal — r=0.18)
-      { lat:-12.971, lng:-38.501, r: 0.18, n: 38, sp: 1, yr: 2024 },  // Salvador (coastal — r=0.18)
-      { lat:-20.319, lng:-40.338, r: 0.18, n: 28, sp: 1, yr: 2024 },  // Vitória (coastal — r=0.18)
-      { lat:-25.428, lng:-49.271, r: 0.40, n: 28, sp: 1, yr: 2024 },  // Curitiba
-      { lat:-30.033, lng:-51.230, r: 0.35, n: 22, sp: 1, yr: 2024 },  // Porto Alegre
-      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 1, yr: 2024 },  // Manaus
-      { lat: -1.455, lng:-48.503, r: 0.22, n: 22, sp: 1, yr: 2024 },  // Belém (estuary — r=0.22)
-      { lat: -5.793, lng:-35.209, r: 0.18, n: 20, sp: 1, yr: 2024 },  // Natal (coastal — r=0.18)
-      { lat:-16.687, lng:-49.264, r: 0.40, n: 28, sp: 1, yr: 2024 },  // Goiânia
-
-      // Historical Brazil dengue
-      { lat:-22.908, lng:-43.172, r: 0.22, n: 50, sp: 1, yr: 2022 },
-      { lat:-23.550, lng:-46.633, r: 0.48, n: 50, sp: 1, yr: 2022 },
-      { lat:-22.908, lng:-43.172, r: 0.20, n: 40, sp: 1, yr: 2019 },
-      { lat:-23.550, lng:-46.633, r: 0.45, n: 40, sp: 1, yr: 2019 },
-      { lat:-22.908, lng:-43.172, r: 0.20, n: 30, sp: 1, yr: 2016 },  // Zika outbreak year
-      { lat:-23.550, lng:-46.633, r: 0.42, n: 30, sp: 1, yr: 2016 },
-      { lat: -8.054, lng:-34.881, r: 0.16, n: 25, sp: 1, yr: 2016 },  // Recife Zika epicenter
-      { lat:-22.908, lng:-43.172, r: 0.18, n: 22, sp: 1, yr: 2010 },
-      { lat:-22.908, lng:-43.172, r: 0.15, n: 15, sp: 1, yr: 2002 },
-
-      // ── Argentina (582K cases 2024 — record, PAHO) ──
-      { lat:-34.618, lng:-58.381, r: 0.40, n: 50, sp: 1, yr: 2024 },  // Buenos Aires
-      { lat:-31.417, lng:-64.183, r: 0.35, n: 25, sp: 1, yr: 2024 },  // Córdoba
-      { lat:-32.889, lng:-68.845, r: 0.35, n: 20, sp: 1, yr: 2024 },  // Mendoza
-      { lat:-26.808, lng:-65.217, r: 0.30, n: 18, sp: 1, yr: 2024 },  // Tucumán
-      { lat:-27.450, lng:-58.990, r: 0.30, n: 18, sp: 1, yr: 2024 },  // Resistencia
-      { lat:-27.367, lng:-55.896, r: 0.30, n: 18, sp: 1, yr: 2024 },  // Posadas
-      { lat:-34.618, lng:-58.381, r: 0.35, n: 20, sp: 1, yr: 2020 },
-      { lat:-34.618, lng:-58.381, r: 0.30, n: 12, sp: 1, yr: 2016 },
-
-      // ── Mexico (559K cases 2024) ──
-      { lat: 19.432, lng:-99.133, r: 0.45, n: 40, sp: 1, yr: 2024 },  // Mexico City
-      { lat: 20.967, lng:-89.623, r: 0.40, n: 35, sp: 1, yr: 2024 },  // Mérida
-      { lat: 17.073, lng:-96.723, r: 0.35, n: 28, sp: 1, yr: 2024 },  // Oaxaca
-      { lat: 16.752, lng:-93.116, r: 0.35, n: 25, sp: 1, yr: 2024 },  // Tuxtla
-      { lat: 25.686, lng:-100.316,r: 0.40, n: 18, sp: 1, yr: 2024 },  // Monterrey
-      { lat: 20.654, lng:-105.227,r: 0.18, n: 15, sp: 1, yr: 2023 },  // Puerto Vallarta (coastal — r=0.18)
-      { lat: 21.882, lng:-102.296,r: 0.35, n: 15, sp: 1, yr: 2023 },  // Aguascalientes
-      { lat: 19.432, lng:-99.133, r: 0.40, n: 28, sp: 1, yr: 2020 },
-      { lat: 20.967, lng:-89.623, r: 0.35, n: 22, sp: 1, yr: 2020 },
-      { lat: 17.073, lng:-96.723, r: 0.30, n: 18, sp: 1, yr: 2015 },
-      { lat: 19.432, lng:-99.133, r: 0.35, n: 18, sp: 1, yr: 2010 },
-
-      // ── Colombia (321K cases 2024) ──
-      { lat:  6.244, lng:-75.574, r: 0.35, n: 35, sp: 1, yr: 2024 },  // Medellín
-      { lat:  3.871, lng:-76.522, r: 0.35, n: 30, sp: 1, yr: 2024 },  // Cali
-      { lat: 10.964, lng:-74.796, r: 0.20, n: 28, sp: 1, yr: 2024 },  // Barranquilla (coastal — r=0.20)
-      { lat:  4.711, lng:-74.073, r: 0.35, n: 18, sp: 1, yr: 2024 },  // Bogotá
-      { lat:  7.119, lng:-73.123, r: 0.35, n: 18, sp: 1, yr: 2023 },  // Bucaramanga
-
-      // ── Paraguay (296K cases 2024) ──
-      { lat:-25.286, lng:-57.647, r: 0.35, n: 38, sp: 1, yr: 2024 },  // Asunción
-      { lat:-27.333, lng:-55.867, r: 0.25, n: 15, sp: 1, yr: 2023 },  // Encarnación
-
-      // ── Peru (272K cases 2024) ──
-      { lat:-12.046, lng:-77.043, r: 0.22, n: 35, sp: 1, yr: 2024 },  // Lima (coastal — r=0.22)
-      { lat: -3.743, lng:-73.247, r: 0.35, n: 18, sp: 1, yr: 2024 },  // Iquitos
-      { lat:-16.409, lng:-71.537, r: 0.35, n: 15, sp: 1, yr: 2023 },  // Arequipa
-
-      // ── Guatemala (189K), Honduras (177K) ──
-      { lat: 14.641, lng:-90.513, r: 0.35, n: 35, sp: 1, yr: 2024 },  // Guatemala City
-      { lat: 15.789, lng:-87.206, r: 0.18, n: 15, sp: 1, yr: 2023 },  // La Ceiba (coastal — r=0.18)
-      { lat: 14.082, lng:-87.206, r: 0.35, n: 35, sp: 1, yr: 2024 },  // Tegucigalpa
-      { lat: 15.504, lng:-88.025, r: 0.30, n: 18, sp: 1, yr: 2024 },  // San Pedro Sula
-
-      // ── Venezuela ──
-      { lat: 10.489, lng:-66.879, r: 0.30, n: 30, sp: 1, yr: 2024 },  // Caracas
-      { lat: 10.073, lng:-69.323, r: 0.35, n: 15, sp: 1, yr: 2023 },  // Barquisimeto
-
-      // ── Ecuador ──
-      { lat: -2.170, lng:-79.922, r: 0.20, n: 28, sp: 1, yr: 2024 },  // Guayaquil (estuary — r=0.20)
-      { lat: -0.230, lng:-78.523, r: 0.35, n: 15, sp: 1, yr: 2023 },  // Quito (lower zones)
-
-      // ── Bolivia ──
-      { lat:-17.783, lng:-63.182, r: 0.40, n: 20, sp: 1, yr: 2024 },  // Santa Cruz
-
-      // ── Nicaragua, El Salvador, Costa Rica ──
-      { lat: 12.136, lng:-86.313, r: 0.35, n: 25, sp: 1, yr: 2024 },  // Managua
-      { lat: 13.692, lng:-89.218, r: 0.35, n: 20, sp: 1, yr: 2024 },  // San Salvador
-      { lat:  9.930, lng:-84.088, r: 0.35, n: 18, sp: 1, yr: 2024 },  // San José CR
-
-      // ── Caribbean ──
-      { lat: 18.543, lng:-72.338, r: 0.22, n: 28, sp: 1, yr: 2024 },  // Port-au-Prince (bay city — r=0.22)
-      { lat: 18.486, lng:-69.931, r: 0.22, n: 22, sp: 1, yr: 2024 },  // Santo Domingo (coastal — r=0.22)
-      { lat: 18.466, lng:-66.106, r: 0.18, n: 18, sp: 1, yr: 2024 },  // San Juan PR (island — r=0.18)
-      { lat: 23.136, lng:-82.359, r: 0.22, n: 20, sp: 1, yr: 2023 },  // Havana (coastal — r=0.22)
-      { lat: 17.997, lng:-76.790, r: 0.20, n: 18, sp: 1, yr: 2023 },  // Kingston Jamaica (coastal — r=0.20)
-      { lat: 10.652, lng:-61.519, r: 0.08, n: 12, sp: 1, yr: 2023 },  // Port of Spain Trinidad (small island — r=0.08)
-
-      // ── USA — local dengue (CDC 2024) ──
-      { lat: 25.774, lng:-80.193, r: 0.20, n: 18, sp: 1, yr: 2024 },  // Miami (coastal — r=0.20)
-      { lat: 24.555, lng:-81.781, r: 0.06, n: 10, sp: 1, yr: 2024 },  // Key West (tiny island chain — r=0.06)
-      { lat: 26.122, lng:-80.143, r: 0.18, n: 12, sp: 1, yr: 2024 },  // Fort Lauderdale (coastal — r=0.18)
-
-      // ── SE Asia dengue [SOURCE C] ──
-      { lat: 13.754, lng:100.501, r: 0.40, n: 55, sp: 1, yr: 2024 },  // Bangkok
-      { lat:  3.140, lng:101.687, r: 0.35, n: 50, sp: 1, yr: 2024 },  // Kuala Lumpur
-      { lat: 10.823, lng:106.630, r: 0.30, n: 50, sp: 1, yr: 2024 },  // Ho Chi Minh City
-      { lat: 21.028, lng:105.854, r: 0.35, n: 28, sp: 1, yr: 2024 },  // Hanoi
-      { lat: 14.599, lng:120.984, r: 0.18, n: 48, sp: 1, yr: 2024 },  // Manila (coastal bay — r=0.18)
-      { lat: 10.317, lng:123.891, r: 0.18, n: 20, sp: 1, yr: 2023 },  // Cebu City (coastal — r=0.18)
-      { lat: -6.211, lng:106.845, r: 0.25, n: 55, sp: 1, yr: 2024 },  // Jakarta (coastal Java — r=0.25)
-      { lat: -7.250, lng:112.750, r: 0.20, n: 35, sp: 1, yr: 2024 },  // Surabaya (coastal — r=0.20)
-      { lat: -8.650, lng:115.217, r: 0.25, n: 22, sp: 1, yr: 2023 },  // Denpasar Bali (island — push inland)
-      { lat:  1.352, lng:103.820, r: 0.10, n: 18, sp: 1, yr: 2024 },  // Singapore (city-state island — r=0.10)
-      { lat: 11.562, lng:104.928, r: 0.35, n: 25, sp: 1, yr: 2024 },  // Phnom Penh
-      { lat: 17.967, lng:102.600, r: 0.35, n: 20, sp: 1, yr: 2023 },  // Vientiane
-      { lat: 16.871, lng: 96.152, r: 0.28, n: 28, sp: 1, yr: 2024 },  // Yangon
-      { lat:  5.414, lng:100.329, r: 0.12, n: 18, sp: 1, yr: 2023 },  // Penang island (r=0.12 — stays on Penang)
-      { lat:  1.540, lng:110.345, r: 0.35, n: 18, sp: 1, yr: 2023 },  // Kuching
-
-      // ── Bangladesh / India [SOURCE C] ──
-      { lat: 23.810, lng: 90.412, r: 0.35, n: 48, sp: 1, yr: 2024 },  // Dhaka
-      { lat: 22.356, lng: 91.783, r: 0.18, n: 20, sp: 1, yr: 2024 },  // Chittagong (coastal — r=0.18)
-      { lat: 28.644, lng: 77.216, r: 0.45, n: 45, sp: 1, yr: 2024 },  // Delhi
-      { lat: 19.076, lng: 72.878, r: 0.15, n: 40, sp: 1, yr: 2024 },  // Mumbai (peninsula — r=0.15)
-      { lat: 13.082, lng: 80.270, r: 0.20, n: 38, sp: 1, yr: 2024 },  // Chennai (coastal — r=0.20)
-      { lat: 12.977, lng: 77.591, r: 0.40, n: 30, sp: 1, yr: 2024 },  // Bengaluru
-      { lat: 22.572, lng: 88.363, r: 0.30, n: 28, sp: 1, yr: 2024 },  // Kolkata
-      { lat: 17.385, lng: 78.487, r: 0.40, n: 22, sp: 1, yr: 2024 },  // Hyderabad
-      { lat: 26.850, lng: 80.950, r: 0.40, n: 18, sp: 1, yr: 2023 },  // Lucknow
-      { lat:  6.927, lng: 79.861, r: 0.18, n: 22, sp: 1, yr: 2024 },  // Colombo (coastal — r=0.18)
-
-      // ── Pakistan ──
-      { lat: 31.549, lng: 74.343, r: 0.40, n: 28, sp: 1, yr: 2024 },  // Lahore
-      { lat: 33.720, lng: 73.043, r: 0.40, n: 20, sp: 1, yr: 2024 },  // Islamabad
-
-      // ── Africa Aedes / Horn of Africa ──
-      { lat: 12.365, lng: -1.533, r: 0.38, n: 18, sp: 1, yr: 2023 },  // Ouagadougou
-      { lat: -4.322, lng: 15.322, r: 0.40, n: 18, sp: 1, yr: 2023 },  // Kinshasa
-      { lat: -1.292, lng: 36.822, r: 0.28, n: 15, sp: 1, yr: 2023 },  // Nairobi
-      { lat: 11.589, lng: 43.145, r: 0.18, n: 12, sp: 1, yr: 2023 },  // Djibouti (coastal — r=0.18)
-      { lat:  2.046, lng: 45.341, r: 0.20, n: 18, sp: 1, yr: 2023 },  // Mogadishu (coastal — r=0.20)
-      { lat:-20.162, lng: 57.499, r: 0.08, n: 12, sp: 1, yr: 2023 },  // Port Louis Mauritius (island — r=0.08)
-      { lat:-21.115, lng: 55.536, r: 0.12, n: 12, sp: 1, yr: 2024 },  // St-Denis Réunion (r=0.12)
-      { lat: 15.354, lng: 44.207, r: 0.30, n: 18, sp: 1, yr: 2023 },  // Sana'a Yemen
-      { lat: 12.779, lng: 45.036, r: 0.18, n: 12, sp: 1, yr: 2022 },  // Aden Yemen (coastal — r=0.18)
-
-      // ── Australia — Ae. aegypti (north QLD only) ──
-      { lat:-16.920, lng:145.770, r: 0.22, n: 15, sp: 1, yr: 2023 },  // Cairns (coastal — r=0.22)
-
-      // ════════════════════════════════════════════════════════════════════════
-      // AEDES ALBOPICTUS — Tiger mosquito  [SOURCES D, G]
-      // ECDC May 2024 update; Kraemer et al. 2015
-      // ════════════════════════════════════════════════════════════════════════
-
-      // ── Italy (established, ECDC) ──
-      { lat: 41.902, lng: 12.496, r: 0.40, n: 30, sp: 2, yr: 2024 },  // Rome
-      { lat: 45.464, lng:  9.190, r: 0.40, n: 28, sp: 2, yr: 2024 },  // Milan
-      { lat: 40.851, lng: 14.268, r: 0.30, n: 22, sp: 2, yr: 2024 },  // Naples
-      { lat: 43.769, lng: 11.255, r: 0.35, n: 18, sp: 2, yr: 2024 },  // Florence
-      { lat: 45.438, lng: 12.335, r: 0.10, n: 12, sp: 2, yr: 2024 },  // Venice (lagoon — r=0.10 stays on terra firma)
-      { lat: 44.494, lng: 11.342, r: 0.35, n: 18, sp: 2, yr: 2023 },  // Bologna
-      { lat: 45.065, lng:  7.685, r: 0.35, n: 15, sp: 2, yr: 2023 },  // Turin
-
-      // ── Spain (established, ECDC) ──
-      { lat: 41.385, lng:  2.173, r: 0.35, n: 28, sp: 2, yr: 2024 },  // Barcelona
-      { lat: 40.416, lng: -3.703, r: 0.40, n: 22, sp: 2, yr: 2024 },  // Madrid
-      { lat: 39.470, lng: -0.376, r: 0.30, n: 20, sp: 2, yr: 2024 },  // Valencia
-
-      // ── France (established + 6 new 2024, ECDC) ──
-      { lat: 43.296, lng:  5.370, r: 0.22, n: 20, sp: 2, yr: 2024 },  // Marseille (coastal — r=0.22)
-      { lat: 43.605, lng:  1.444, r: 0.35, n: 15, sp: 2, yr: 2024 },  // Toulouse (new 2024)
-      { lat: 44.837, lng: -0.579, r: 0.30, n: 15, sp: 2, yr: 2024 },  // Bordeaux (new 2024)
-      { lat: 43.710, lng:  7.262, r: 0.15, n: 12, sp: 2, yr: 2023 },  // Nice (coastal — r=0.15)
-
-      // ── Greece (established, ECDC) ──
-      { lat: 40.640, lng: 22.944, r: 0.35, n: 22, sp: 2, yr: 2024 },  // Thessaloniki
-      { lat: 37.983, lng: 23.727, r: 0.25, n: 18, sp: 2, yr: 2024 },  // Athens (coastal — r=0.25)
-
-      // ── Portugal (introduced 2024, ECDC) ──
-      { lat: 38.717, lng: -9.143, r: 0.20, n: 15, sp: 2, yr: 2024 },  // Lisbon (estuary — r=0.20)
-      { lat: 41.158, lng: -8.629, r: 0.30, n: 12, sp: 2, yr: 2024 },  // Porto
-
-      // ── Croatia, Slovenia, Austria, Hungary, Romania, Bulgaria ──
-      { lat: 45.815, lng: 15.982, r: 0.35, n: 15, sp: 2, yr: 2024 },  // Zagreb
-      { lat: 43.508, lng: 16.440, r: 0.18, n: 12, sp: 2, yr: 2023 },  // Split (coastal — r=0.18)
-      { lat: 46.046, lng: 14.506, r: 0.30, n: 10, sp: 2, yr: 2024 },  // Ljubljana (new 2024)
-      { lat: 47.809, lng: 13.055, r: 0.35, n: 10, sp: 2, yr: 2023 },  // Salzburg
-      { lat: 47.497, lng: 19.040, r: 0.35, n: 10, sp: 2, yr: 2024 },  // Budapest
-      { lat: 44.439, lng: 26.097, r: 0.40, n: 15, sp: 2, yr: 2024 },  // Bucharest
-      { lat: 42.697, lng: 23.322, r: 0.35, n: 15, sp: 2, yr: 2024 },  // Sofia
-
-      // ── Netherlands (introduced 2024, ECDC) ──
-      { lat: 52.370, lng:  4.895, r: 0.20, n:  8, sp: 2, yr: 2024 },  // Amsterdam (r=0.20 avoids IJ lake)
-
-      // ── Germany (newly established 2024, ECDC) ──
-      { lat: 48.137, lng: 11.576, r: 0.40, n: 10, sp: 2, yr: 2024 },  // Munich
-
-      // ── Madeira / Canary Islands ──
-      { lat: 32.650, lng:-16.910, r: 0.10, n: 10, sp: 2, yr: 2024 },  // Funchal Madeira (small island — r=0.10)
-      { lat: 28.100, lng:-15.410, r: 0.12, n:  8, sp: 2, yr: 2024 },  // Las Palmas Gran Canaria (r=0.12)
-
-      // ── Malta ──
-      { lat: 35.900, lng: 14.510, r: 0.06, n: 10, sp: 2, yr: 2023 },  // Valletta (tiny island — r=0.06)
-
-      // ── Eastern USA (CDC established range) ──
-      { lat: 33.749, lng:-84.388, r: 0.40, n: 20, sp: 2, yr: 2024 },  // Atlanta
-      { lat: 35.227, lng:-80.843, r: 0.35, n: 15, sp: 2, yr: 2023 },  // Charlotte
-      { lat: 36.166, lng:-86.781, r: 0.35, n: 15, sp: 2, yr: 2023 },  // Nashville
-      { lat: 39.290, lng:-76.612, r: 0.30, n: 15, sp: 2, yr: 2023 },  // Baltimore
-      { lat: 40.712, lng:-74.006, r: 0.22, n: 10, sp: 2, yr: 2023 },  // New York (coastal — r=0.22)
-      { lat: 29.760, lng:-95.370, r: 0.40, n: 20, sp: 2, yr: 2024 },  // Houston
-
-      // ── Japan [SOURCE G] ──
-      { lat: 35.690, lng:139.690, r: 0.35, n: 20, sp: 2, yr: 2024 },  // Tokyo
-      { lat: 34.693, lng:135.502, r: 0.30, n: 15, sp: 2, yr: 2023 },  // Osaka
-      { lat: 26.213, lng:127.681, r: 0.12, n: 12, sp: 2, yr: 2023 },  // Naha Okinawa (island — r=0.12)
-
-      // ── South Korea ──
-      { lat: 37.566, lng:126.978, r: 0.35, n: 12, sp: 2, yr: 2023 },  // Seoul
-
-      // ── China (Guangdong dengue epicenter) ──
-      { lat: 23.129, lng:113.264, r: 0.45, n: 35, sp: 2, yr: 2024 },  // Guangzhou
-      { lat: 22.543, lng:114.058, r: 0.30, n: 28, sp: 2, yr: 2024 },  // Shenzhen (coastal — r=0.30)
-      { lat: 22.200, lng:113.543, r: 0.06, n: 10, sp: 2, yr: 2023 },  // Macau (tiny peninsula — r=0.06)
-      { lat: 30.572, lng:104.066, r: 0.45, n: 18, sp: 2, yr: 2023 },  // Chengdu
-
-      // ── Taiwan ──
-      { lat: 22.998, lng:120.213, r: 0.30, n: 20, sp: 2, yr: 2024 },  // Tainan (dengue endemic south)
-      { lat: 22.627, lng:120.301, r: 0.25, n: 15, sp: 2, yr: 2023 },  // Kaohsiung (coastal — r=0.25)
-
-      // ── Hong Kong ──
-      { lat: 22.320, lng:114.170, r: 0.12, n: 10, sp: 2, yr: 2023 },  // Hong Kong (r=0.12 stays on Kowloon/HK island)
-
-      // ── Turkey ──
-      { lat: 41.015, lng: 28.979, r: 0.25, n: 15, sp: 2, yr: 2024 },  // Istanbul (r=0.25 stays European side)
-      { lat: 41.000, lng: 40.524, r: 0.30, n: 10, sp: 2, yr: 2023 },  // Trabzon
-
-      // ── Caucasus ──
-      { lat: 41.694, lng: 44.833, r: 0.35, n: 10, sp: 2, yr: 2023 },  // Tbilisi
-
-      // ── SE Australia (albopictus risk zone) ──
-      { lat:-27.470, lng:153.028, r: 0.22, n: 12, sp: 2, yr: 2023 },  // Brisbane (coastal — r=0.22)
-      { lat:-33.868, lng:151.207, r: 0.20, n:  8, sp: 2, yr: 2022 },  // Sydney (coastal — r=0.20)
-
+      // KEY:
+      // r=0.05 ISLAND city (tiny landmass — ~5km max scatter)
+      // r=0.12 COASTAL city (bay/estuary/peninsula — ~12km max scatter)
+      // r=0.35 INLAND city (~35km max scatter, safe from water)
+      // sp: 0=Anopheles(malaria) 1=Ae.aegypti(dengue) 2=Ae.albopictus(tiger) 3=Culex(WNV)
+      // Sources: WHO Malaria Report 2025, PAHO Dengue 2024, CDC ArboNET,
+      //          ECDC Mosquito Maps May 2024, Kraemer et al. eLife 2015
+      // yr = year of primary data record
+
+      // ════════ ANOPHELES — MALARIA ════════
+      // Nigeria (31.9% global malaria deaths 2024, WHO 2025)
+      { lat:  6.524, lng:  3.379, r: 0.12, n: 55, sp: 0, yr: 2024 }, // Lagos — coastal
+      { lat:  9.072, lng:  7.491, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Abuja — inland
+      { lat: 12.002, lng:  8.592, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Kano — inland
+      { lat:  7.376, lng:  3.947, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Ibadan — inland
+      { lat:  6.335, lng:  5.627, r: 0.35, n: 28, sp: 0, yr: 2024 }, // Benin City — inland
+      { lat:  4.815, lng:  7.049, r: 0.12, n: 25, sp: 0, yr: 2024 }, // Port Harcourt — delta
+      { lat:  8.492, lng:  4.541, r: 0.35, n: 20, sp: 0, yr: 2024 }, // Ilorin — inland
+      { lat: 10.298, lng: 13.283, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Maiduguri — inland
+
+      // DRC (11.7% global malaria deaths 2024, WHO 2025)
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 60, sp: 0, yr: 2024 }, // Kinshasa — inland river (Congo R, 50km from coast)
+      { lat: -1.679, lng: 29.222, r: 0.12, n: 30, sp: 0, yr: 2024 }, // Goma — Lake Kivu shore
+      { lat:  0.517, lng: 25.198, r: 0.35, n: 28, sp: 0, yr: 2023 }, // Kisangani — inland
+      { lat:-11.663, lng: 27.479, r: 0.35, n: 22, sp: 0, yr: 2023 }, // Lubumbashi — inland
+
+      // Niger (6.1% global malaria deaths)
+      { lat: 13.512, lng:  2.125, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Niamey — inland
+      { lat: 13.808, lng:  8.988, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Zinder — inland
+
+      // Uganda
+      { lat:  0.316, lng: 32.582, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Kampala — inland (Victoria 30km S)
+      { lat:  0.451, lng: 33.200, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Jinja — Lake Victoria shore
+      { lat:  2.774, lng: 32.299, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Gulu — inland
+
+      // Tanzania (4.3% global malaria deaths)
+      { lat: -6.792, lng: 39.208, r: 0.12, n: 42, sp: 0, yr: 2024 }, // Dar es Salaam — coastal
+      { lat: -3.355, lng: 37.339, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Moshi — inland
+      { lat: -8.900, lng: 33.460, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Mbeya — inland
+
+      // Burkina Faso
+      { lat: 12.365, lng: -1.533, r: 0.35, n: 38, sp: 0, yr: 2024 }, // Ouagadougou — inland
+      { lat: 11.177, lng: -4.299, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Bobo-Dioulasso — inland
+
+      // Mali
+      { lat: 12.650, lng: -8.000, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Bamako — inland
+      { lat: 14.500, lng: -4.000, r: 0.12, n: 15, sp: 0, yr: 2022 }, // Mopti — Niger River delta
+
+      // Ghana
+      { lat:  5.559, lng: -0.197, r: 0.12, n: 35, sp: 0, yr: 2024 }, // Accra — coastal
+      { lat:  6.688, lng: -1.624, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Kumasi — inland
+
+      // Mozambique
+      { lat:-25.966, lng: 32.573, r: 0.12, n: 22, sp: 0, yr: 2024 }, // Maputo — bay
+      { lat:-19.843, lng: 34.838, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Beira — coastal delta
+      { lat:-15.116, lng: 39.267, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Nampula — inland
+
+      // Cameroon
+      { lat:  3.866, lng: 11.517, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Yaoundé — inland
+      { lat:  4.050, lng:  9.700, r: 0.12, n: 28, sp: 0, yr: 2023 }, // Douala — estuary
+
+      // Sudan
+      { lat: 15.552, lng: 32.532, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Khartoum — inland
+      { lat: 13.628, lng: 25.349, r: 0.35, n: 15, sp: 0, yr: 2022 }, // El Fasher — inland
+
+      // Ethiopia
+      { lat:  9.032, lng: 38.740, r: 0.35, n: 25, sp: 0, yr: 2024 }, // Addis Ababa — inland
+      { lat:  7.666, lng: 36.834, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Jimma — inland
+      { lat:  7.060, lng: 38.477, r: 0.12, n: 15, sp: 0, yr: 2023 }, // Hawassa — Lake Hawassa shore
+
+      // Kenya
+      { lat: -1.292, lng: 36.822, r: 0.35, n: 20, sp: 0, yr: 2024 }, // Nairobi — inland
+      { lat: -4.043, lng: 39.668, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Mombasa — coastal island
+      { lat:  0.091, lng: 34.768, r: 0.12, n: 15, sp: 0, yr: 2023 }, // Kisumu — Lake Victoria shore
+
+      // Angola
+      { lat: -8.839, lng: 13.234, r: 0.12, n: 32, sp: 0, yr: 2024 }, // Luanda — coastal
+      { lat:-12.775, lng: 15.739, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Huambo — inland
+
+      // Senegal — Dakar is on extreme tip of Cap-Vert peninsula
+      { lat: 14.716, lng:-17.467, r: 0.08, n: 22, sp: 0, yr: 2024 }, // Dakar — peninsula tip, r=0.08
+      { lat: 14.163, lng:-15.574, r: 0.35, n: 12, sp: 0, yr: 2022 }, // Kaolack — inland
+
+      // Madagascar
+      { lat:-18.910, lng: 47.536, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Antananarivo — inland plateau
+      { lat:-12.352, lng: 49.301, r: 0.12, n: 12, sp: 0, yr: 2022 }, // Antsiranana — coastal bay
+
+      // South Sudan / CAR
+      { lat:  4.859, lng: 31.571, r: 0.35, n: 30, sp: 0, yr: 2024 }, // Juba — inland
+      { lat:  4.361, lng: 18.555, r: 0.35, n: 25, sp: 0, yr: 2023 }, // Bangui — inland
+
+      // West Africa
+      { lat:  9.538, lng:-13.677, r: 0.08, n: 20, sp: 0, yr: 2023 }, // Conakry — peninsula, r=0.08
+      { lat:  5.354, lng: -4.008, r: 0.12, n: 25, sp: 0, yr: 2024 }, // Abidjan — coastal lagoon
+      { lat:  6.300, lng:-10.797, r: 0.12, n: 20, sp: 0, yr: 2023 }, // Monrovia — coastal
+      { lat:  8.484, lng:-13.228, r: 0.08, n: 18, sp: 0, yr: 2023 }, // Freetown — peninsula, r=0.08
+
+      // Zambia / Zimbabwe
+      { lat:-15.417, lng: 28.283, r: 0.35, n: 22, sp: 0, yr: 2023 }, // Lusaka — inland
+      { lat:-17.829, lng: 31.052, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Harare — inland
+
+      // India (An. stephensi urban spread, WHO 2025)
+      { lat: 19.076, lng: 72.878, r: 0.08, n: 28, sp: 0, yr: 2024 }, // Mumbai — peninsula, r=0.08
+      { lat: 28.644, lng: 77.216, r: 0.35, n: 22, sp: 0, yr: 2024 }, // Delhi — inland
+      { lat: 15.358, lng: 75.135, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Hubli-Dharwad — inland
+
+      // Pakistan
+      { lat: 25.396, lng: 68.374, r: 0.35, n: 20, sp: 0, yr: 2022 }, // Hyderabad Sindh — inland
+      { lat: 30.183, lng: 66.998, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Quetta — inland
+
+      // PNG / Pacific
+      { lat: -9.443, lng:147.180, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Port Moresby — coastal
+      { lat: -6.315, lng:143.955, r: 0.35, n: 15, sp: 0, yr: 2022 }, // PNG Highlands — inland
+      { lat: -9.428, lng:160.033, r: 0.05, n: 12, sp: 0, yr: 2022 }, // Honiara — small island, r=0.05
+      { lat:-17.738, lng:168.321, r: 0.05, n: 10, sp: 0, yr: 2022 }, // Port Vila — island, r=0.05
+
+      // Myanmar
+      { lat: 16.871, lng: 96.152, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Yangon — delta
+      { lat: 21.974, lng: 96.084, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Mandalay — inland
+
+      // Amazon Basin (An. darlingi)
+      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 0, yr: 2024 }, // Manaus — inland
+      { lat: -1.455, lng:-48.503, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Belém — estuary
+
+      // Historical malaria records
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 45, sp: 0, yr: 2020 },
+      { lat:  6.524, lng:  3.379, r: 0.12, n: 35, sp: 0, yr: 2020 },
+      { lat: 12.365, lng: -1.533, r: 0.35, n: 32, sp: 0, yr: 2018 },
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 35, sp: 0, yr: 2015 },
+      { lat: 13.512, lng:  2.125, r: 0.35, n: 30, sp: 0, yr: 2015 },
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 28, sp: 0, yr: 2010 },
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 22, sp: 0, yr: 2000 },
+
+      // ════════ AEDES AEGYPTI — DENGUE / ZIKA ════════
+      // Brazil 2024: 10M+ cases (PAHO / WHO WER-10052)
+      { lat:-15.793, lng:-47.882, r: 0.35, n: 65, sp: 1, yr: 2024 }, // Brasília — inland
+      { lat:-22.908, lng:-43.172, r: 0.12, n: 70, sp: 1, yr: 2024 }, // Rio — coastal bay
+      { lat:-23.550, lng:-46.633, r: 0.35, n: 65, sp: 1, yr: 2024 }, // São Paulo — inland
+      { lat:-19.917, lng:-43.934, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Belo Horizonte — inland
+      { lat: -8.054, lng:-34.881, r: 0.12, n: 40, sp: 1, yr: 2024 }, // Recife — coastal
+      { lat: -3.717, lng:-38.543, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Fortaleza — coastal
+      { lat:-12.971, lng:-38.501, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Salvador — coastal
+      { lat:-20.319, lng:-40.338, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Vitória — coastal
+      { lat:-25.428, lng:-49.271, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Curitiba — inland
+      { lat:-30.033, lng:-51.230, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Porto Alegre — Guaíba river shore
+      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Manaus — inland
+      { lat: -1.455, lng:-48.503, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Belém — estuary
+      { lat: -5.793, lng:-35.209, r: 0.12, n: 20, sp: 1, yr: 2024 }, // Natal — coastal
+      { lat:-16.687, lng:-49.264, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Goiânia — inland
+      // Brazil historical
+      { lat:-22.908, lng:-43.172, r: 0.12, n: 50, sp: 1, yr: 2022 },
+      { lat:-23.550, lng:-46.633, r: 0.35, n: 45, sp: 1, yr: 2022 },
+      { lat:-22.908, lng:-43.172, r: 0.12, n: 35, sp: 1, yr: 2019 },
+      { lat: -8.054, lng:-34.881, r: 0.12, n: 28, sp: 1, yr: 2016 }, // Zika epicenter
+      { lat:-22.908, lng:-43.172, r: 0.12, n: 20, sp: 1, yr: 2010 },
+
+      // Argentina 2024: 582K cases (PAHO record)
+      { lat:-34.618, lng:-58.381, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Buenos Aires — inland (La Plata estuary 30km E)
+      { lat:-31.417, lng:-64.183, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Córdoba — inland
+      { lat:-32.889, lng:-68.845, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Mendoza — inland
+      { lat:-26.808, lng:-65.217, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Tucumán — inland
+      { lat:-27.450, lng:-58.990, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Resistencia — inland
+      { lat:-27.367, lng:-55.896, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Posadas — inland
+
+      // Mexico 2024: 559K cases (WHO WER-10052)
+      { lat: 19.432, lng:-99.133, r: 0.35, n: 40, sp: 1, yr: 2024 }, // Mexico City — inland
+      { lat: 20.967, lng:-89.623, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Mérida — inland
+      { lat: 17.073, lng:-96.723, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Oaxaca — inland
+      { lat: 16.752, lng:-93.116, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Tuxtla — inland
+      { lat: 25.686, lng:-100.316,r: 0.35, n: 18, sp: 1, yr: 2024 }, // Monterrey — inland
+      { lat: 20.654, lng:-105.227,r: 0.08, n: 15, sp: 1, yr: 2023 }, // Puerto Vallarta — coastal, r=0.08
+      { lat: 21.882, lng:-102.296,r: 0.35, n: 15, sp: 1, yr: 2023 }, // Aguascalientes — inland
+
+      // Colombia 2024: 321K cases
+      { lat:  6.244, lng:-75.574, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Medellín — inland valley
+      { lat:  3.871, lng:-76.522, r: 0.35, n: 30, sp: 1, yr: 2024 }, // Cali — inland valley
+      { lat: 10.964, lng:-74.796, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Barranquilla — coastal
+      { lat:  4.711, lng:-74.073, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Bogotá — inland
+      { lat:  7.119, lng:-73.123, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Bucaramanga — inland
+
+      // Paraguay 2024: 296K
+      { lat:-25.286, lng:-57.647, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Asunción — Paraguay River shore
+      { lat:-27.333, lng:-55.867, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Encarnación — inland
+
+      // Peru 2024: 272K
+      { lat:-12.046, lng:-77.043, r: 0.12, n: 35, sp: 1, yr: 2024 }, // Lima — coastal
+      { lat: -3.743, lng:-73.247, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Iquitos — inland Amazon
+      { lat:-16.409, lng:-71.537, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Arequipa — inland
+
+      // Guatemala 2024: 189K, Honduras 2024: 177K
+      { lat: 14.641, lng:-90.513, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Guatemala City — inland
+      { lat: 14.082, lng:-87.206, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Tegucigalpa — inland
+      { lat: 15.504, lng:-88.025, r: 0.35, n: 18, sp: 1, yr: 2024 }, // San Pedro Sula — inland
+
+      // Venezuela, Ecuador, Bolivia
+      { lat: 10.489, lng:-66.879, r: 0.12, n: 30, sp: 1, yr: 2024 }, // Caracas — coastal valley
+      { lat: -2.170, lng:-79.922, r: 0.08, n: 28, sp: 1, yr: 2024 }, // Guayaquil — estuary, r=0.08
+      { lat:  4.711, lng:-74.073, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Bogotá lower zones
+      { lat:-17.783, lng:-63.182, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Santa Cruz — inland
+
+      // Central America
+      { lat: 12.136, lng:-86.313, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Managua — inland
+      { lat: 13.692, lng:-89.218, r: 0.35, n: 20, sp: 1, yr: 2024 }, // San Salvador — inland
+      { lat:  9.930, lng:-84.088, r: 0.35, n: 18, sp: 1, yr: 2024 }, // San José CR — inland
+
+      // Caribbean — all islands, tight r
+      { lat: 18.543, lng:-72.338, r: 0.08, n: 28, sp: 1, yr: 2024 }, // Port-au-Prince — island, r=0.08
+      { lat: 18.486, lng:-69.931, r: 0.08, n: 22, sp: 1, yr: 2024 }, // Santo Domingo — island, r=0.08
+      { lat: 18.466, lng:-66.106, r: 0.05, n: 18, sp: 1, yr: 2024 }, // San Juan PR — island, r=0.05
+      { lat: 23.136, lng:-82.359, r: 0.08, n: 20, sp: 1, yr: 2023 }, // Havana — island, r=0.08
+      { lat: 17.997, lng:-76.790, r: 0.08, n: 18, sp: 1, yr: 2023 }, // Kingston — island, r=0.08
+      { lat: 10.652, lng:-61.519, r: 0.05, n: 12, sp: 1, yr: 2023 }, // Port of Spain — island, r=0.05
+
+      // USA local dengue (CDC 2024, south Florida only)
+      { lat: 25.774, lng:-80.193, r: 0.12, n: 18, sp: 1, yr: 2024 }, // Miami — coastal
+      { lat: 24.555, lng:-81.781, r: 0.05, n: 10, sp: 1, yr: 2024 }, // Key West — tiny island, r=0.05
+
+      // SE Asia dengue (WHO WER-10052 2025)
+      { lat: 13.754, lng:100.501, r: 0.35, n: 55, sp: 1, yr: 2024 }, // Bangkok — inland (Gulf 70km S)
+      { lat:  3.140, lng:101.687, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Kuala Lumpur — inland
+      { lat: 10.823, lng:106.630, r: 0.12, n: 50, sp: 1, yr: 2024 }, // Ho Chi Minh City — Mekong delta
+      { lat: 21.028, lng:105.854, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Hanoi — inland
+      { lat: 14.599, lng:120.984, r: 0.08, n: 48, sp: 1, yr: 2024 }, // Manila — island, r=0.08
+      { lat:-6.211, lng:106.845, r: 0.12, n: 55, sp: 1, yr: 2024 }, // Jakarta — Java coast
+      { lat:-7.250, lng:112.750, r: 0.12, n: 35, sp: 1, yr: 2024 }, // Surabaya — Java coast
+      { lat:-8.650, lng:115.217, r: 0.12, n: 22, sp: 1, yr: 2023 }, // Denpasar — Bali island, push W
+      { lat:  1.352, lng:103.820, r: 0.05, n: 18, sp: 1, yr: 2024 }, // Singapore — city-island, r=0.05
+      { lat: 11.562, lng:104.928, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Phnom Penh — inland
+      { lat: 17.967, lng:102.600, r: 0.35, n: 20, sp: 1, yr: 2023 }, // Vientiane — inland
+      { lat: 16.871, lng: 96.152, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Yangon — delta
+      { lat:  5.414, lng:100.329, r: 0.05, n: 18, sp: 1, yr: 2023 }, // Penang — island, r=0.05
+      { lat:  1.540, lng:110.345, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Kuching — inland
+
+      // South Asia dengue
+      { lat: 23.810, lng: 90.412, r: 0.35, n: 48, sp: 1, yr: 2024 }, // Dhaka — inland
+      { lat: 22.356, lng: 91.783, r: 0.12, n: 20, sp: 1, yr: 2024 }, // Chittagong — coastal
+      { lat: 28.644, lng: 77.216, r: 0.35, n: 45, sp: 1, yr: 2024 }, // Delhi — inland
+      { lat: 19.076, lng: 72.878, r: 0.08, n: 40, sp: 1, yr: 2024 }, // Mumbai — peninsula, r=0.08
+      { lat: 13.082, lng: 80.270, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Chennai — coastal
+      { lat: 12.977, lng: 77.591, r: 0.35, n: 30, sp: 1, yr: 2024 }, // Bengaluru — inland plateau
+      { lat: 22.572, lng: 88.363, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Kolkata — inland
+      { lat: 17.385, lng: 78.487, r: 0.35, n: 22, sp: 1, yr: 2024 }, // Hyderabad — inland
+      { lat: 26.850, lng: 80.950, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Lucknow — inland
+      { lat:  6.927, lng: 79.861, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Colombo — coastal
+      { lat: 31.549, lng: 74.343, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Lahore — inland
+      { lat: 33.720, lng: 73.043, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Islamabad — inland
+
+      // Africa + Horn dengue
+      { lat: -1.292, lng: 36.822, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Nairobi — inland
+      { lat: 11.589, lng: 43.145, r: 0.12, n: 12, sp: 1, yr: 2023 }, // Djibouti — coastal
+      { lat:  2.046, lng: 45.341, r: 0.12, n: 18, sp: 1, yr: 2023 }, // Mogadishu — coastal
+      { lat:-20.162, lng: 57.499, r: 0.05, n: 12, sp: 1, yr: 2023 }, // Port Louis — island, r=0.05
+      { lat:-21.115, lng: 55.536, r: 0.08, n: 12, sp: 1, yr: 2024 }, // St-Denis Réunion — island, r=0.08
+      { lat: 15.354, lng: 44.207, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Sana'a — inland
+      { lat: 12.779, lng: 45.036, r: 0.12, n: 12, sp: 1, yr: 2022 }, // Aden — coastal
+
+      // Australia dengue (north QLD only, Ae. aegypti)
+      { lat:-16.920, lng:145.770, r: 0.12, n: 15, sp: 1, yr: 2023 }, // Cairns — coastal
+
+      // ════════ AEDES ALBOPICTUS — TIGER MOSQUITO ════════
+      // ECDC May 2024: established 13 EU countries; new 2024: FR(×6), DE, NL, PT, SI
+      // Italy — established
+      { lat: 41.902, lng: 12.496, r: 0.35, n: 30, sp: 2, yr: 2024 }, // Rome — inland
+      { lat: 45.464, lng:  9.190, r: 0.35, n: 28, sp: 2, yr: 2024 }, // Milan — inland
+      { lat: 40.851, lng: 14.268, r: 0.12, n: 22, sp: 2, yr: 2024 }, // Naples — coastal
+      { lat: 43.769, lng: 11.255, r: 0.35, n: 18, sp: 2, yr: 2024 }, // Florence — inland
+      { lat: 45.438, lng: 12.335, r: 0.05, n: 12, sp: 2, yr: 2024 }, // Venice — lagoon island, r=0.05 (mainland scatter)
+      { lat: 44.494, lng: 11.342, r: 0.35, n: 18, sp: 2, yr: 2023 }, // Bologna — inland
+      { lat: 45.065, lng:  7.685, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Turin — inland
+      // Spain — established
+      { lat: 41.385, lng:  2.173, r: 0.12, n: 28, sp: 2, yr: 2024 }, // Barcelona — coastal
+      { lat: 40.416, lng: -3.703, r: 0.35, n: 22, sp: 2, yr: 2024 }, // Madrid — inland
+      { lat: 39.470, lng: -0.376, r: 0.12, n: 20, sp: 2, yr: 2024 }, // Valencia — coastal
+      // France — established + new 2024
+      { lat: 43.296, lng:  5.370, r: 0.08, n: 20, sp: 2, yr: 2024 }, // Marseille — coastal peninsula, r=0.08
+      { lat: 43.605, lng:  1.444, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Toulouse — inland (new 2024)
+      { lat: 44.837, lng: -0.579, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Bordeaux — inland (new 2024)
+      { lat: 43.710, lng:  7.262, r: 0.08, n: 12, sp: 2, yr: 2023 }, // Nice — coastal, r=0.08
+      // Greece — established
+      { lat: 40.640, lng: 22.944, r: 0.35, n: 22, sp: 2, yr: 2024 }, // Thessaloniki — inland
+      { lat: 37.983, lng: 23.727, r: 0.12, n: 18, sp: 2, yr: 2024 }, // Athens — coastal
+      // Portugal (introduced 2024)
+      { lat: 38.717, lng: -9.143, r: 0.08, n: 15, sp: 2, yr: 2024 }, // Lisbon — estuary, r=0.08
+      { lat: 41.158, lng: -8.629, r: 0.12, n: 12, sp: 2, yr: 2024 }, // Porto — coastal
+      // Other EU established
+      { lat: 45.815, lng: 15.982, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Zagreb — inland
+      { lat: 43.508, lng: 16.440, r: 0.08, n: 12, sp: 2, yr: 2023 }, // Split — coastal, r=0.08
+      { lat: 46.046, lng: 14.506, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Ljubljana — inland (new 2024)
+      { lat: 47.809, lng: 13.055, r: 0.35, n: 10, sp: 2, yr: 2023 }, // Salzburg — inland
+      { lat: 47.497, lng: 19.040, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Budapest — inland
+      { lat: 44.439, lng: 26.097, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Bucharest — inland
+      { lat: 42.697, lng: 23.322, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Sofia — inland
+      // Netherlands (introduced 2024)
+      { lat: 52.370, lng:  4.895, r: 0.12, n:  8, sp: 2, yr: 2024 }, // Amsterdam — canal city, r=0.12 (city centre is land)
+      // Germany (newly established 2024)
+      { lat: 48.137, lng: 11.576, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Munich — inland
+      // Malta (tiny island)
+      { lat: 35.900, lng: 14.510, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Valletta — island, r=0.05
+      // Madeira / Canary Islands
+      { lat: 32.650, lng:-16.910, r: 0.05, n: 10, sp: 2, yr: 2024 }, // Funchal Madeira — island, r=0.05
+      { lat: 28.100, lng:-15.410, r: 0.08, n:  8, sp: 2, yr: 2024 }, // Las Palmas Gran Canaria — island, r=0.08
+      // Turkey
+      { lat: 41.015, lng: 28.979, r: 0.12, n: 15, sp: 2, yr: 2024 }, // Istanbul — strait, scatter N (European side)
+      { lat: 41.000, lng: 40.524, r: 0.12, n: 10, sp: 2, yr: 2023 }, // Trabzon — coastal
+      { lat: 41.694, lng: 44.833, r: 0.35, n: 10, sp: 2, yr: 2023 }, // Tbilisi — inland
+      // East Asia (Kraemer et al. 2015)
+      { lat: 35.690, lng:139.690, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Tokyo — inland (bay 15km E)
+      { lat: 34.693, lng:135.502, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Osaka — inland
+      { lat: 26.213, lng:127.681, r: 0.05, n: 12, sp: 2, yr: 2023 }, // Naha Okinawa — island, r=0.05
+      { lat: 37.566, lng:126.978, r: 0.35, n: 12, sp: 2, yr: 2023 }, // Seoul — inland
+      { lat: 23.129, lng:113.264, r: 0.35, n: 35, sp: 2, yr: 2024 }, // Guangzhou — inland
+      { lat: 22.543, lng:114.058, r: 0.12, n: 28, sp: 2, yr: 2024 }, // Shenzhen — coastal
+      { lat: 22.200, lng:113.543, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Macau — peninsula, r=0.05
+      { lat: 30.572, lng:104.066, r: 0.35, n: 18, sp: 2, yr: 2023 }, // Chengdu — inland
+      { lat: 22.998, lng:120.213, r: 0.12, n: 20, sp: 2, yr: 2024 }, // Tainan — coastal
+      { lat: 22.320, lng:114.170, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Hong Kong — coastal, r=0.05
+      // Eastern USA
+      { lat: 33.749, lng:-84.388, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Atlanta — inland
+      { lat: 35.227, lng:-80.843, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Charlotte — inland
+      { lat: 36.166, lng:-86.781, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Nashville — inland
+      { lat: 29.760, lng:-95.370, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Houston — inland
+      // SE Australia
+      { lat:-27.470, lng:153.028, r: 0.12, n: 12, sp: 2, yr: 2023 }, // Brisbane — coastal
       // Historical albopictus
-      { lat: 41.902, lng: 12.496, r: 0.35, n: 20, sp: 2, yr: 2020 },  // Rome 2020
-      { lat: 41.385, lng:  2.173, r: 0.30, n: 18, sp: 2, yr: 2020 },  // Barcelona 2020
-      { lat: 41.902, lng: 12.496, r: 0.30, n: 15, sp: 2, yr: 2015 },  // Rome 2015
-      { lat: 23.129, lng:113.264, r: 0.40, n: 25, sp: 2, yr: 2015 },  // Guangzhou 2015
-      { lat: 35.690, lng:139.690, r: 0.30, n: 15, sp: 2, yr: 2014 },  // Tokyo 2014 (first dengue since 1944)
-      { lat: 41.902, lng: 12.496, r: 0.25, n: 10, sp: 2, yr: 2007 },  // Rome 2007
-      { lat: 23.129, lng:113.264, r: 0.35, n: 18, sp: 2, yr: 2007 },  // Guangzhou 2007
+      { lat: 41.902, lng: 12.496, r: 0.35, n: 20, sp: 2, yr: 2020 },
+      { lat: 41.902, lng: 12.496, r: 0.35, n: 15, sp: 2, yr: 2015 },
+      { lat: 35.690, lng:139.690, r: 0.35, n: 15, sp: 2, yr: 2014 }, // Tokyo 2014 dengue
 
-      // ════════════════════════════════════════════════════════════════════════
-      // CULEX — WEST NILE / JE / FILARIASIS  [SOURCES E, F]
-      // ════════════════════════════════════════════════════════════════════════
-
-      // ── USA Great Plains (CDC ArboNET 2024) ──
-      { lat: 44.367, lng:-100.346,r: 0.50, n: 30, sp: 3, yr: 2024 },  // South Dakota (13% seroprevalence)
-      { lat: 47.551, lng:-101.002,r: 0.50, n: 25, sp: 3, yr: 2024 },  // North Dakota
-      { lat: 41.490, lng: -99.900,r: 0.50, n: 25, sp: 3, yr: 2024 },  // Nebraska
-      { lat: 39.000, lng: -98.000,r: 0.50, n: 25, sp: 3, yr: 2024 },  // Kansas
-      { lat: 46.870, lng:-110.360,r: 0.50, n: 18, sp: 3, yr: 2024 },  // Montana
-      { lat: 43.080, lng:-108.980,r: 0.50, n: 18, sp: 3, yr: 2024 },  // Wyoming
-      { lat: 34.052, lng:-118.243,r: 0.35, n: 18, sp: 3, yr: 2024 },  // Los Angeles (inland — r=0.35)
-      { lat: 32.726, lng: -97.321,r: 0.40, n: 18, sp: 3, yr: 2024 },  // Dallas/Fort Worth
-      { lat: 41.836, lng: -87.684,r: 0.40, n: 15, sp: 3, yr: 2024 },  // Chicago
-      { lat: 29.951, lng: -90.071,r: 0.30, n: 18, sp: 3, yr: 2024 },  // New Orleans (delta city — r=0.30)
-      { lat: 33.448, lng:-112.074,r: 0.40, n: 15, sp: 3, yr: 2024 },  // Phoenix
-      { lat: 44.367, lng:-100.346,r: 0.48, n: 25, sp: 3, yr: 2020 },
-      { lat: 44.367, lng:-100.346,r: 0.45, n: 20, sp: 3, yr: 2015 },
-      { lat: 44.367, lng:-100.346,r: 0.40, n: 18, sp: 3, yr: 2012 },
-      { lat: 44.367, lng:-100.346,r: 0.35, n: 15, sp: 3, yr: 2007 },  // Major US WNV year
-      { lat: 41.836, lng: -87.684,r: 0.38, n: 18, sp: 3, yr: 2002 },  // Chicago 2002 outbreak
-
-      // ── Italy (767 cases 2025, ECDC/ISS) ──
-      { lat: 45.464, lng:  9.190, r: 0.40, n: 30, sp: 3, yr: 2024 },  // Milan/Lombardy
-      { lat: 45.438, lng: 12.335, r: 0.10, n: 22, sp: 3, yr: 2024 },  // Venice/Veneto (lagoon — r=0.10)
-      { lat: 44.494, lng: 11.342, r: 0.38, n: 22, sp: 3, yr: 2024 },  // Bologna/Emilia-Romagna
-      { lat: 41.902, lng: 12.496, r: 0.38, n: 20, sp: 3, yr: 2024 },  // Rome/Lazio
-      { lat: 40.851, lng: 14.268, r: 0.30, n: 15, sp: 3, yr: 2024 },  // Naples/Campania
-      { lat: 45.065, lng:  7.685, r: 0.38, n: 15, sp: 3, yr: 2024 },  // Turin/Piedmont
-      { lat: 45.464, lng:  9.190, r: 0.35, n: 22, sp: 3, yr: 2020 },
-      { lat: 45.464, lng:  9.190, r: 0.30, n: 15, sp: 3, yr: 2015 },
-      { lat: 45.464, lng:  9.190, r: 0.25, n: 10, sp: 3, yr: 2008 },  // Italy WNV re-emergence
-
-      // ── Greece (major WNV, ECDC) ──
-      { lat: 40.640, lng: 22.944, r: 0.38, n: 22, sp: 3, yr: 2024 },  // Thessaloniki
-      { lat: 37.983, lng: 23.727, r: 0.22, n: 15, sp: 3, yr: 2024 },  // Athens (coastal — r=0.22)
-      { lat: 40.640, lng: 22.944, r: 0.35, n: 18, sp: 3, yr: 2018 },  // Major Greece WNV year
-      { lat: 40.640, lng: 22.944, r: 0.30, n: 12, sp: 3, yr: 2010 },  // 2010 Greece outbreak
-
-      // ── Romania, Serbia, Hungary ──
-      { lat: 44.439, lng: 26.097, r: 0.45, n: 20, sp: 3, yr: 2024 },  // Bucharest
-      { lat: 44.812, lng: 20.461, r: 0.40, n: 18, sp: 3, yr: 2024 },  // Belgrade
-      { lat: 47.497, lng: 19.040, r: 0.38, n: 15, sp: 3, yr: 2024 },  // Budapest
-      { lat: 44.439, lng: 26.097, r: 0.40, n: 15, sp: 3, yr: 2018 },
-      { lat: 44.439, lng: 26.097, r: 0.35, n: 12, sp: 3, yr: 2010 },
-      { lat: 44.439, lng: 26.097, r: 0.30, n: 10, sp: 3, yr: 1996 },  // 1996 Romania WNV outbreak (historical)
-
-      // ── Russia (Volgograd — major historical outbreaks) ──
-      { lat: 48.708, lng: 44.513, r: 0.45, n: 18, sp: 3, yr: 2024 },  // Volgograd
-      { lat: 47.227, lng: 39.720, r: 0.40, n: 15, sp: 3, yr: 2023 },  // Rostov-on-Don
-      { lat: 48.708, lng: 44.513, r: 0.40, n: 15, sp: 3, yr: 2012 },  // Major Volgograd WNV year
-      { lat: 48.708, lng: 44.513, r: 0.35, n: 12, sp: 3, yr: 1999 },  // 1999 Volgograd outbreak (historical)
-
-      // ── Germany / Netherlands (2024 northward spread) ──
-      { lat: 52.520, lng: 13.405, r: 0.35, n: 10, sp: 3, yr: 2024 },  // Berlin
-      { lat: 52.370, lng:  4.895, r: 0.18, n:  8, sp: 3, yr: 2024 },  // Amsterdam (r=0.18 avoids harbour)
-
-      // ── Israel / Middle East ──
-      { lat: 31.771, lng: 35.217, r: 0.35, n: 18, sp: 3, yr: 2024 },  // Jerusalem area
-      { lat: 32.085, lng: 34.781, r: 0.18, n: 15, sp: 3, yr: 2024 },  // Tel Aviv (coastal — r=0.18)
-      { lat: 36.737, lng:  3.086, r: 0.22, n: 15, sp: 3, yr: 2023 },  // Algiers (coastal — r=0.22)
-      { lat: 36.819, lng: 10.165, r: 0.22, n: 12, sp: 3, yr: 2023 },  // Tunis (coastal — r=0.22)
-
-      // ── Japan / SE Asia (Japanese Encephalitis — Culex tritaeniorhynchus) ──
-      { lat: 35.690, lng:139.690, r: 0.35, n: 15, sp: 3, yr: 2024 },  // Tokyo
-      { lat: 33.590, lng:130.402, r: 0.25, n: 15, sp: 3, yr: 2023 },  // Fukuoka (coastal — r=0.25)
-      { lat: 13.754, lng:100.501, r: 0.38, n: 20, sp: 3, yr: 2024 },  // Bangkok
-      { lat: 28.644, lng: 77.216, r: 0.42, n: 20, sp: 3, yr: 2024 },  // Delhi
-      { lat: 22.572, lng: 88.363, r: 0.28, n: 18, sp: 3, yr: 2023 },  // Kolkata
-      { lat: 23.810, lng: 90.412, r: 0.32, n: 18, sp: 3, yr: 2023 },  // Dhaka
-
-      // ── Australia (Culex annulirostris — Murray Valley Encephalitis) ──
-      { lat:-12.462, lng:130.841, r: 0.22, n: 15, sp: 3, yr: 2023 },  // Darwin (coastal — r=0.22)
-      { lat:-31.952, lng:115.861, r: 0.22, n: 12, sp: 3, yr: 2023 },  // Perth (coastal — r=0.22)
-      { lat:-25.860, lng:130.000, r: 0.50, n: 15, sp: 3, yr: 2022 },  // NT interior (inland — OK)
-
-      // ── Africa Culex / filariasis ──
-      { lat: -6.792, lng: 39.208, r: 0.18, n: 15, sp: 3, yr: 2023 },  // Dar es Salaam
-      { lat:  6.524, lng:  3.379, r: 0.22, n: 15, sp: 3, yr: 2023 },  // Lagos
-      { lat: -4.322, lng: 15.322, r: 0.40, n: 12, sp: 3, yr: 2023 },  // Kinshasa
-
-      // ── South America Culex ──
-      { lat:-22.908, lng:-43.172, r: 0.22, n: 15, sp: 3, yr: 2023 },  // Rio
-      { lat:-34.618, lng:-58.381, r: 0.38, n: 15, sp: 3, yr: 2023 },  // Buenos Aires
-      { lat:-12.046, lng:-77.043, r: 0.20, n: 12, sp: 3, yr: 2022 },  // Lima
-
+      // ════════ CULEX — WEST NILE / JAPANESE ENCEPHALITIS ════════
+      // CDC ArboNET 2024: SD highest (13% seroprevalence), ND, NE, KS
+      { lat: 44.367, lng:-100.346,r: 0.35, n: 30, sp: 3, yr: 2024 }, // South Dakota — inland
+      { lat: 47.551, lng:-101.002,r: 0.35, n: 25, sp: 3, yr: 2024 }, // North Dakota — inland
+      { lat: 41.490, lng: -99.900,r: 0.35, n: 25, sp: 3, yr: 2024 }, // Nebraska — inland
+      { lat: 39.000, lng: -98.000,r: 0.35, n: 25, sp: 3, yr: 2024 }, // Kansas — inland
+      { lat: 46.870, lng:-110.360,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Montana — inland
+      { lat: 43.080, lng:-108.980,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Wyoming — inland
+      { lat: 34.052, lng:-118.243,r: 0.12, n: 18, sp: 3, yr: 2024 }, // Los Angeles — coastal
+      { lat: 32.726, lng: -97.321,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Dallas — inland
+      { lat: 41.836, lng: -87.684,r: 0.35, n: 15, sp: 3, yr: 2024 }, // Chicago — inland (lake 3km E)
+      { lat: 29.951, lng: -90.071,r: 0.12, n: 18, sp: 3, yr: 2024 }, // New Orleans — delta
+      { lat: 33.448, lng:-112.074,r: 0.35, n: 15, sp: 3, yr: 2024 }, // Phoenix — inland
+      // Italy WNV 2024 (ECDC: 767 cases Italy 2025 ytd)
+      { lat: 45.464, lng:  9.190, r: 0.35, n: 30, sp: 3, yr: 2024 }, // Milan/Lombardy
+      { lat: 45.438, lng: 12.335, r: 0.05, n: 22, sp: 3, yr: 2024 }, // Venice/Veneto — island city, scatter on terraferma r=0.05
+      { lat: 44.494, lng: 11.342, r: 0.35, n: 22, sp: 3, yr: 2024 }, // Bologna — inland
+      { lat: 41.902, lng: 12.496, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Rome — inland
+      { lat: 40.851, lng: 14.268, r: 0.12, n: 15, sp: 3, yr: 2024 }, // Naples — coastal
+      { lat: 45.065, lng:  7.685, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Turin — inland
+      // Greece WNV (ECDC)
+      { lat: 40.640, lng: 22.944, r: 0.35, n: 22, sp: 3, yr: 2024 }, // Thessaloniki — inland
+      { lat: 37.983, lng: 23.727, r: 0.12, n: 15, sp: 3, yr: 2024 }, // Athens — coastal
+      // SE Europe WNV
+      { lat: 44.439, lng: 26.097, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Bucharest — inland
+      { lat: 44.812, lng: 20.461, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Belgrade — inland
+      { lat: 47.497, lng: 19.040, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Budapest — inland
+      // Russia historical WNV
+      { lat: 48.708, lng: 44.513, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Volgograd — inland
+      { lat: 47.227, lng: 39.720, r: 0.35, n: 15, sp: 3, yr: 2023 }, // Rostov-on-Don — inland
+      { lat: 48.708, lng: 44.513, r: 0.35, n: 12, sp: 3, yr: 1999 }, // Volgograd 1999 outbreak
+      // Germany / NL northward spread 2024
+      { lat: 52.520, lng: 13.405, r: 0.35, n: 10, sp: 3, yr: 2024 }, // Berlin — inland
+      { lat: 52.370, lng:  4.895, r: 0.12, n:  8, sp: 3, yr: 2024 }, // Amsterdam — r=0.12
+      // Middle East
+      { lat: 31.771, lng: 35.217, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Jerusalem — inland
+      { lat: 32.085, lng: 34.781, r: 0.08, n: 15, sp: 3, yr: 2024 }, // Tel Aviv — coastal, r=0.08
+      { lat: 36.737, lng:  3.086, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Algiers — coastal
+      { lat: 36.819, lng: 10.165, r: 0.12, n: 12, sp: 3, yr: 2023 }, // Tunis — coastal
+      // Historical WNV
+      { lat: 44.439, lng: 26.097, r: 0.35, n: 10, sp: 3, yr: 1996 }, // Bucharest 1996 — first major EU WNV
+      { lat: 41.836, lng: -87.684,r: 0.35, n: 18, sp: 3, yr: 2002 }, // Chicago 2002 — largest US WNV
+      { lat: 44.367, lng:-100.346,r: 0.35, n: 25, sp: 3, yr: 2007 },
+      { lat: 40.640, lng: 22.944, r: 0.35, n: 18, sp: 3, yr: 2010 }, // Greece 2010 outbreak
+      { lat: 45.464, lng:  9.190, r: 0.35, n: 15, sp: 3, yr: 2015 },
+      // JE / Filariasis Asia
+      { lat: 35.690, lng:139.690, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Tokyo
+      { lat: 13.754, lng:100.501, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Bangkok
+      { lat: 28.644, lng: 77.216, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Delhi
+      { lat: 22.572, lng: 88.363, r: 0.35, n: 18, sp: 3, yr: 2023 }, // Kolkata
+      { lat: 23.810, lng: 90.412, r: 0.35, n: 18, sp: 3, yr: 2023 }, // Dhaka
+      // Australia Culex (Murray Valley Encephalitis)
+      { lat:-12.462, lng:130.841, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Darwin — coastal
+      { lat:-25.860, lng:130.000, r: 0.35, n: 15, sp: 3, yr: 2022 }, // NT interior — inland
+      // Africa filariasis (Culex)
+      { lat: -6.792, lng: 39.208, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Dar es Salaam — coastal
+      { lat:  6.524, lng:  3.379, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Lagos — coastal
+      { lat: -4.322, lng: 15.322, r: 0.35, n: 12, sp: 3, yr: 2023 }, // Kinshasa — inland
+      // S. America Culex
+      { lat:-22.908, lng:-43.172, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Rio — coastal
+      { lat:-34.618, lng:-58.381, r: 0.35, n: 15, sp: 3, yr: 2023 }, // Buenos Aires — inland
+      { lat:-12.046, lng:-77.043, r: 0.12, n: 12, sp: 3, yr: 2022 }, // Lima — coastal
     ];
 
     for (const c of centers) {
@@ -2163,77 +2352,75 @@ class App {
   }
 
   async init() {
-    // ── Dismiss splash immediately — never block on this ──────────────────
-    // iOS Safari kills pages that hold the splash too long.
-    // We remove it right away; UI renders underneath.
+    // ── 1. Dismiss splash immediately ─────────────────────────────────────
     const splashEl = document.getElementById('splash');
-    if (splashEl) {
-      setTimeout(() => splashEl.classList.add('hidden'), 400);
-    }
+    if (splashEl) setTimeout(() => splashEl.classList.add('out'), 500);
 
-    // Register Service Worker for PWA offline support
+    // ── 2. Non-blocking setup ─────────────────────────────────────────────
     this.registerServiceWorker();
-
-    // Request geolocation early (async, non-blocking)
     this.acquireGeolocation();
 
-    // ── UI wiring (synchronous, fast) ────────────────────────────────────
-    // Wire up buttons
-    document.getElementById('btn-mic').addEventListener('click', () => this.toggleListening());
-    document.getElementById('btn-allow').addEventListener('click', () => this.requestMic());
+    // ── 3. Button wiring ──────────────────────────────────────────────────
+    const listenBtn = document.getElementById('btn-listen');
+    if (listenBtn) listenBtn.addEventListener('click', () => this.toggleListening());
+    const allowBtn = document.getElementById('btn-allow');
+    if (allowBtn) allowBtn.addEventListener('click', () => this.requestMic());
 
-    // Handle resize
-    window.addEventListener('resize', () => {
-      if (this.spectrogram) this.spectrogram.resize();
+    // ── 4. Tab system ─────────────────────────────────────────────────────
+    this.mapInited = false;
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const name = tab.dataset.tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        tab.classList.add('active');
+        const view = document.getElementById('view-' + name);
+        if (view) view.classList.add('active');
+        if (name === 'map' && !this.mapInited) {
+          this.mapInited = true;
+          setTimeout(() => {
+            try { this.mapCtrl.init(); this.wireYearSlider(); }
+            catch(e) { console.warn('Map init:', e); }
+          }, 80);
+        }
+      });
     });
 
-    // Session timer
+    // ── 5. Resize handling ────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      if (this.spectrogram) try { this.spectrogram.resize(); } catch(e){}
+    });
+
+    // ── 6. Timers ─────────────────────────────────────────────────────────
     setInterval(() => this.updateFooter(), 1000);
+    // (No fake contributor count — removed for honesty)
 
-    // Background contributor count animation
-    setInterval(() => {
-      const el = document.getElementById('contrib-count');
-      if (el) {
-        const n = parseInt(el.textContent.replace(',','')) + Math.floor(Math.random() * 3);
-        el.textContent = n.toLocaleString();
-      }
-    }, 8000);
+    // ── 7. Build persistent detection grid (ONCE) ─────────────────────────
+    try { this.buildDetectionGrid(); } catch(e) { console.warn('det grid:', e); }
 
-    // ── Build stats grid (fast) ───────────────────────────────────────────
-    try { this.buildStatsGrid(); } catch(e) { console.warn('stats grid:', e); }
+    // ── 8. Build species stat cards ───────────────────────────────────────
+    try { this.buildSpStatCards(); } catch(e) { console.warn('sp cards:', e); }
 
-    // ── Spectrogram canvas (fast) ─────────────────────────────────────────
+    // ── 9. Spectrogram canvas ─────────────────────────────────────────────
     try {
       const canvas = document.getElementById('spectrogram');
       if (canvas) this.spectrogram = new SpectrogramRenderer(canvas);
     } catch(e) { console.warn('spectrogram:', e); }
+  }
 
-    // ── Map init: deferred so splash can dismiss and UI can paint ─────────
-    await new Promise(resolve => setTimeout(resolve, 50));
-    try {
-      this.mapCtrl.init();
-    } catch (mapErr) {
-      console.warn('Map init failed (non-fatal):', mapErr);
-    }
-
-    // ── Year slider wiring (after map is ready) ───────────────────────────
-
-    // ── Year slider wiring ──────────────────────────────────────────────────
+  wireYearSlider() {
     const YEAR_STEPS = [1996, 2000, 2005, 2010, 2015, 2018, 2020, 2022, 2023, 2024, null];
-    const sliderEl   = document.getElementById('year-slider');
-    const labelEl    = document.getElementById('year-label');
-
-    const applyYear = (idx) => {
-      const yr = YEAR_STEPS[idx];
+    const sliderEl = document.getElementById('year-slider');
+    const labelEl  = document.getElementById('year-label');
+    if (!sliderEl || !labelEl) return;
+    const apply = (i) => {
+      const yr = YEAR_STEPS[i];
       labelEl.textContent = yr === null ? 'ALL' : String(yr);
       this.mapCtrl.filterByYear(yr);
     };
-
-    sliderEl.addEventListener('input', (e) => applyYear(parseInt(e.target.value)));
-
-    // Init at "ALL"
+    sliderEl.addEventListener('input', e => apply(parseInt(e.target.value)));
     sliderEl.value = YEAR_STEPS.length - 1;
-    applyYear(YEAR_STEPS.length - 1);
+    apply(YEAR_STEPS.length - 1);
   }
 
   registerServiceWorker() {
@@ -2302,19 +2489,19 @@ self.addEventListener('fetch', e => {
           return;
         }
         if (perm.state === 'prompt') {
-          document.getElementById('permission-screen').classList.add('show');
+          document.getElementById('perm-screen').classList.add('show');
           return;
         }
         this.startListening();
       } catch {
         // permissions API not supported (e.g. older Safari) — just try
-        document.getElementById('permission-screen').classList.add('show');
+        document.getElementById('perm-screen').classList.add('show');
       }
     }
   }
 
   async requestMic() {
-    document.getElementById('permission-screen').classList.remove('show');
+    document.getElementById('perm-screen').classList.remove('show');
     await this.startListening();
   }
 
@@ -2328,9 +2515,9 @@ self.addEventListener('fetch', e => {
       this.running = true;
       this.setStatus('active', 'LISTENING');
 
-      const btn = document.getElementById('btn-mic');
-      btn.classList.add('active');
-      document.getElementById('mic-label').textContent = 'STOP';
+      const btn = document.getElementById('btn-listen');
+      if(btn){btn.classList.add('active')};
+      document.getElementById('btn-listen-label').textContent = 'STOP';
 
       this.showToast('🎙 Acoustic monitoring active — best results outdoors at night');
 
@@ -2348,9 +2535,9 @@ self.addEventListener('fetch', e => {
     if (this.engine) this.engine.stop();
 
     this.setStatus('', 'OFFLINE');
-    const btn = document.getElementById('btn-mic');
-    btn.classList.remove('active');
-    document.getElementById('mic-label').textContent = 'START';
+    const btn = document.getElementById('btn-listen');
+    if(btn){btn.classList.remove('active')};
+    document.getElementById('btn-listen-label').textContent = 'START';
 
     document.getElementById('detections').innerHTML = `
       <div class="no-detection">
@@ -2421,96 +2608,107 @@ self.addEventListener('fetch', e => {
 
   drawWaveform(timeData) {
     const canvas = document.getElementById('waveform');
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    const W = canvas.width = canvas.offsetWidth;
-    const H = canvas.height = 48;
-    const step = Math.floor(timeData.length / W);
+    const W = canvas.width = canvas.offsetWidth || 200;
+    const H = canvas.height = canvas.offsetHeight || 34;
+    const step = Math.max(1, Math.floor(timeData.length / W));
 
     ctx.clearRect(0, 0, W, H);
-
-    // Background
-    ctx.fillStyle = '#060f20';
+    ctx.fillStyle = 'var(--s1, #061422)';
     ctx.fillRect(0, 0, W, H);
 
-    // Center line
-    ctx.strokeStyle = 'rgba(0,200,170,0.1)';
+    // RMS
+    let rmsSum = 0;
+    for (let i = 0; i < timeData.length; i++) rmsSum += timeData[i]*timeData[i];
+    const rmsDb = 20 * Math.log10(Math.sqrt(rmsSum/timeData.length) + 1e-9);
+    const rmsEl = document.getElementById('wf-rms');
+    if (rmsEl) rmsEl.textContent = rmsDb.toFixed(1) + ' dB';
+
+    ctx.strokeStyle = 'rgba(0,232,192,0.08)';
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
 
-    // Waveform
-    ctx.strokeStyle = '#00ffc8';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#00e8c0';
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     for (let x = 0; x < W; x++) {
       const sample = timeData[x * step] || 0;
-      const y = H/2 + sample * (H/2 - 4);
+      const y = H/2 + sample * (H/2 - 3);
       x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
   }
 
-  updateDetectionPanel(detections) {
-    const el = document.getElementById('detections');
-    if (detections.length === 0) {
-      // Don't clear immediately — keep last detection visible for a bit
-      if (this.sampleCount % 30 === 0) {
-        el.innerHTML = `
-          <div class="no-detection">
-            <div class="nd-icon">👂</div>
-            <div>Listening… no vectors detected</div>
-          </div>`;
-      }
-      return;
-    }
-
-    const R = 20;  // SVG ring radius
-    const C = 2 * Math.PI * R;
-
-    el.innerHTML = detections.map(det => {
-      const pct     = Math.round(det.confidence * 100);
-      const offset  = C * (1 - det.confidence);
-      const sp      = det.species;
-      const snrStr  = det.snr.toFixed(1);
-      const freqStr = det.frequency.toFixed(0);
-
-      return `
-        <div class="detection-card" style="border-color:${sp.color}33">
-          <div class="detect-ring">
-            <svg viewBox="0 0 44 44">
-              <circle class="ring-bg"  cx="22" cy="22" r="${R}"/>
-              <circle class="ring-val" cx="22" cy="22" r="${R}"
-                stroke="${sp.color}"
-                stroke-dasharray="${C}"
-                stroke-dashoffset="${offset}"/>
-            </svg>
-            <div class="detect-ring-label" style="
-              position:absolute;inset:0;display:flex;align-items:center;
-              justify-content:center;font-size:0.6rem;font-weight:700;
-              color:${sp.color}">
-              ${pct}%
-            </div>
+  buildDetectionGrid() {
+    // Called ONCE on init — creates 4 fixed cells, one per species.
+    // updateDetectionPanel() then mutates them in-place. No layout shift ever.
+    const grid = document.getElementById('detection-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    const SP_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
+    SPECIES_DB.forEach((sp, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'detect-cell';
+      cell.id = `dc-${sp.id}`;
+      cell.style.setProperty('--cell-color', SP_COLORS[i]);
+      cell.innerHTML = `
+        <div class="dc-header">
+          <div class="dc-dot"></div>
+          <div>
+            <div class="dc-species">${sp.name.split(' ').slice(1).join(' ') || sp.name}</div>
+            <div class="dc-disease">${sp.disease.split('/')[0].trim()}</div>
           </div>
-          <div class="detect-info">
-            <div class="detect-species" style="color:${sp.color}">${sp.name}</div>
-            <div class="detect-disease">${sp.icon} ${sp.disease}</div>
-            <div class="detect-freq">♦ ${freqStr} Hz · Risk: ${sp.risk}</div>
+        </div>
+        <div class="dc-body">
+          <div class="dc-conf" id="dc-conf-${sp.id}">—</div>
+          <div class="dc-meta">
+            <div class="dc-freq" id="dc-freq-${sp.id}">— Hz</div>
+            <div class="dc-snr"  id="dc-snr-${sp.id}">— dB</div>
           </div>
-          <div class="detect-snr">
-            <div class="snr-val" style="color:${sp.color}">+${snrStr}</div>
-            <div class="snr-label">dB SNR</div>
-          </div>
-        </div>`;
-    }).join('');
+        </div>
+        <div class="dc-bar"><div class="dc-bar-fill" id="dc-bar-${sp.id}" style="width:0%"></div></div>`;
+      grid.appendChild(cell);
+    });
   }
 
-  buildStatsGrid() {
-    const el = document.getElementById('stats-grid');
-    el.innerHTML = SPECIES_DB.map(sp => `
-      <div class="stat-card" style="--bar-color:${sp.color}">
-        <div style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${sp.color};border-radius:3px 0 0 3px;opacity:0.6"></div>
-        <div class="stat-species">${sp.name.split(' ')[1] || sp.name}</div>
-        <div class="stat-count" style="color:${sp.color}" id="count-${sp.id}">0</div>
-        <div class="stat-sub">${sp.disease.split('/')[0].trim()}</div>
+  updateDetectionPanel(detections) {
+    // Update each cell in-place — DOM structure NEVER changes, no reflow
+    SPECIES_DB.forEach(sp => {
+      const cell   = document.getElementById(`dc-${sp.id}`);
+      const confEl = document.getElementById(`dc-conf-${sp.id}`);
+      const freqEl = document.getElementById(`dc-freq-${sp.id}`);
+      const snrEl  = document.getElementById(`dc-snr-${sp.id}`);
+      const barEl  = document.getElementById(`dc-bar-${sp.id}`);
+      if (!cell) return;
+
+      const det = detections.find(d => d.species.id === sp.id);
+      if (det && det.confidence > 0.35) {
+        const pct = Math.round(det.confidence * 100);
+        if (confEl) confEl.textContent = pct + '%';
+        if (freqEl) freqEl.textContent = det.frequency.toFixed(0) + ' Hz';
+        if (snrEl)  snrEl.textContent  = '+' + det.snr.toFixed(1) + ' dB';
+        if (barEl)  barEl.style.width  = pct + '%';
+        cell.classList.add('hot');
+      } else {
+        if (confEl) confEl.textContent = this.running ? '—' : '—';
+        if (freqEl) freqEl.textContent = '— Hz';
+        if (snrEl)  snrEl.textContent  = '— dB';
+        if (barEl)  barEl.style.width  = '0%';
+        cell.classList.remove('hot');
+      }
+    });
+  }
+
+  buildSpStatCards() {
+    const SP_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
+    const el = document.getElementById('sp-stat-cards');
+    if (!el) return;
+    el.innerHTML = SPECIES_DB.map((sp, i) => `
+      <div class="sp-card" style="--sp-color:${SP_COLORS[i]}">
+        <div class="sp-card-name">${sp.name}</div>
+        <div class="sp-card-count" id="count-${sp.id}">0</div>
+        <div class="sp-card-disease">${sp.disease}</div>
       </div>
     `).join('');
   }
@@ -2523,24 +2721,29 @@ self.addEventListener('fetch', e => {
   }
 
   updateFedStatus() {
-    const s = this.fedClient.getStatus();
-    const pct = Math.round((s.progress / s.uploadEvery) * 100);
+    try {
+      const s = this.fedClient.getStatus();
+      const pct = Math.round((s.progress / s.uploadEvery) * 100);
 
-    document.getElementById('fed-bar').style.width = `${pct}%`;
-    document.getElementById('fed-pct').textContent =
-      `${s.progress} / ${s.uploadEvery} steps`;
+      const barEl = document.getElementById('fed-bar');
+      if (barEl) barEl.style.width = `${pct}%`;
 
-    let desc = `Round ${s.roundNumber} · ${s.localSteps} total steps`;
-    if (s.lastUpload) {
-      const ago = Math.round((Date.now() - s.lastUpload) / 1000);
-      desc += ` · uploaded ${ago}s ago`;
-    } else {
-      desc += ` · pending upload`;
-    }
-    if (s.uploadFailed > 0) {
-      desc += ` (${s.uploadFailed} offline, will retry)`;
-    }
-    document.getElementById('fed-desc').textContent = desc;
+      const stepsEl = document.getElementById('fed-steps');
+      if (stepsEl) stepsEl.textContent = `${s.progress} / ${s.uploadEvery} steps`;
+
+      const roundEl = document.getElementById('fed-round');
+      if (roundEl) roundEl.textContent = `Round ${s.roundNumber}`;
+
+      const uploadEl = document.getElementById('fed-upload');
+      if (uploadEl) {
+        if (s.lastUpload) {
+          const ago = Math.round((Date.now() - s.lastUpload) / 1000);
+          uploadEl.textContent = `uploaded ${ago}s ago`;
+        } else {
+          uploadEl.textContent = s.uploadFailed > 0 ? `${s.uploadFailed} offline` : 'pending upload';
+        }
+      }
+    } catch(e) { /* silent */ }
   }
 
   updateFooter() {
@@ -2548,21 +2751,29 @@ self.addEventListener('fetch', e => {
     const elapsed = Math.floor((Date.now() - this.sessionStart) / 1000);
     const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
     const ss = String(elapsed % 60).padStart(2, '0');
-    const el = document.getElementById('session-time');
-    if (el) el.textContent = `${mm}:${ss}`;
-    const sc = document.getElementById('sample-count');
-    if (sc) sc.textContent = this.sampleCount.toLocaleString();
+    const timeStr = `${mm}:${ss}`;
+    // Update all footer/stat time elements
+    ['footer-session','stat-session'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = timeStr;
+    });
+    const sampStr = this.sampleCount.toLocaleString();
+    ['footer-samples','stat-samples'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = sampStr;
+    });
   }
 
   setStatus(type, text) {
     const dot = document.getElementById('status-dot');
     const txt = document.getElementById('status-text');
-    dot.className = `status-dot${type ? ' ' + type : ''}`;
-    txt.textContent = text;
+    if (dot) dot.className = `status-dot${type ? ' ' + type : ''}`;
+    if (txt) txt.textContent = text;
   }
 
   showToast(msg, duration = 3500) {
     const el = document.getElementById('toast');
+    if (!el) return;
     el.textContent = msg;
     el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), duration);
@@ -2612,6 +2823,7 @@ document.addEventListener('touchstart', () => {
     window._app.engine.ctx.resume();
   }
 }, { once: true, passive: true });
+
 </script>
 </body>
 </html>
