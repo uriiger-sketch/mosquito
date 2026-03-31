@@ -284,8 +284,8 @@ body::after {
 
 .listen-top {
   flex-shrink: 0;
-  height: 240px;
-  padding: 10px 14px 0;
+  height: 165px;
+  padding: 8px 14px 0;
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -329,8 +329,8 @@ body::after {
 /* waveform strip */
 .waveform-strip {
   flex-shrink: 0;
-  height: 44px;
-  padding: 0 14px 10px;
+  height: 36px;
+  padding: 0 14px 8px;
   display: flex; align-items: stretch; gap: 8px;
 }
 #waveform {
@@ -368,20 +368,23 @@ body::after {
    At threshold it LOCKS — glowing, pulsing, unmistakable.
    ──────────────────────────────────────────────────────────── */
 .detection-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
   flex-shrink: 0;
+  min-height: 280px;   /* enough for 2 rows to be visible */
 }
 
 .detect-cell {
   background: var(--s1);
   border: 1px solid var(--border3);
-  border-radius: 10px;
-  padding: 12px 14px 10px;
+  border-radius: 8px;
+  padding: 9px 11px 8px;
   position: relative;
   overflow: hidden;
   transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
+  min-height: 0;
 }
 
 /* Idle state: dim left accent strip */
@@ -421,7 +424,7 @@ body::after {
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 .dc-species {
-  font-size: 0.75rem; font-weight: 700;
+  font-size: 0.68rem; font-weight: 700;
   color: var(--text1); flex: 1;
   letter-spacing: -0.01em;
 }
@@ -434,7 +437,7 @@ body::after {
 /* ── CHARGE BAR — the hero element ── */
 .dc-charge-wrap {
   position: relative;
-  height: 28px;
+  height: 24px;
   background: var(--s3);
   border-radius: 5px;
   overflow: hidden;
@@ -727,6 +730,12 @@ body::after {
   position: relative;
 }
 #map { width: 100%; height: 100%; }
+
+/* User location pulse */
+@keyframes pulse-user {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(37,99,235,0.35); }
+  50%       { box-shadow: 0 0 0 10px rgba(37,99,235,0.10); }
+}
 
 /* Leaflet dark skin */
 .leaflet-container { background: #061422 !important; font-family: 'Space Grotesk', sans-serif !important; }
@@ -1753,8 +1762,8 @@ class SpectrogramRenderer {
     this.ctx    = canvas.getContext('2d');
 
     // Frequency range — focused on mosquito science only
-    this.MIN_FREQ = 150;
-    this.MAX_FREQ = 1400;
+    this.MIN_FREQ = 380;
+    this.MAX_FREQ = 820;  // 380-820 Hz: covers all 4 species with max resolution
 
     // Offscreen pixel buffer (scrolling ImageData)
     this.offscreen    = null;
@@ -1772,8 +1781,16 @@ class SpectrogramRenderer {
     // Last detections from classifier
     this.lastDetections = [];
 
-    // Gaussian kernel for vertical frequency-axis smoothing (7-tap, σ=2)
+    // Gaussian kernel (7-tap, σ=2)
     this.gaussK = [0.027, 0.097, 0.228, 0.294, 0.228, 0.097, 0.027];
+
+    // ── Spectral subtraction noise model ─────────────────────────
+    // Estimate per-bin noise profile during the first ~2s of listening,
+    // then subtract it from every frame. Eliminates consistent background hum.
+    this.noiseProfile   = null;   // Float32Array — per-bin average noise in dB
+    this.noiseAccum     = null;   // accumulation buffer for noise estimation
+    this.noiseFrameCount = 0;
+    this.NOISE_CALIB_FRAMES = 50; // ~2s at 25fps before subtraction kicks in
 
     this.resize();
   }
@@ -1888,32 +1905,73 @@ class SpectrogramRenderer {
 
   // ── Push new FFT column ────────────────────────────────────────
   // Uses SMOOTHED freqData (from display analyser) for beautiful visuals.
+  // Reset noise calibration (call when starting a new listening session)
+  resetNoise() {
+    this.noiseProfile    = null;
+    this.noiseAccum      = null;
+    this.noiseFrameCount = 0;
+  }
+
   pushColumn(freqData, engine) {
     if (!this.imageData || !freqData) return;
 
     const W = this.canvas.width;
     const H = this.canvas.height;
     const d = this.imageData.data;
-
-    // Update running noise floor (EMA of spectral minimum)
     const lo = engine.freqToBin(this.MIN_FREQ);
     const hi = Math.min(engine.freqToBin(this.MAX_FREQ), freqData.length - 1);
-    let minVal = 0;
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(freqData[i]) && freqData[i] < minVal) minVal = freqData[i];
+    const binCount = hi - lo + 1;
+
+    // ── Spectral Subtraction ──────────────────────────────────────
+    // Phase 1 (first NOISE_CALIB_FRAMES): accumulate per-bin power to build profile
+    // Phase 2 (after): subtract profile from each frame before display
+    if (this.noiseFrameCount < this.NOISE_CALIB_FRAMES) {
+      if (!this.noiseAccum) this.noiseAccum = new Float64Array(binCount);
+      for (let i = lo; i <= hi; i++) {
+        const v = isFinite(freqData[i]) ? freqData[i] : -90;
+        // Accumulate linear power
+        this.noiseAccum[i - lo] += Math.pow(10, v / 10);
+      }
+      this.noiseFrameCount++;
+      if (this.noiseFrameCount === this.NOISE_CALIB_FRAMES) {
+        // Convert average power back to dB — this is our noise floor per bin
+        this.noiseProfile = new Float32Array(binCount);
+        for (let k = 0; k < binCount; k++) {
+          this.noiseProfile[k] = 10 * Math.log10(
+            this.noiseAccum[k] / this.NOISE_CALIB_FRAMES
+          );
+        }
+        this.noiseAccum = null; // free memory
+      }
     }
-    // Soft minimum estimate: 25th percentile of visible range
+
+    // Build noise-subtracted view of freqData for display
+    const displayData = new Float32Array(freqData.length);
+    for (let i = 0; i < freqData.length; i++) displayData[i] = freqData[i];
+    if (this.noiseProfile) {
+      for (let i = lo; i <= hi; i++) {
+        const noiseDb   = this.noiseProfile[i - lo];
+        const signalDb  = isFinite(freqData[i]) ? freqData[i] : -90;
+        // Spectral subtraction in power domain:
+        // P_clean = P_signal - alpha * P_noise  (alpha=1.5 for oversubtraction)
+        const pSignal = Math.pow(10, signalDb / 10);
+        const pNoise  = Math.pow(10, noiseDb  / 10);
+        const pClean  = Math.max(pSignal - 1.5 * pNoise, 1e-10);
+        displayData[i] = 10 * Math.log10(pClean);
+      }
+    }
+
+    // ── Running noise floor for colormap (from subtracted data) ──
     const slice = [];
     for (let i = lo; i <= hi; i++) {
-      if (isFinite(freqData[i])) slice.push(freqData[i]);
+      if (isFinite(displayData[i])) slice.push(displayData[i]);
     }
     if (slice.length) {
       slice.sort((a,b)=>a-b);
-      const p20 = slice[Math.floor(slice.length*0.20)];
+      const p20 = slice[Math.floor(slice.length * 0.20)];
       this.smoothedNoiseFloor = this.NOISE_EMA * this.smoothedNoiseFloor +
-                                (1-this.NOISE_EMA) * p20;
+                                (1 - this.NOISE_EMA) * p20;
     }
-
     const floor = this.smoothedNoiseFloor;
 
     // Update species band glow (exponential decay + signal boost)
@@ -1932,13 +1990,13 @@ class SpectrogramRenderer {
       d.copyWithin(base, base + 4, base + W * 4);
     }
 
-    // Build new right column — sample FFT at each Y with Gaussian smoothing
+    // Build new right column — use NOISE-SUBTRACTED displayData
     const col = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       const hz  = this.yToFreq(y);
       const bin = engine.freqToBin(hz);
-      col[y] = (bin < freqData.length && isFinite(freqData[bin]))
-               ? freqData[bin] : floor;
+      col[y] = (bin < displayData.length && isFinite(displayData[bin]))
+               ? displayData[bin] : floor;
     }
 
     // 7-tap Gaussian vertical blur
@@ -2960,6 +3018,45 @@ class MapController {
     return `${clat.toFixed(1)},${clng.toFixed(1)},${spId}`;
   }
 
+  setUserLocation(lat, lng) {
+    if (!this.map) return;
+
+    // Create or update the "You are here" marker
+    if (this._userMarker) {
+      this._userMarker.setLatLng([lat, lng]);
+      if (this._userRing)  this._userRing.setLatLng([lat, lng]);
+      return;
+    }
+
+    // Pulsing blue dot — custom DivIcon
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:16px;height:16px;border-radius:50%;
+        background:#2563eb;
+        border:2px solid #fff;
+        box-shadow:0 0 0 4px rgba(37,99,235,0.35);
+        animation:pulse-user 2s ease-in-out infinite;
+      "></div>`,
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+    });
+
+    this._userMarker = L.marker([lat, lng], { icon, zIndexOffset: 9000 })
+      .addTo(this.map)
+      .bindPopup('<b>📍 Your location</b><br>GPS position');
+
+    // Outer pulsing ring
+    this._userRing = L.circleMarker([lat, lng], {
+      radius: 18,
+      color: '#2563eb',
+      fillColor: '#2563eb',
+      fillOpacity: 0.08,
+      weight: 1.5,
+      opacity: 0.5,
+    }).addTo(this.map);
+  }
+
   addLocalDetection(lat, lng, species) {
     const key   = this.cellKey(lat, lng, species.id);
     const count = (this.densityGrid[key] || 0) + 1;
@@ -3284,27 +3381,32 @@ self.addEventListener('fetch', e => {
     if (!('geolocation' in navigator)) return;
 
     const options = {
-      enableHighAccuracy: false,  // cell/WiFi only — sufficient for city-level map
-      timeout: 15000,
-      maximumAge: 300000,         // accept cached position up to 5 min old
+      enableHighAccuracy: true,   // use GPS when available
+      timeout: 20000,
+      maximumAge: 60000,
     };
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        this.deviceLat = pos.coords.latitude;
-        this.deviceLng = pos.coords.longitude;
-        // Pan map to user's region (not zoomed in — preserves global view)
-        if (this.mapCtrl.map) {
-          this.mapCtrl.map.setView([this.deviceLat, this.deviceLng], 4, { animate: true });
-        }
-      },
-      (err) => {
-        // Permission denied or unavailable — silent fail.
-        // Local detections simply won't appear on map until geoloc granted.
-        console.info('Geolocation unavailable:', err.message);
-      },
-      options
-    );
+    const onPos = (pos) => {
+      this.deviceLat = pos.coords.latitude;
+      this.deviceLng = pos.coords.longitude;
+
+      // Show/update user marker on map
+      this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
+
+      // Pan map to user (only on first fix)
+      if (this.mapCtrl.map && !this._geoPanned) {
+        this._geoPanned = true;
+        this.mapCtrl.map.setView([this.deviceLat, this.deviceLng], 5, { animate: true });
+      }
+    };
+
+    const onErr = (err) => {
+      console.info('Geolocation:', err.message);
+    };
+
+    // Get immediate fix, then watch for updates
+    navigator.geolocation.getCurrentPosition(onPos, onErr, options);
+    this._watchId = navigator.geolocation.watchPosition(onPos, onErr, options);
   }
 
   async toggleListening() {
@@ -3346,6 +3448,8 @@ self.addEventListener('fetch', e => {
         const canvas = document.getElementById('spectrogram');
         if (canvas) {
           this.spectrogram = new SpectrogramRenderer(canvas);
+          // Reset noise calibration for each new session
+          this.spectrogram.resetNoise();
         }
       } catch(e) { console.warn('spectrogram init:', e); }
 
@@ -3426,6 +3530,10 @@ self.addEventListener('fetch', e => {
           if (cs.gated) {
             gateEl.textContent = '⚡ loud room';
             gateEl.style.color = 'var(--amber)';
+          } else if (this.spectrogram && this.spectrogram.noiseFrameCount < this.spectrogram.NOISE_CALIB_FRAMES) {
+            const pct = Math.round(this.spectrogram.noiseFrameCount / this.spectrogram.NOISE_CALIB_FRAMES * 100);
+            gateEl.textContent = `⌛ noise cal. ${pct}%`;
+            gateEl.style.color = 'var(--amber)';
           } else {
             gateEl.textContent = `NF ${cs.noiseFloor.toFixed(0)} dB`;
             gateEl.style.color = 'var(--text3)';
@@ -3450,10 +3558,14 @@ self.addEventListener('fetch', e => {
         }
       });
 
-      // 5. Update session counts
+      // 5. Update session counts + top-bar detection counter
       detections.forEach(det => {
         this.sessionCounts[det.species.id]++;
       });
+      // Update nb-detections with TOTAL local session detections (all species summed)
+      const totalLocal = Object.values(this.sessionCounts).reduce((s, v) => s + v, 0);
+      const nbDet = document.getElementById('nb-detections');
+      if (nbDet) nbDet.textContent = totalLocal + (totalLocal === 1 ? ' det.' : ' det.');
 
       // 6. Update stats + fed status
       if (this.sampleCount % 10 === 0) {
