@@ -1680,58 +1680,78 @@ class MosquitoClassifier {
   // Pre-compute Goertzel params for each species + harmonics
   // Goertzel block size = 2048 samples (shorter than FFT, runs faster)
   _buildGoertzelParams() {
-    // ── Gaussian filter bank — research basis ────────────────────────────
-    // Problem: a single Goertzel at 668 Hz gives near-zero response to a
-    // 664 Hz signal because the filter is evaluated at one exact frequency.
-    // Real mosquito wingbeats drift ±5–15 Hz due to temperature, age, and
-    // load. A signal 4–5 Hz off was silently rejected.
+    // ── Optimal Gaussian Goertzel Filter Bank ────────────────────────────
+    // Block = 8192 → resolution = 44100/8192 = 5.38 Hz/bin, 186 ms window
+    // 9 taps at exact bin multiples of BW → zero leakage between taps
+    // Gaussian σ = 15 Hz → response at ±5.4 Hz: 93.8%, ±10.8 Hz: 77.3%
     //
-    // Solution: Gaussian-weighted bank of 9 Goertzel filters centered on
-    // sp.freq with σ=15 Hz, spaced 5 Hz apart (±20 Hz total coverage).
-    // Each tap is weighted by exp(-Δf²/(2σ²)).
-    // SNR = Σ(w_i × P_i) / noise_power  — smooth Gaussian frequency response.
-    // Response at ±5 Hz: 94.6% of peak. At ±15 Hz: 60.7%. At ±30 Hz: 13.5%.
-    //
-    // Sources: Pantula 2021 (wingbeat stability), Kiskin 2020 (freq resolution),
-    //          Oppenheim & Schafer "Discrete-Time Signal Processing" ch.9 (Goertzel)
-    const BLOCK  = 2048;   // 46 ms window at 44.1 kHz
-    const SR     = 44100;
-    const SIGMA  = 15;     // Hz — Gaussian σ for frequency sensitivity envelope
-    const TAPS   = [-20, -15, -10, -5, 0, 5, 10, 15, 20]; // Hz offsets
+    // KEY FIX: reference taps are computed PER SPECIES to guarantee they
+    // never land inside another species' signal band (±30 Hz guard zone).
+    // Previous ±55–140 Hz fixed offsets caused massive cross-species
+    // contamination — Anopheles ref at 465 Hz hit Culex signal, etc.
 
-    const makeCoeff = (hz) => {
+    const BLOCK  = 8192;
+    const SR     = 44100;
+    const BW     = SR / BLOCK;    // 5.38 Hz per bin
+    const SIGMA  = 15;            // Hz — Gaussian σ
+    const GUARD  = 30;            // Hz — exclusion zone around each species
+    const REF_COUNT = 3;          // taps below + taps above center
+
+    // Collect all species centers for collision checking
+    const allCenters = SPECIES_DB.map(s => s.freq);
+
+    function isOccupied(hz) {
+      return allCenters.some(c => Math.abs(hz - c) < GUARD);
+    }
+
+    // 9-tap bank params (same for all species, species freq plugged in later)
+    const TAP_BINS = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
+    const rawW     = TAP_BINS.map(b => Math.exp(-((b*BW)**2)/(2*SIGMA*SIGMA)));
+    const wSum     = rawW.reduce((a,b)=>a+b, 0);
+    const gaussW   = rawW.map(w => w/wSum);
+
+    // 5-tap harmonic bank
+    const H2_BINS  = [-2, -1, 0, 1, 2];
+    const rawWh2   = H2_BINS.map(b => Math.exp(-((b*BW)**2)/(2*SIGMA*SIGMA)));
+    const wSumH2   = rawWh2.reduce((a,b)=>a+b,0);
+    const gaussWh2 = rawWh2.map(w=>w/wSumH2);
+
+    function makeCoeff(hz) {
       const k = Math.round(BLOCK * hz / SR);
       const w = (2 * Math.PI * k) / BLOCK;
-      return { k, w, coeff: 2 * Math.cos(w), targetHz: hz, block: BLOCK };
-    };
-
-    // Gaussian weights (normalised so they sum to 1)
-    const rawWeights = TAPS.map(d => Math.exp(-(d*d)/(2*SIGMA*SIGMA)));
-    const wSum = rawWeights.reduce((a,b) => a+b, 0);
-    const gaussWeights = rawWeights.map(w => w / wSum);
+      return { k, coeff: 2 * Math.cos(w), targetHz: hz, block: BLOCK };
+    }
 
     SPECIES_DB.forEach(sp => {
-      // 9-tap bank around fundamental
-      const f0Bank = TAPS.map((d, i) => ({
-        ...makeCoeff(sp.freq + d),
-        gaussW: gaussWeights[i],
+      const freq = sp.freq;
+
+      // 9-tap Gaussian signal bank
+      const f0Bank = TAP_BINS.map((b,i) => ({
+        ...makeCoeff(freq + b * BW), gaussW: gaussW[i],
       }));
 
-      // 5-tap bank around 2nd harmonic (same Gaussian weighting)
-      const h2Taps   = [-10, -5, 0, 5, 10];
-      const h2Raw    = h2Taps.map(d => Math.exp(-(d*d)/(2*SIGMA*SIGMA)));
-      const h2Sum    = h2Raw.reduce((a,b)=>a+b,0);
-      const f2Bank   = h2Taps.map((d, i) => ({
-        ...makeCoeff(sp.freq * 2 + d),
-        gaussW: h2Raw[i] / h2Sum,
+      // 5-tap Gaussian 2nd harmonic bank
+      const f2Bank = H2_BINS.map((b,i) => ({
+        ...makeCoeff(freq * 2 + b * BW), gaussW: gaussWh2[i],
       }));
 
-      // Reference noise estimate: 6 taps well away from signal (±80–130 Hz)
-      const ref = [
-        makeCoeff(sp.freq - 130), makeCoeff(sp.freq - 100),
-        makeCoeff(sp.freq - 75),  makeCoeff(sp.freq + 75),
-        makeCoeff(sp.freq + 100), makeCoeff(sp.freq + 130),
-      ];
+      // ── Safe reference taps (per-species, collision-free) ─────────────
+      // Walk outward from (center ± 35 Hz) in bin steps, skipping any
+      // frequency within GUARD Hz of any species center.
+      const ref = [];
+      let lo = freq - 35, hi = freq + 35;
+      while (lo >= 200 && ref.filter(r=>r.targetHz<freq).length < REF_COUNT) {
+        if (!isOccupied(lo)) ref.push(makeCoeff(lo));
+        lo -= BW;
+      }
+      while (hi <= 900 && ref.filter(r=>r.targetHz>freq).length < REF_COUNT) {
+        if (!isOccupied(hi)) ref.push(makeCoeff(hi));
+        hi += BW;
+      }
+      // Fallback: if still empty (very crowded spectrum) use wider search
+      if (ref.length === 0) {
+        ref.push(makeCoeff(200), makeCoeff(220), makeCoeff(800), makeCoeff(820));
+      }
 
       this.goertzelParams[sp.id] = { f0Bank, f2Bank, ref };
     });
@@ -3787,18 +3807,16 @@ self.addEventListener('fetch', e => {
 
   async startListening() {
     try {
-      // Re-request GPS on start (user gesture helps on iOS)
-      this.acquireGeolocation();
+      // GPS must be called SYNCHRONOUSLY before any await —
+      // iOS Safari only allows geolocation in the synchronous gesture callstack.
+      if (!this._geoStarted) {
+        this._geoStarted = true;
+        try { this.acquireGeolocation(); } catch(e) {}
+      }
 
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
-
-      // Request GPS HERE — after user gesture, so iOS Safari allows it
-      if (!this._geoStarted) {
-        this._geoStarted = true;
-        this.acquireGeolocation();
-      }
 
       // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
       try {
