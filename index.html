@@ -347,119 +347,183 @@ body::after {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 14px 14px;
-  gap: 8px;
-  overflow-y: auto;              /* scroll here, not on the page */
+  padding: 8px 12px 16px;
+  gap: 6px;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* Detection grid: 4 cells, natural height, scrollable parent */
+/* ── Detection cards — "Sonar Lock" design ─────────────────────
+   Each card is full-width. The CHARGE BAR is the dominant element:
+   it sweeps right as the classifier's temporal buffer fills.
+   At threshold it LOCKS — glowing, pulsing, unmistakable.
+   ──────────────────────────────────────────────────────────── */
 .detection-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto;
-  gap: 6px;
-  flex-shrink: 0;  /* don't compress — let parent scroll instead */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .detect-cell {
   background: var(--s1);
   border: 1px solid var(--border3);
-  border-radius: var(--r);
-  padding: 9px 11px;
-  display: flex; flex-direction: column;
-  gap: 4px;
-  transition: border-color 0.3s, background 0.3s;
-  overflow: visible; /* allow content to show */
-  min-height: 80px;
+  border-radius: 10px;
+  padding: 12px 14px 10px;
   position: relative;
+  overflow: hidden;
+  transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
 }
+
+/* Idle state: dim left accent strip */
+.detect-cell::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--cell-color, var(--text3));
+  opacity: 0.25;
+  transition: opacity 0.3s;
+}
+
+/* HOT: locked state — border glows, strip brightens */
 .detect-cell.hot {
   border-color: var(--cell-color, var(--accent));
-  background: color-mix(in srgb, var(--cell-color, var(--accent)) 6%, var(--s1));
+  background: color-mix(in srgb, var(--cell-color, var(--accent)) 7%, var(--s1));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cell-color, var(--accent)) 30%, transparent),
+              0 0 20px color-mix(in srgb, var(--cell-color, var(--accent)) 15%, transparent);
 }
-.detect-cell.hot::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: var(--cell-color, var(--accent));
-  border-radius: var(--r) var(--r) 0 0;
-}
+.detect-cell.hot::before { opacity: 1; }
 
+/* ── Row 1: species header ── */
 .dc-header {
-  display: flex; align-items: center; gap: 6px;
-  flex-shrink: 0;
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 9px;
 }
 .dc-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
+  width: 8px; height: 8px; border-radius: 50%;
   background: var(--cell-color, var(--text3));
   flex-shrink: 0;
+  opacity: 0.4;
+  transition: opacity 0.3s, box-shadow 0.3s;
+}
+.detect-cell.hot .dc-dot {
+  opacity: 1;
+  box-shadow: 0 0 6px var(--cell-color, var(--accent));
+  animation: pulse-dot 1.5s ease-in-out infinite;
 }
 .dc-species {
-  font-size: 0.62rem; font-weight: 600;
-  color: var(--text2);
-  flex: 1;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 0.75rem; font-weight: 700;
+  color: var(--text1); flex: 1;
+  letter-spacing: -0.01em;
 }
 .dc-disease {
-  font-size: 0.52rem; color: var(--text3);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-
-.dc-body {
-  flex: 1; min-height: 0;
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 4px;
-}
-
-.dc-conf {
+  font-size: 0.58rem;
+  color: var(--text2);
   font-family: 'Syne Mono', monospace;
-  font-size: 1.4rem; font-weight: 700; line-height: 1;
-  color: var(--text3);
-  transition: color 0.3s;
-}
-.detect-cell.hot .dc-conf {
-  color: var(--cell-color, var(--accent));
 }
 
-.dc-meta {
-  display: flex; flex-direction: column;
-  align-items: flex-end; gap: 1px;
+/* ── CHARGE BAR — the hero element ── */
+.dc-charge-wrap {
+  position: relative;
+  height: 28px;
+  background: var(--s3);
+  border-radius: 5px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.dc-charge-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--cell-color, #00e8c0) 60%, transparent),
+    var(--cell-color, #00e8c0));
+  border-radius: 5px;
+  transition: width 0.12s linear;
+  min-width: 0%;
+}
+/* Shimmer on the fill */
+.dc-charge-fill::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: charge-shimmer 1.8s ease-in-out infinite;
+}
+@keyframes charge-shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+/* Text inside the charge bar */
+.dc-charge-label {
+  position: absolute; inset: 0;
+  display: flex; align-items: center;
+  padding: 0 10px;
+  justify-content: space-between;
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.65rem; font-weight: 700;
+  pointer-events: none;
+}
+.dc-charge-pct {
+  color: var(--text1);
+  transition: color 0.2s;
+  text-shadow: 0 0 8px rgba(0,0,0,0.8);
+}
+.detect-cell.hot .dc-charge-pct { color: #fff; }
+.dc-charge-status {
+  font-size: 0.55rem; color: var(--text3);
+  text-shadow: 0 0 8px rgba(0,0,0,0.8);
+  transition: color 0.2s;
+}
+.detect-cell.hot .dc-charge-status {
+  color: var(--cell-color, var(--accent));
+  font-weight: 700;
+}
+
+/* Threshold tick mark at 55% */
+.dc-charge-tick {
+  position: absolute;
+  left: 55%; top: 0; bottom: 0;
+  width: 1px;
+  background: rgba(255,255,255,0.25);
+  pointer-events: none;
+}
+.dc-charge-tick::after {
+  content: '▼';
+  position: absolute;
+  top: -1px; left: -4px;
+  font-size: 6px;
+  color: rgba(255,255,255,0.3);
+  line-height: 1;
+}
+
+/* ── Row 3: metadata ── */
+.dc-meta-row {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 8px;
 }
 .dc-freq {
   font-family: 'Syne Mono', monospace;
-  font-size: 0.55rem; color: var(--text2);
+  font-size: 0.6rem; color: var(--text2);
 }
+.detect-cell.hot .dc-freq { color: var(--text1); }
 .dc-snr {
   font-family: 'Syne Mono', monospace;
-  font-size: 0.55rem; color: var(--text2);
+  font-size: 0.6rem; color: var(--text2);
+}
+.detect-cell.hot .dc-snr { color: var(--text1); }
+.dc-reason {
+  font-size: 0.52rem; color: var(--text3);
+  font-family: 'Syne Mono', monospace;
+  flex: 1; text-align: right;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Confidence bar at bottom of cell */
-.dc-bar {
-  width: 100%; height: 2px;
-  background: var(--border3);
-  border-radius: 1px;
-  overflow: hidden;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.dc-bar-fill {
-  height: 100%;
-  background: var(--cell-color, var(--text3));
-  border-radius: 1px;
-  transition: width 0.4s ease;
-}
 
 /* Legend strip below detection grid */
-.detect-legend {
-  flex-shrink: 0;
-  display: flex; gap: 12px; flex-wrap: wrap;
-  font-size: 0.55rem; color: var(--text2);
-  padding-top: 2px;
-}
-.dl-item { display: flex; align-items: center; gap: 4px; }
-.dl-dot  { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
 
 /* ─────────── Listen stats grid ─────────── */
     .listen-stats-grid {
@@ -486,7 +550,100 @@ body::after {
     .sp-card-count { font-family: 'Syne Mono', monospace; font-size: 1rem; font-weight: 700; line-height: 1; color: var(--sp-color, var(--accent)); }
     .sp-card-disease { font-size: 0.42rem; color: var(--text3); margin-top: 2px; }
 
-    /* ─────────── VIEW: MAP ─────────── */
+    /* ── Session strip ─────────────────────────────── */
+.session-strip {
+  display: flex; align-items: center;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 7px 12px;
+  gap: 0;
+  flex-shrink: 0;
+}
+.ss-item {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+}
+.ss-lbl { font-size: 0.65rem; line-height: 1; }
+.ss-val {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.78rem; font-weight: 700;
+  color: var(--accent); line-height: 1;
+}
+.ss-sep {
+  width: 1px; height: 24px;
+  background: var(--border); flex-shrink: 0;
+}
+
+/* ── Species catch counts ───────────────────────── */
+#sp-stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px; flex-shrink: 0;
+}
+.sp-card {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 7px 8px 6px;
+  position: relative; overflow: hidden;
+}
+.sp-card::after {
+  content: ''; position: absolute;
+  top: 0; left: 0; right: 0; height: 2px;
+  background: var(--sp-color, var(--accent));
+}
+.sp-card-name {
+  font-size: 0.45rem; color: var(--text3);
+  font-family: 'Syne Mono', monospace;
+  margin-bottom: 3px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.sp-card-count {
+  font-family: 'Syne Mono', monospace;
+  font-size: 1.05rem; font-weight: 700;
+  line-height: 1; color: var(--sp-color, var(--accent));
+}
+.sp-card-disease {
+  font-size: 0.4rem; color: var(--text3); margin-top: 2px;
+}
+
+/* ── Federation strip ───────────────────────────── */
+.fed-strip {
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 8px 12px;
+  flex-shrink: 0;
+}
+.fed-strip-top {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 5px;
+}
+.fed-strip-label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.58rem; color: var(--text2);
+}
+.fed-strip-right {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.52rem; color: var(--text3);
+}
+.fed-strip-sub {
+  display: flex; justify-content: space-between;
+  margin-top: 4px;
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.48rem; color: var(--text3);
+}
+.dp-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: rgba(0,232,192,0.07);
+  border: 1px solid rgba(0,232,192,0.18);
+  border-radius: 4px; padding: 2px 7px;
+  font-size: 0.52rem; color: var(--accent);
+  margin-top: 6px;
+}
+
+/* ─────────── VIEW: MAP ─────────── */
 #view-map {
   gap: 0;
 }
@@ -928,55 +1085,45 @@ body::after {
           <!-- Populated by JS once -->
         </div>
 
-        <!-- Legend -->
-        <div class="detect-legend">
-          <div class="dl-item"><div class="dl-dot" style="background:var(--sp0)"></div>Anopheles → Malaria</div>
-          <div class="dl-item"><div class="dl-dot" style="background:var(--sp1)"></div>Ae. aegypti → Dengue</div>
-          <div class="dl-item"><div class="dl-dot" style="background:var(--sp2)"></div>Ae. albopictus → Chik.</div>
-          <div class="dl-item"><div class="dl-dot" style="background:var(--sp3)"></div>Culex → WNV</div>
-        </div>
 
-        <!-- ── Session Stats ────────────────────────── -->
-        <div class="panel-label" style="margin-top:8px;">Session Stats</div>
-        <div class="listen-stats-grid">
-          <div class="ls-card">
-            <div class="ls-label">⏱ Duration</div>
-            <div class="ls-value" id="stat-session">00:00</div>
-          </div>
-          <div class="ls-card">
-            <div class="ls-label">🔬 FFT frames</div>
-            <div class="ls-value" id="stat-samples">0</div>
-          </div>
-          <div class="ls-card" id="sp-stat-cards">
-            <!-- species counts built by JS -->
-          </div>
-        </div>
 
-        <!-- ── Network & Federation ─────────────────── -->
-        <div class="panel-label" style="margin-top:6px;">Network · Federation</div>
-        <div class="listen-stats-grid">
-          <div class="ls-card">
-            <div class="ls-label">🌐 Contributors</div>
-            <div class="ls-value" id="stat-contrib">—</div>
-            <div class="ls-sub" id="stat-contrib-sub">fetching…</div>
+        <!-- ── Compact stats strip ── -->
+        <div class="session-strip">
+          <div class="ss-item">
+            <div class="ss-lbl">⏱</div>
+            <div class="ss-val" id="stat-session">00:00</div>
           </div>
-          <div class="ls-card">
-            <div class="ls-label">📡 Rounds</div>
-            <div class="ls-value" id="stat-server-rounds">—</div>
-            <div class="ls-sub" id="stat-server-sub">FedAvg rounds</div>
+          <div class="ss-sep"></div>
+          <div class="ss-item">
+            <div class="ss-lbl">🔬</div>
+            <div class="ss-val" id="stat-samples">0</div>
+          </div>
+          <div class="ss-sep"></div>
+          <div class="ss-item">
+            <div class="ss-lbl">🌐</div>
+            <div class="ss-val" id="stat-contrib">—</div>
+          </div>
+          <div class="ss-sep"></div>
+          <div class="ss-item">
+            <div class="ss-lbl">📡</div>
+            <div class="ss-val" id="stat-server-rounds">—</div>
           </div>
         </div>
 
-        <!-- ── Federated learning bar ────────────────── -->
-        <div class="ls-card" style="margin-top:4px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-            <div class="ls-label">🧠 <span id="fed-round">Round 0</span></div>
-            <div class="dp-badge" style="font-size:0.45rem">🔒 ε=1.0 DP-SGD</div>
+        <!-- ── Species catch counts ── -->
+        <div id="sp-stat-cards"></div>
+
+        <!-- ── Federation bar ── -->
+        <div class="fed-strip">
+          <div class="fed-strip-top">
+            <span class="fed-strip-label">🧠 Model · <span id="fed-round">Round 0</span></span>
+            <span id="fed-upload" class="fed-strip-right">pending</span>
           </div>
           <div class="fed-bar"><div class="fed-bar-fill" id="fed-bar" style="width:0%"></div></div>
-          <div class="fed-sub-row" style="margin-top:3px">
-            <span id="fed-steps" class="ls-sub">0 / 100 steps</span>
-            <span id="fed-upload" class="ls-sub">pending</span>
+          <div class="fed-strip-sub">
+            <span id="fed-steps">0 / 20 steps</span>
+            <span id="stat-contrib-sub" style="opacity:0.5"></span>
+            <span id="stat-server-sub" style="opacity:0"></span>
           </div>
         </div>
       </div>
@@ -1610,13 +1757,25 @@ class MosquitoClassifier {
     return results.sort((a, b) => b.confidence - a.confidence);
   }
 
-  // Public getter — called by the UI to show noise floor / gate status
+  // Public: noise floor / gate status
   getStatus() {
     return {
       noiseFloor: this.lastNoiseFloor,
       ambientRMS: this.ambientRMS,
       gated:      this.ambientRMS > this.AMBIENT_GATE_DB,
     };
+  }
+
+  // Public: raw temporal-buffer average per species (0–1), pre-threshold.
+  // This drives the charge bar even when confidence is below the report threshold.
+  getRawConfidences() {
+    const result = {};
+    SPECIES_DB.forEach(sp => {
+      const buf = this.temporalBuffer[sp.id];
+      if (!buf) { result[sp.id] = 0; return; }
+      result[sp.id] = buf.reduce((s, v) => s + v, 0) / buf.length;
+    });
+    return result;
   }
 }
 
@@ -3241,6 +3400,9 @@ self.addEventListener('fetch', e => {
     if (this.rafId) cancelAnimationFrame(this.rafId);
     if (this.engine) this.engine.stop();
 
+    // Update cells to OFF state immediately
+    this.updateDetectionPanel([]);
+
     this.setStatus('', 'OFFLINE');
     const btn = document.getElementById('btn-listen');
     if(btn){btn.classList.remove('active')};
@@ -3298,7 +3460,7 @@ self.addEventListener('fetch', e => {
         }
       }
 
-      // 3. Update detection panel
+      // 3. Update detection panel every frame — charge bar must be live
       this.updateDetectionPanel(detections);
 
       // 4. Federated learning updates + report detection to server
@@ -3392,86 +3554,126 @@ self.addEventListener('fetch', e => {
   }
 
   buildDetectionGrid() {
-    // Called ONCE on init — creates 4 fixed cells, one per species.
-    // updateDetectionPanel() then mutates them in-place. No layout shift ever.
     const grid = document.getElementById('detection-grid');
     if (!grid) return;
     grid.innerHTML = '';
     const SP_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
+    const SP_RISK   = ['CRITICAL', 'HIGH', 'HIGH', 'MEDIUM'];
+
     SPECIES_DB.forEach((sp, i) => {
       const cell = document.createElement('div');
       cell.className = 'detect-cell';
       cell.id = `dc-${sp.id}`;
       cell.style.setProperty('--cell-color', SP_COLORS[i]);
+
+      // Full species name split: genus abbrev + epithet
+      const nameParts = sp.name.split(' ');
+      const displayName = nameParts.length > 1
+        ? `${nameParts[0][0]}. ${nameParts.slice(1).join(' ')}`
+        : sp.name;
+
       cell.innerHTML = `
         <div class="dc-header">
           <div class="dc-dot"></div>
-          <div>
-            <div class="dc-species">${sp.name.split(' ').slice(1).join(' ') || sp.name}</div>
-            <div class="dc-disease">${sp.disease.split('/')[0].trim()}</div>
+          <div class="dc-species">${displayName}</div>
+          <div class="dc-disease">${sp.disease}</div>
+        </div>
+
+        <!-- CHARGE BAR — fills over ~1.2s of sustained signal -->
+        <div class="dc-charge-wrap">
+          <div class="dc-charge-fill" id="dc-bar-${sp.id}" style="width:0%"></div>
+          <div class="dc-charge-tick"></div>
+          <div class="dc-charge-label">
+            <span class="dc-charge-pct" id="dc-conf-${sp.id}">—</span>
+            <span class="dc-charge-status" id="dc-status-${sp.id}">~${sp.freq} Hz target</span>
           </div>
         </div>
-        <div class="dc-body">
-          <div class="dc-conf" id="dc-conf-${sp.id}">—</div>
-          <div class="dc-meta">
-            <div class="dc-freq" id="dc-freq-${sp.id}">— Hz</div>
-            <div class="dc-snr"  id="dc-snr-${sp.id}">— dB</div>
-          </div>
-        </div>
-        <div class="dc-bar"><div class="dc-bar-fill" id="dc-bar-${sp.id}" style="width:0%"></div></div>`;
+
+        <!-- Metadata row -->
+        <div class="dc-meta-row">
+          <span class="dc-freq" id="dc-freq-${sp.id}">— Hz</span>
+          <span class="dc-snr"  id="dc-snr-${sp.id}">— dB SNR</span>
+          <span class="dc-reason" id="dc-reason-${sp.id}">listening…</span>
+        </div>`;
+
       grid.appendChild(cell);
     });
   }
 
   updateDetectionPanel(detections) {
-    // Update each cell in-place. Show partial signal even below threshold.
-    const rejection = this.classifier ? this.classifier.lastRejection || {} : {};
-    const status    = this.classifier ? this.classifier.getStatus()          : null;
+    const rejection  = this.classifier ? (this.classifier.lastRejection || {}) : {};
+    const status     = this.classifier ? this.classifier.getStatus()            : null;
+    // Raw buffer averages drive the CHARGE BAR even below threshold
+    const rawConf    = (this.classifier && this.classifier.getRawConfidences)
+                       ? this.classifier.getRawConfidences() : {};
+    const THRESHOLD  = 0.55; // must match classifier CONFIDENCE_THRESHOLD
 
     SPECIES_DB.forEach(sp => {
-      const cell   = document.getElementById(`dc-${sp.id}`);
-      const confEl = document.getElementById(`dc-conf-${sp.id}`);
-      const freqEl = document.getElementById(`dc-freq-${sp.id}`);
-      const snrEl  = document.getElementById(`dc-snr-${sp.id}`);
-      const barEl  = document.getElementById(`dc-bar-${sp.id}`);
+      const cell      = document.getElementById(`dc-${sp.id}`);
+      const confEl    = document.getElementById(`dc-conf-${sp.id}`);
+      const barEl     = document.getElementById(`dc-bar-${sp.id}`);
+      const statusEl  = document.getElementById(`dc-status-${sp.id}`);
+      const freqEl    = document.getElementById(`dc-freq-${sp.id}`);
+      const snrEl     = document.getElementById(`dc-snr-${sp.id}`);
+      const reasonEl  = document.getElementById(`dc-reason-${sp.id}`);
       if (!cell) return;
 
-      const det = detections.find(d => d.species.id === sp.id);
+      const det     = detections.find(d => d.species.id === sp.id);
+      const rawAvg  = rawConf[sp.id] || 0;  // 0–1, pre-threshold
+      const barPct  = Math.round(rawAvg * 100);
 
-      if (det) {
-        // Confirmed detection — show full data
-        const pct = Math.round(det.confidence * 100);
-        if (confEl) { confEl.textContent = pct + '%'; confEl.style.opacity = '1'; }
-        if (freqEl) freqEl.textContent = det.frequency.toFixed(0) + ' Hz';
-        if (snrEl)  snrEl.textContent  = '+' + det.snr.toFixed(1) + ' dB';
-        if (barEl)  barEl.style.width  = pct + '%';
-        cell.classList.add('hot');
-        cell.title = `Detected: ${det.frequency.toFixed(0)} Hz, SNR ${det.snr.toFixed(1)} dB`;
-      } else if (!this.running) {
-        // Not listening
-        if (confEl) { confEl.textContent = 'OFF'; confEl.style.opacity = '0.35'; }
-        if (freqEl) freqEl.textContent = sp.freq + ' Hz (expected)';
-        if (snrEl)  snrEl.textContent  = '— dB';
-        if (barEl)  barEl.style.width  = '0%';
+      // ── Bar always reflects temporal buffer fill ──────────────
+      if (barEl) barEl.style.width = barPct + '%';
+
+      if (!this.running) {
+        // ── OFFLINE state ───────────────────────────────────────
         cell.classList.remove('hot');
-        cell.title = 'Not listening';
+        if (confEl)   { confEl.textContent = 'OFF'; confEl.style.opacity = '0.3'; }
+        if (statusEl) statusEl.textContent  = `~${sp.freq} Hz target`;
+        if (freqEl)   freqEl.textContent    = '—';
+        if (snrEl)    snrEl.textContent     = '—';
+        if (reasonEl) reasonEl.textContent  = '';
+        if (barEl)    barEl.style.width     = '0%';
+
       } else if (status && status.gated) {
-        // Ambient noise gate active
-        if (confEl) { confEl.textContent = '🔇'; confEl.style.opacity = '0.6'; }
-        if (freqEl) freqEl.textContent = 'room too loud';
-        if (snrEl)  snrEl.textContent  = '— dB';
-        if (barEl)  barEl.style.width  = '0%';
+        // ── GATED — room too loud ───────────────────────────────
         cell.classList.remove('hot');
-        cell.title = 'Ambient noise gate: room is too loud for detection';
+        if (confEl)   { confEl.textContent = '🔇'; confEl.style.opacity = '0.6'; }
+        if (statusEl) statusEl.textContent  = 'room too loud';
+        if (freqEl)   freqEl.textContent    = '—';
+        if (snrEl)    snrEl.textContent     = '—';
+        if (reasonEl) reasonEl.textContent  = 'move to quieter area';
+        if (barEl)    barEl.style.width     = '0%';
+
+      } else if (det) {
+        // ── LOCKED — confirmed detection ────────────────────────
+        cell.classList.add('hot');
+        const pct = Math.round(det.confidence * 100);
+        if (confEl)   { confEl.textContent = pct + '%'; confEl.style.opacity = '1'; }
+        if (statusEl) statusEl.textContent  = '✦ LOCKED';
+        if (freqEl)   freqEl.textContent    = det.frequency.toFixed(0) + ' Hz';
+        if (snrEl)    snrEl.textContent     = '+' + det.snr.toFixed(1) + ' dB';
+        if (reasonEl) reasonEl.textContent  = det.species.disease;
+
+      } else if (rawAvg > 0.15) {
+        // ── CHARGING — signal building but not yet locked ───────
+        cell.classList.remove('hot');
+        if (confEl)   { confEl.textContent = barPct + '%'; confEl.style.opacity = '0.85'; }
+        if (statusEl) statusEl.textContent  = 'charging…';
+        const reason = rejection[sp.id] || '';
+        if (freqEl)   freqEl.textContent    = sp.freq + ' Hz';
+        if (snrEl)    snrEl.textContent     = reason ? '' : '—';
+        if (reasonEl) reasonEl.textContent  = reason || 'building confidence…';
+
       } else {
-        // Listening but no detection — show rejection reason if available
-        const reason = rejection[sp.id] || 'listening…';
-        if (confEl) { confEl.textContent = '—'; confEl.style.opacity = '0.5'; }
-        if (freqEl) freqEl.textContent = sp.freq + ' Hz (target)';
-        if (snrEl)  snrEl.textContent  = reason.length < 18 ? reason : reason.slice(0,17)+'…';
-        if (barEl)  barEl.style.width  = '0%';
+        // ── IDLE — listening, no signal ─────────────────────────
         cell.classList.remove('hot');
-        cell.title = `Listening: ${reason}`;
+        if (confEl)   { confEl.textContent = '—'; confEl.style.opacity = '0.4'; }
+        const reason = rejection[sp.id] || '';
+        if (statusEl) statusEl.textContent  = `~${sp.freq} Hz`;
+        if (freqEl)   freqEl.textContent    = '—';
+        if (snrEl)    snrEl.textContent     = '—';
+        if (reasonEl) reasonEl.textContent  = reason.length > 22 ? reason.slice(0,21)+'…' : reason;
       }
     });
   }
