@@ -341,7 +341,7 @@ body::after {
   gap: 2px;
 }
 
-/* Detection zone — FIXED HEIGHT, internal scroll if overflow */
+/* Detection zone — scrollable internally, spectrogram stays fixed above */
 .listen-bottom {
   flex: 1;
   min-height: 0;
@@ -349,17 +349,17 @@ body::after {
   flex-direction: column;
   padding: 10px 14px 14px;
   gap: 8px;
-  overflow: hidden; /* critical — never grows the parent */
+  overflow-y: auto;              /* scroll here, not on the page */
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Detection grid: 4 fixed-size cells, always present */
+/* Detection grid: 4 cells, natural height, scrollable parent */
 .detection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: auto auto;
   gap: 6px;
-  flex: 1;
-  min-height: 0;
+  flex-shrink: 0;  /* don't compress — let parent scroll instead */
 }
 
 .detect-cell {
@@ -370,8 +370,8 @@ body::after {
   display: flex; flex-direction: column;
   gap: 4px;
   transition: border-color 0.3s, background 0.3s;
-  overflow: hidden; /* never expands */
-  min-height: 0;
+  overflow: visible; /* allow content to show */
+  min-height: 80px;
   position: relative;
 }
 .detect-cell.hot {
