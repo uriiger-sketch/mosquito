@@ -1254,9 +1254,12 @@ class MosquitoAudioEngine {
 
     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)({
-      sampleRate: 44100,
-    });
+    // iOS requires AudioContext created during/after a user gesture
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) throw new Error('Web Audio API not supported on this device');
+    this.ctx = new AudioCtx({ sampleRate: 44100 });
+    // Resume in case browser suspended it (iOS does this)
+    if (this.ctx.state === 'suspended') await this.ctx.resume();
 
     // ── Display analyser (smoothed — for spectrogram) ──
     this.analyser = this.ctx.createAnalyser();
@@ -3080,19 +3083,19 @@ self.addEventListener('fetch', e => {
           return;
         }
         if (perm.state === 'prompt') {
-          document.getElementById('perm-screen').classList.add('show');
+          const ps = document.getElementById('perm-screen'); if (ps) ps.classList.add('show');
           return;
         }
         this.startListening();
       } catch {
         // permissions API not supported (e.g. older Safari) — just try
-        document.getElementById('perm-screen').classList.add('show');
+        const ps = document.getElementById('perm-screen'); if (ps) ps.classList.add('show');
       }
     }
   }
 
   async requestMic() {
-    document.getElementById('perm-screen').classList.remove('show');
+    const ps3 = document.getElementById('perm-screen'); if (ps3) ps3.classList.remove('show');
     await this.startListening();
   }
 
@@ -3108,7 +3111,8 @@ self.addEventListener('fetch', e => {
 
       const btn = document.getElementById('btn-listen');
       if(btn){btn.classList.add('active')};
-      document.getElementById('btn-listen-label').textContent = 'STOP';
+      const lblEl = document.getElementById('btn-listen-label');
+      if (lblEl) lblEl.textContent = 'STOP';
 
       this.showToast('🎙 Acoustic monitoring active — best results outdoors at night');
 
@@ -3128,9 +3132,11 @@ self.addEventListener('fetch', e => {
     this.setStatus('', 'OFFLINE');
     const btn = document.getElementById('btn-listen');
     if(btn){btn.classList.remove('active')};
-    document.getElementById('btn-listen-label').textContent = 'START';
+    const lblEl2 = document.getElementById('btn-listen-label');
+    if (lblEl2) lblEl2.textContent = 'START';
 
-    document.getElementById('detections').innerHTML = `
+    const detEl = document.getElementById('detections');
+    if (detEl) detEl.innerHTML = `
       <div class="no-detection">
         <div class="nd-icon">⏹</div>
         <div>Monitoring stopped</div>
@@ -3446,11 +3452,15 @@ window.addEventListener('load', () => {
 });
 
 // iOS AudioContext resume on first user gesture
+// iOS: resume AudioContext on any touch — handles auto-suspend
 document.addEventListener('touchstart', () => {
-  if (window._app && window._app.engine && window._app.engine.ctx) {
-    window._app.engine.ctx.resume();
-  }
-}, { once: true, passive: true });
+  try {
+    if (window._app && window._app.engine && window._app.engine.ctx) {
+      const ctx = window._app.engine.ctx;
+      if (ctx.state === 'suspended') ctx.resume();
+    }
+  } catch(e) {}
+}, { passive: true });  // NOT once:true — iOS can re-suspend multiple times
 
 </script>
 </body>
