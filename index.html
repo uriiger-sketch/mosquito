@@ -373,10 +373,60 @@ body::after {
    it sweeps right as the classifier's temporal buffer fills.
    At threshold it LOCKS — glowing, pulsing, unmistakable.
    ──────────────────────────────────────────────────────────── */
+/* ── Species legend strip ── */
+#species-legend {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.legend-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.legend-group-label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.48rem;
+  letter-spacing: 0.1em;
+  color: var(--text3);
+  text-transform: uppercase;
+  flex-shrink: 0;
+  width: 60px;
+}
+.legend-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 5px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.07);
+  font-size: 0.52rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  color: var(--text1);
+  white-space: nowrap;
+  cursor: default;
+  transition: background 0.2s;
+}
+.legend-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.legend-chip.asym {
+  opacity: 0.55;
+  font-weight: 400;
+  font-style: italic;
+}
+
+/* ── Detection grid ── */
 .detection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto;  /* auto rows for any species count */
+  grid-template-rows: auto;
   gap: 6px;
   flex-shrink: 0;
 }
@@ -392,14 +442,15 @@ body::after {
   min-height: 0;
 }
 
-/* Idle state: dim left accent strip */
+/* Left colour strip — always visible, brightens on detection */
 .detect-cell::before {
   content: '';
   position: absolute;
-  left: 0; top: 0; bottom: 0; width: 3px;
+  left: 0; top: 0; bottom: 0; width: 4px;
   background: var(--cell-color, var(--text3));
-  opacity: 0.25;
-  transition: opacity 0.3s;
+  opacity: 0.5;
+  transition: opacity 0.3s, width 0.2s;
+  border-radius: 8px 0 0 8px;
 }
 
 /* HOT: locked state — border glows, strip brightens */
@@ -418,7 +469,7 @@ body::after {
   font-style: italic;
   color: var(--text3);
 }
-.detect-cell.hot::before { opacity: 1; }
+.detect-cell.hot::before { opacity: 1; width: 5px; }
 
 /* ── Row 1: species header ── */
 .dc-header {
@@ -1106,12 +1157,13 @@ body::after {
 
       <!-- Detection grid (fills remaining height, NEVER changes height) -->
       <div class="listen-bottom">
-        <div class="panel-label">Species Detection · 4 Targets</div>
+        <div class="panel-label">Species Detection · 10 Species</div>
 
-        <!-- 4 fixed cells — one per species, always present -->
-        <div class="detection-grid" id="detection-grid">
-          <!-- Populated by JS once -->
-        </div>
+        <!-- Color legend — built by JS -->
+        <div id="species-legend"></div>
+
+        <!-- Detection grid — populated by JS once -->
+        <div class="detection-grid" id="detection-grid"></div>
 
 
 
@@ -1351,6 +1403,7 @@ body::after {
 
 // ── Server URL ───────────────────────────────────────────────────────────────
 const SERVER_URL = 'https://mosquito.charity';
+window.SERVER_URL = SERVER_URL;  // expose globally for class methods
 
 // ── Safe timeout signal (iOS Safari < 16.4 polyfill) ─────────────────────────
 function timeoutSignal(ms) {
@@ -2453,9 +2506,9 @@ class FederatedLearningClient {
     };
 
     // Upload — only if a server URL is configured
-    if (!SERVER_URL) { this.uploadFailed = 0; return; }
+    if (!window.SERVER_URL) { this.uploadFailed = 0; return; }
     try {
-      const resp = await fetch(`${SERVER_URL}/federated/upload`, {
+      const resp = await fetch(`${window.SERVER_URL}/federated/upload`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -2494,9 +2547,9 @@ class FederatedLearningClient {
   // Tells the server "I exist right now" — no audio, no location.
   // This is what drives the "live now" counter.
   async sendHeartbeat(listening, sessionStart) {
-    if (!SERVER_URL) return;
+    if (!window.SERVER_URL) return;
     try {
-      const resp = await fetch(`${SERVER_URL}/heartbeat`, {
+      const resp = await fetch(`${window.SERVER_URL}/heartbeat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2518,7 +2571,7 @@ class FederatedLearningClient {
   // Sends species, confidence, frequency, and DP-jittered location.
   // Server enforces 60s per-device per-species cooldown server-side too.
   async reportDetection(det) {
-    if (!SERVER_URL) return;
+    if (!window.SERVER_URL) return;
     const app = window._app;
     // DP jitter ±0.025° ≈ ±2.5km for privacy
     let lat = null, lng = null;
@@ -2528,7 +2581,7 @@ class FederatedLearningClient {
       lng = app.deviceLng + (Math.random() - 0.5) * jitter;
     }
     try {
-      const resp = await fetch(`${SERVER_URL}/detection`, {
+      const resp = await fetch(`${window.SERVER_URL}/detection`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2693,7 +2746,7 @@ class MapController {
   }
 
   async loadServerHotspots() {
-    const _url = window._SERVER_URL || SERVER_URL;
+    const _url = window.SERVER_URL;
     if (!_url) return;
     try {
       const resp = await fetch(`${_url}/hotspots`,
@@ -3591,6 +3644,10 @@ self.addEventListener('fetch', e => {
       return;
     }
 
+    // Show "asking" state immediately
+    const gpsEl0 = document.getElementById('wf-gps');
+    if (gpsEl0) { gpsEl0.textContent = '📍 asking…'; gpsEl0.style.color = 'var(--amber)'; }
+
     const onPos = (pos) => {
       this.deviceLat = pos.coords.latitude;
       this.deviceLng = pos.coords.longitude;
@@ -3608,11 +3665,25 @@ self.addEventListener('fetch', e => {
     };
 
     const onErr = (err) => {
-      console.warn('Geolocation error:', err.code, err.message);
-      // Show user-facing message for common errors
-      if (err.code === 1) { // PERMISSION_DENIED
-        if (window._app) window._app.showToast("📍 Location denied — detections won't appear on map. Enable in Settings → Safari → Location.");
+      // err.code: 1=PERMISSION_DENIED, 2=UNAVAILABLE, 3=TIMEOUT
+      console.warn('[GPS] error code', err.code, '—', err.message);
+      const gpsEl = document.getElementById('wf-gps');
+      if (gpsEl) {
+        if (err.code === 1) {
+          gpsEl.textContent = '📍 denied';
+          gpsEl.style.color = 'var(--red)';
+          gpsEl.title = 'Location denied. On iPhone: Settings → Privacy → Location Services → Safari → Allow';
+        } else if (err.code === 3) {
+          gpsEl.textContent = '📍 timeout';
+          gpsEl.style.color = 'var(--amber)';
+          // Timeout is not a real error — just retry
+          setTimeout(() => this.acquireGeolocation && this.acquireGeolocation(), 5000);
+        } else {
+          gpsEl.textContent = '📍 error';
+          gpsEl.style.color = 'var(--amber)';
+        }
       }
+      // NO toast — it was confusing and blocking
     };
 
     // Stage 1: coarse fix immediately (cell tower / WiFi)
@@ -3876,10 +3947,41 @@ self.addEventListener('fetch', e => {
   }
 
   buildDetectionGrid() {
-    const grid = document.getElementById('detection-grid');
+    const grid   = document.getElementById('detection-grid');
+    const legend = document.getElementById('species-legend');
     if (!grid) return;
-    grid.innerHTML = '';
-    // Color comes directly from sp.color — no index array needed
+    grid.innerHTML   = '';
+    if (legend) legend.innerHTML = '';
+
+    // ── Build color legend ────────────────────────────────────────
+    if (legend) {
+      const vectors = SPECIES_DB.filter(sp => !sp.asymptomatic);
+      const asyms   = SPECIES_DB.filter(sp =>  sp.asymptomatic);
+
+      const makeChips = (list, cls) => list.map(sp => {
+        const abbr = sp.name.split(' ').slice(0, 2).map((w, i) =>
+          i === 0 ? w[0] + '.' : w).join(' ');
+        return `<div class="legend-chip ${cls}"
+                     title="${sp.name} — ${sp.disease} — ~${sp.freq} Hz"
+                     style="background:${sp.color}22;border-color:${sp.color}44">
+          <div class="legend-chip-dot" style="background:${sp.color}"></div>
+          ${abbr}
+        </div>`;
+      }).join('');
+
+      legend.innerHTML = `
+        <div class="legend-group">
+          <span class="legend-group-label">⚠ Vector</span>
+          ${makeChips(vectors, '')}
+        </div>
+        <div class="legend-group">
+          <span class="legend-group-label">◻ Harmless</span>
+          ${makeChips(asyms, 'asym')}
+        </div>`;
+    }
+
+    // ── Build detection cards ─────────────────────────────────────
+    // Color comes directly from sp.color
 
     SPECIES_DB.forEach((sp, i) => {
       const cell = document.createElement('div');
