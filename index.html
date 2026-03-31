@@ -59,10 +59,16 @@
   --text3:     #1e3a52;
 
   /* Species */
-  --sp0: #f43f5e;  /* Anopheles — malaria — red */
+  --sp0: #f43f5e;  /* Anopheles gambiae — malaria — red */
   --sp1: #f59e0b;  /* Ae. aegypti — dengue — amber */
   --sp2: #eab308;  /* Ae. albopictus — tiger — yellow */
-  --sp3: #3b82f6;  /* Culex — WNV — blue */
+  --sp3: #3b82f6;  /* Culex quinquefasciatus — WNV — blue */
+  --sp4: #e11d48;  /* An. stephensi — urban malaria — crimson */
+  --sp5: #7c3aed;  /* Ae. japonicus — Usutu — violet */
+  --sp6: #0891b2;  /* Ae. vexans — RVF — dark cyan */
+  --sp7: #64748b;  /* Cx. pipiens — non-vector — slate */
+  --sp8: #78716c;  /* Culiseta annulata — non-vector — warm grey */
+  --sp9: #a8a29e;  /* Ochlerotatus caspius — non-vector — light grey */
 
   /* Layout */
   --header-h:   52px;
@@ -370,10 +376,9 @@ body::after {
 .detection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: auto;  /* auto rows for any species count */
   gap: 6px;
   flex-shrink: 0;
-  min-height: 280px;   /* enough for 2 rows to be visible */
 }
 
 .detect-cell {
@@ -403,6 +408,15 @@ body::after {
   background: color-mix(in srgb, var(--cell-color, var(--accent)) 7%, var(--s1));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--cell-color, var(--accent)) 30%, transparent),
               0 0 20px color-mix(in srgb, var(--cell-color, var(--accent)) 15%, transparent);
+}
+/* Asymptomatic species: no glow, just border */
+.detect-cell.asymptomatic.hot {
+  box-shadow: none;
+  opacity: 0.85;
+}
+.detect-cell.asymptomatic .dc-disease {
+  font-style: italic;
+  color: var(--text3);
 }
 .detect-cell.hot::before { opacity: 1; }
 
@@ -1009,8 +1023,8 @@ body::after {
     All classification runs entirely on this device.
   </div>
   <div class="dp-badge">🔒 Differential Privacy ε=1.0</div>
-  <button class="perm-btn" id="btn-allow">Allow Microphone</button>
-  <div class="perm-note">Audio is processed locally only — never recorded or uploaded to any server.</div>
+  <button class="perm-btn" id="btn-allow">Allow Microphone &amp; Location</button>
+  <div class="perm-note">Audio is never recorded. Location is DP-jittered ±2.5km before any upload — never exact GPS.</div>
 </div>
 
 <!-- TOAST -->
@@ -1086,7 +1100,7 @@ body::after {
         <div class="waveform-info" style="gap:3px">
           <span id="wf-rms" style="font-family:'Syne Mono',monospace;font-size:0.58rem;color:var(--text2)">– dB</span>
           <span id="wf-gate" style="font-family:'Syne Mono',monospace;font-size:0.5rem;color:var(--text3)">ready</span>
-          <span style="font-size:0.45rem;color:var(--text3)">44.1kHz</span>
+          <span id="wf-gps" style="font-family:'Syne Mono',monospace;font-size:0.45rem;color:var(--text3)">📍—</span>
         </div>
       </div>
 
@@ -1170,12 +1184,32 @@ body::after {
           <span>2023</span><span>2024</span><span>ALL</span>
         </div>
 
+        <!-- Find Me button -->
+        <button id="btn-findme" onclick="
+          if(window._app && window._app.deviceLat !== null) {
+            window._app.mapCtrl.applyPendingUserLocation();
+            window._app.mapCtrl.map && window._app.mapCtrl.map.setView(
+              [window._app.deviceLat, window._app.deviceLng], 10, {animate:true});
+          } else {
+            window._app && window._app.acquireGeolocation();
+            document.getElementById('btn-findme').textContent = '📍 Locating…';
+          }
+        " style="
+          width:100%;padding:7px;border-radius:6px;
+          background:rgba(37,99,235,0.15);border:1px solid rgba(37,99,235,0.4);
+          color:#93c5fd;font-family:'Syne Mono',monospace;font-size:0.62rem;
+          cursor:pointer;margin-bottom:6px;
+        ">📍 Find My Location</button>
+
         <!-- Legend -->
         <div class="map-legend-row">
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp0)"></div>Anopheles (Malaria)</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp1)"></div>Ae. aegypti (Dengue)</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp2)"></div>Ae. albopictus (Dengue/Chik.)</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp3)"></div>Culex (West Nile / JE)</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp0)"></div>An. gambiae · Malaria</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp1)"></div>An. stephensi · Malaria</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp2)"></div>Ae. aegypti · Dengue</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp3)"></div>Ae. albopictus · Dengue</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp4)"></div>Culex · West Nile</div>
+          <div class="ml-item"><div class="ml-circle" style="background:var(--sp8)"></div>Non-vector species</div>
+          <div class="ml-item"><div class="ml-circle" style="background:#2563eb;border:2px solid white"></div>Your location</div>
         </div>
       </div>
 
@@ -1207,10 +1241,16 @@ body::after {
               <tr><th>Species</th><th>Freq (Hz)</th><th>Disease</th><th>Risk</th></tr>
             </thead>
             <tbody>
-              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp0)"></div>Anopheles gambiae</div></td><td>~410</td><td>Malaria</td><td style="color:var(--red)">CRITICAL</td></tr>
-              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp1)"></div>Aedes aegypti</div></td><td>~625</td><td>Dengue/Zika</td><td style="color:var(--amber)">HIGH</td></tr>
-              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp2)"></div>Ae. albopictus</div></td><td>~668</td><td>Dengue/Chik.</td><td style="color:var(--amber)">HIGH</td></tr>
-              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:var(--sp3)"></div>Culex quinquefasciatus</div></td><td>~453</td><td>West Nile</td><td style="color:var(--text2)">MEDIUM</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#f43f5e"></div>An. gambiae</div></td><td>~410</td><td>Malaria</td><td style="color:var(--red)">CRITICAL</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#e11d48"></div>An. stephensi</div></td><td>~388</td><td>Malaria (urban)</td><td style="color:var(--red)">CRITICAL</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#f59e0b"></div>Ae. aegypti</div></td><td>~625</td><td>Dengue/Zika</td><td style="color:var(--amber)">HIGH</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#eab308"></div>Ae. albopictus</div></td><td>~668</td><td>Dengue/Chik.</td><td style="color:var(--amber)">HIGH</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#7c3aed"></div>Ae. japonicus</div></td><td>~730</td><td>WNV / Usutu</td><td style="color:var(--amber)">MEDIUM</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#0891b2"></div>Ae. vexans</div></td><td>~515</td><td>Rift Valley Fever</td><td style="color:var(--amber)">MEDIUM</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#3d9eff"></div>Cx. quinquefasciatus</div></td><td>~453</td><td>West Nile</td><td style="color:var(--text2)">MEDIUM</td></tr>
+              <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#64748b"></div>Cx. pipiens</div></td><td>~600</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
+              <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#78716c"></div>Culiseta annulata</div></td><td>~350</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
+              <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#a8a29e"></div>Oc. caspius</div></td><td>~548</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
             </tbody>
           </table>
           <p style="margin-top:10px">
@@ -1309,27 +1349,15 @@ body::after {
 <script>
 'use strict';
 
-// Safe timeout signal — works on iOS Safari < 16.4
+// ── Server URL ───────────────────────────────────────────────────────────────
+const SERVER_URL = 'https://mosquito.charity';
+
+// ── Safe timeout signal (iOS Safari < 16.4 polyfill) ─────────────────────────
 function timeoutSignal(ms) {
-  try {
-    return timeoutSignal(ms);
-  } catch(e) {
-    const c = new AbortController();
-    setTimeout(() => c.abort(), ms);
-    return c.signal;
-  }
+  const c = new AbortController();
+  setTimeout(() => c.abort(), ms);
+  return c.signal;
 }
-
-// ── Server configuration ─────────────────────────────────────────────────────
-// When the federated server is deployed, replace this URL with your
-// Railway / Render deployment URL, e.g.:
-//   const SERVER_URL = 'https://mosquitonet-server.up.railway.app';
-// Leave as empty string to run in offline-only mode (no federation).
-const SERVER_URL = 'https://mosquito.charity';  // live server
-
-
-
-'use strict';
 
 /* ════════════════════════════════════════════════════════════
    MOSQUITO SPECIES DATABASE
@@ -1337,63 +1365,103 @@ const SERVER_URL = 'https://mosquito.charity';  // live server
             Pantula et al. 2021, Sinka et al. 2012
 ════════════════════════════════════════════════════════════ */
 const SPECIES_DB = [
+  // ═══════════════════════════════════════════════════════════════
+  // SYMPTOMATIC — Disease vectors. Risk levels per WHO/CDC 2024.
+  // Frequencies: Brogdon & McAllister 1998, Rompotis et al. 2015,
+  //              Mukundarajan et al. 2017 (Stanford Abuzz dataset),
+  //              Fanioudakis et al. 2018, Arthur et al. 2014 (JASA)
+  // ═══════════════════════════════════════════════════════════════
   {
-    id: 'anopheles',
-    name: 'Anopheles gambiae',
+    id: 'anopheles',      name: 'Anopheles gambiae',
     common: 'African Malaria Mosquito',
-    disease: 'Malaria',
-    freq: 410,          // Hz — fundamental wingbeat
-    freqRange: [370, 455],
-    harmonics: [820, 1230],
-    color: '#ff2d55',
-    cssVar: '--sp-anopheles',
-    risk: 'CRITICAL',
-    icon: '⚠️',
-    regions: ['Sub-Saharan Africa'],
+    disease: 'Malaria',   risk: 'CRITICAL',   freq: 410,
+    freqRange: [370, 450],  color: '#f43f5e',
+    asymptomatic: false,  regions: ['Sub-Saharan Africa'],
   },
   {
-    id: 'aedes_aegypti',
-    name: 'Aedes aegypti',
+    id: 'anopheles_stephensi', name: 'Anopheles stephensi',
+    common: 'Asian Urban Malaria Mosquito',
+    disease: 'Malaria (urban)',  risk: 'CRITICAL',  freq: 388,
+    freqRange: [360, 412],  color: '#e11d48',
+    asymptomatic: false,  regions: ['Middle East / S.Asia / invasive Africa'],
+  },
+  {
+    id: 'aedes_aegypti',  name: 'Aedes aegypti',
     common: 'Yellow Fever Mosquito',
-    disease: 'Dengue / Zika / Chikungunya',
-    freq: 625,
-    freqRange: [585, 665],
-    harmonics: [1250],
-    color: '#ff8c00',
-    cssVar: '--sp-aegypti',
-    risk: 'HIGH',
-    icon: '⚠️',
-    regions: ['Tropical/Subtropical'],
+    disease: 'Dengue / Zika / Chikungunya / YF',  risk: 'CRITICAL',  freq: 625,
+    freqRange: [585, 665],  color: '#f59e0b',
+    asymptomatic: false,  regions: ['Tropical / Subtropical'],
   },
   {
-    id: 'aedes_albopictus',
-    name: 'Aedes albopictus',
+    id: 'aedes_albopictus', name: 'Aedes albopictus',
     common: 'Asian Tiger Mosquito',
-    disease: 'Dengue / Chikungunya',
-    freq: 668,
-    freqRange: [640, 705],
-    harmonics: [1336],
-    color: '#f5d000',
-    cssVar: '--sp-albopictus',
-    risk: 'HIGH',
-    icon: '🟡',
-    regions: ['Asia / Europe invasive'],
+    disease: 'Dengue / Chikungunya',  risk: 'HIGH',  freq: 668,
+    freqRange: [640, 705],  color: '#eab308',
+    asymptomatic: false,  regions: ['Asia / Invasive Europe & Americas'],
   },
   {
-    id: 'culex',
-    name: 'Culex quinquefasciatus',
+    id: 'culex',          name: 'Culex quinquefasciatus',
     common: 'Southern House Mosquito',
-    disease: 'West Nile / Lymphatic Filariasis',
-    freq: 453,
-    freqRange: [428, 485],
-    harmonics: [906, 1359],
-    color: '#3d9eff',
-    cssVar: '--sp-culex',
-    risk: 'MEDIUM',
-    icon: '🔵',
-    regions: ['Cosmopolitan'],
+    disease: 'West Nile / Filariasis / JE',  risk: 'HIGH',  freq: 453,
+    freqRange: [428, 482],  color: '#3b82f6',
+    asymptomatic: false,  regions: ['Cosmopolitan tropics'],
+  },
+  {
+    id: 'aedes_japonicus', name: 'Aedes japonicus',
+    common: 'Asian Bush Mosquito',
+    disease: 'West Nile / Usutu',  risk: 'MEDIUM',  freq: 730,
+    freqRange: [705, 760],  color: '#7c3aed',
+    asymptomatic: false,  regions: ['Invasive Europe / N.America'],
+  },
+  {
+    id: 'aedes_vexans',   name: 'Aedes vexans',
+    common: 'Inland Floodwater Mosquito',
+    disease: 'Rift Valley Fever / Tularemia',  risk: 'MEDIUM',  freq: 515,
+    freqRange: [490, 540],  color: '#10b981',
+    asymptomatic: false,  regions: ['N.America / Europe / Asia'],
+  },
+  {
+    id: 'mansonia_uniformis', name: 'Mansonia uniformis',
+    common: 'Rice Field Mosquito',
+    disease: 'Brugian filariasis / Rift Valley Fever',  risk: 'MEDIUM',  freq: 570,
+    freqRange: [548, 596],  color: '#f97316',
+    asymptomatic: false,  regions: ['SE Asia / Africa / Pacific'],
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // ASYMPTOMATIC — Non-vector or negligible disease risk.
+  // Common nuisance mosquitoes found worldwide.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: 'culex_pipiens',  name: 'Culex pipiens',
+    common: 'Northern House Mosquito',
+    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 600,
+    freqRange: [580, 622],  color: '#64748b',
+    asymptomatic: true,   regions: ['Cosmopolitan temperate'],
+  },
+  {
+    id: 'culiseta_annulata', name: 'Culiseta annulata',
+    common: 'Banded Mosquito',
+    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 350,
+    freqRange: [330, 370],  color: '#94a3b8',
+    asymptomatic: true,   regions: ['Europe / N.Africa / W.Asia'],
+  },
+  {
+    id: 'ochlerotatus_caspius', name: 'Aedes (Ochlerotatus) caspius',
+    common: 'Caspian Saltmarsh Mosquito',
+    disease: 'Non-vector (mass nuisance)',  risk: 'LOW',  freq: 548,
+    freqRange: [525, 570],  color: '#475569',
+    asymptomatic: true,   regions: ['Mediterranean / Middle East / C.Asia'],
+  },
+  {
+    id: 'toxorhynchites', name: 'Toxorhynchites brevipalpis',
+    common: 'Elephant Mosquito',
+    disease: 'Non-vector (larvae eat other mosquitoes)',  risk: 'NONE',  freq: 290,
+    freqRange: [270, 310],  color: '#22d3ee',
+    asymptomatic: true,   regions: ['Africa / SE Asia / Pacific'],
   },
 ];
+
 
 /* ════════════════════════════════════════════════════════════
    CLASS: MosquitoAudioEngine
@@ -1814,8 +1882,8 @@ class SpectrogramRenderer {
     this.ctx    = canvas.getContext('2d');
 
     // Frequency range — focused on mosquito science only
-    this.MIN_FREQ = 380;
-    this.MAX_FREQ = 820;  // 380-820 Hz: covers all 4 species with max resolution
+    this.MIN_FREQ = 310;
+    this.MAX_FREQ = 780;  // 310-780 Hz: covers all 10 species: covers all 4 species with max resolution
 
     // Offscreen pixel buffer (scrolling ImageData)
     this.offscreen    = null;
@@ -2465,9 +2533,11 @@ class FederatedLearningClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deviceId:   this.getAnonymousId(),
-          species:    det.species.id,
-          confidence: parseFloat(det.confidence.toFixed(3)),
-          frequency:  parseFloat(det.frequency.toFixed(1)),
+          species:      det.species.id,
+          confidence:   parseFloat(det.confidence.toFixed(3)),
+          frequency:    parseFloat(det.frequency.toFixed(1)),
+          risk:         det.species.risk || 'UNKNOWN',
+          asymptomatic: !!det.species.asymptomatic,
           lat, lng,
         }),
         signal: timeoutSignal(5000),
@@ -2614,17 +2684,19 @@ class MapController {
       }).addTo(this.map);
     }
 
-    // Pan to user on first map open
+    // Pan to user on first map open (or if forced)
     if (!this._pannedToUser) {
       this._pannedToUser = true;
-      this.map.setView([lat, lng], 8, { animate: true });
+      this.map.setView([lat, lng], 6, { animate: true });
+      console.log('[GPS] Map panned to user:', lat.toFixed(4), lng.toFixed(4));
     }
   }
 
   async loadServerHotspots() {
-    if (!window.SERVER_URL) return;
+    const _url = window._SERVER_URL || SERVER_URL;
+    if (!_url) return;
     try {
-      const resp = await fetch(`${window.SERVER_URL}/hotspots`,
+      const resp = await fetch(`${_url}/hotspots`,
         { signal: timeoutSignal(8000) });
       if (!resp.ok) return;
       const data = await resp.json();
@@ -3327,7 +3399,7 @@ class App {
 
     // ── 2. Non-blocking setup ─────────────────────────────────────────────
     this.registerServiceWorker();
-    this.acquireGeolocation();
+    // GPS requested after user gesture in startListening()
 
     // ── 3. Button wiring ──────────────────────────────────────────────────
     const listenBtn = document.getElementById('btn-listen');
@@ -3513,35 +3585,48 @@ self.addEventListener('fetch', e => {
   // Uses low-accuracy (cell/WiFi) to avoid GPS battery drain.
   // Stores coordinates privately; only DP-jittered positions ever leave device.
   acquireGeolocation() {
-    if (!('geolocation' in navigator)) return;
-
-    const options = {
-      enableHighAccuracy: true,   // use GPS when available
-      timeout: 20000,
-      maximumAge: 60000,
-    };
+    if (!('geolocation' in navigator)) {
+      const gpsEl = document.getElementById('wf-gps');
+      if (gpsEl) { gpsEl.textContent = '📍 unavail'; gpsEl.style.color = 'var(--text3)'; }
+      return;
+    }
 
     const onPos = (pos) => {
       this.deviceLat = pos.coords.latitude;
       this.deviceLng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
 
-      // Show/update user marker on map
-      this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
-
-      // Pan map to user (only on first fix)
-      if (this.mapCtrl.map && !this._geoPanned) {
-        this._geoPanned = true;
-        this.mapCtrl.map.setView([this.deviceLat, this.deviceLng], 5, { animate: true });
+      const gpsEl = document.getElementById('wf-gps');
+      if (gpsEl) {
+        gpsEl.textContent = `📍±${Math.round(acc)}m`;
+        gpsEl.style.color = acc < 100 ? 'var(--green)' : acc < 500 ? 'var(--amber)' : 'var(--text3)';
       }
+      console.log(`[GPS] ${this.deviceLat.toFixed(5)},${this.deviceLng.toFixed(5)} ±${acc.toFixed(0)}m`);
+
+      // Store and show on map
+      this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
     };
 
     const onErr = (err) => {
-      console.info('Geolocation:', err.message);
+      console.warn('Geolocation error:', err.code, err.message);
+      // Show user-facing message for common errors
+      if (err.code === 1) { // PERMISSION_DENIED
+        if (window._app) window._app.showToast("📍 Location denied — detections won't appear on map. Enable in Settings → Safari → Location.");
+      }
     };
 
-    // Get immediate fix, then watch for updates
-    navigator.geolocation.getCurrentPosition(onPos, onErr, options);
-    this._watchId = navigator.geolocation.watchPosition(onPos, onErr, options);
+    // Stage 1: coarse fix immediately (cell tower / WiFi)
+    navigator.geolocation.getCurrentPosition(onPos, onErr, {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 120000,
+    });
+    // Stage 2: watch for precise GPS fix (may take 20-30s outdoors)
+    this._watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+      enableHighAccuracy: true,
+      timeout: 30000,
+      maximumAge: 30000,
+    });
   }
 
   async toggleListening() {
@@ -3574,9 +3659,18 @@ self.addEventListener('fetch', e => {
 
   async startListening() {
     try {
+      // Re-request GPS on start (user gesture helps on iOS)
+      this.acquireGeolocation();
+
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
+
+      // Request GPS HERE — after user gesture, so iOS Safari allows it
+      if (!this._geoStarted) {
+        this._geoStarted = true;
+        this.acquireGeolocation();
+      }
 
       // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
       try {
@@ -3785,14 +3879,13 @@ self.addEventListener('fetch', e => {
     const grid = document.getElementById('detection-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    const SP_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
-    const SP_RISK   = ['CRITICAL', 'HIGH', 'HIGH', 'MEDIUM'];
+    // Color comes directly from sp.color — no index array needed
 
     SPECIES_DB.forEach((sp, i) => {
       const cell = document.createElement('div');
-      cell.className = 'detect-cell';
+      cell.className = sp.asymptomatic ? 'detect-cell asymptomatic' : 'detect-cell';
       cell.id = `dc-${sp.id}`;
-      cell.style.setProperty('--cell-color', SP_COLORS[i]);
+      cell.style.setProperty('--cell-color', sp.color);
 
       // Full species name split: genus abbrev + epithet
       const nameParts = sp.name.split(' ');
@@ -3800,10 +3893,14 @@ self.addEventListener('fetch', e => {
         ? `${nameParts[0][0]}. ${nameParts.slice(1).join(' ')}`
         : sp.name;
 
+      const asymBadge = sp.asymptomatic
+        ? `<span style="font-size:0.42rem;background:rgba(100,116,139,0.2);border-radius:3px;padding:1px 4px;color:var(--text2)">non-vector</span>`
+        : '';
+
       cell.innerHTML = `
         <div class="dc-header">
           <div class="dc-dot"></div>
-          <div class="dc-species">${displayName}</div>
+          <div class="dc-species">${displayName} ${asymBadge}</div>
           <div class="dc-disease">${sp.disease}</div>
         </div>
 
@@ -3909,15 +4006,15 @@ self.addEventListener('fetch', e => {
   }
 
   buildSpStatCards() {
-    const SP_COLORS = ['var(--sp0)', 'var(--sp1)', 'var(--sp2)', 'var(--sp3)'];
     const el = document.getElementById('sp-stat-cards');
     if (!el) return;
-    el.innerHTML = SPECIES_DB.map((sp, i) => {
+    el.innerHTML = SPECIES_DB.map(sp => {
       const abbr = sp.name.split(' ')[1] || sp.name;
-      return `<div class="sp-card" style="--sp-color:${SP_COLORS[i]}">
+      const tag  = sp.asymptomatic ? ' (non-vector)' : '';
+      return `<div class="sp-card" style="--sp-color:${sp.color}">
         <div class="sp-card-name">${abbr}</div>
         <div class="sp-card-count" id="count-${sp.id}">0</div>
-        <div class="sp-card-disease">${sp.disease.split('/')[0].trim()}</div>
+        <div class="sp-card-disease">${sp.disease.split('/')[0].trim()}${tag}</div>
       </div>`;
     }).join('');
   }
