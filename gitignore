@@ -1,0 +1,20 @@
+# Local dev only — do not deploy
+serve.py
+core.js
+new_clf_spec.js
+new_classes.js
+mosquitonet.html
+
+# SSL certs — never commit
+*.pem
+*.key
+*.crt
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# OS
+.DS_Store
+Thumbs.db
