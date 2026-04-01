@@ -128,7 +128,7 @@ detection_cells   = {}
 hotspot_cells     = {}
 next_detection_id = [1]
 recent_log        = {}     # rkey → {det_id, ts, conf}
-RECENT_WINDOW     = 70     # seconds: conf update allowed within this window
+RECENT_WINDOW     = 60     # seconds: conf update allowed (exactly 1 minute)
 
 stats = {
     'total_detections': 0,
@@ -247,11 +247,12 @@ def detection():
                         e['conf_updated'] = datetime.now(timezone.utc).isoformat()
                         rec['conf'] = conf
                         print(f'[Det #{rec["det_id"]}] conf {old_conf:.3f}→{conf:.3f}')
-                        _rewrite_log()   # rewrite under same lock — no race possible
+                        _rewrite_log()   # rewrite under same lock — no race
                         _save_state()
                         break
-            return jsonify({'received': True, 'updated': True,
-                            'detection_id': rec['det_id'], **full_stats()})
+            snap = dict(full_stats())
+        return jsonify({'received': True, 'updated': True,
+                        'detection_id': rec['det_id'], **snap})
 
         # ── New detection ─────────────────────────────────────────────────────
         det_id = next_detection_id[0]
@@ -294,10 +295,11 @@ def detection():
         # Write under the same lock — guaranteed no concurrent append/rewrite
         _append_entry(entry)
         _save_state()
+        snap = dict(full_stats())   # snapshot inside lock — consistent with what was written
 
     print(f'[Det #{det_id}] {sp_name} conf={conf:.3f} freq={freq:.1f}Hz '
           f'lat={entry["lat"]} lng={entry["lng"]}')
-    return jsonify({'received': True, 'detection_id': det_id, **full_stats()})
+    return jsonify({'received': True, 'detection_id': det_id, **snap})
 
 
 @app.route('/log', methods=['GET'])
