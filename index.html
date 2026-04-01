@@ -4456,9 +4456,13 @@ self.addEventListener('fetch', e => {
 
     // Update cells to OFF state immediately
     this.updateDetectionPanel([]);
-    // Reset cooldown so a new session can detect immediately
+    // Reset all per-species state on session stop
     if (this._detectionCooldown) {
-      SPECIES_DB.forEach(sp => { this._detectionCooldown[sp.id] = 0; });
+      SPECIES_DB.forEach(sp => {
+        this._detectionCooldown[sp.id] = 0;
+        if (this._serverCooldown)  this._serverCooldown[sp.id]  = 0;
+        if (this._bestConf)        this._bestConf[sp.id]        = 0;
+      });
     }
 
     this.setStatus('', 'OFFLINE');
@@ -4533,39 +4537,68 @@ self.addEventListener('fetch', e => {
       // 4-7. Detection events — one cooldown governs ALL counts/reports/map
       // _detectionCooldown: per-species timestamp of last CONFIRMED detection event
       // A "detection event" = first frame locked after ≥60s silence for that species
+      // ── Per-species state initialisation ─────────────────────────────────
       if (!this._detectionCooldown) {
-        this._detectionCooldown = {};
-        SPECIES_DB.forEach(sp => { this._detectionCooldown[sp.id] = 0; });
+        this._detectionCooldown  = {};   // local: timestamp of last UI event
+        this._serverCooldown     = {};   // server: timestamp of last upload
+        this._bestConf           = {};   // highest conf seen during current local event
+        SPECIES_DB.forEach(sp => {
+          this._detectionCooldown[sp.id] = 0;
+          this._serverCooldown[sp.id]    = 0;
+          this._bestConf[sp.id]          = 0;
+        });
       }
 
-      const now60 = Date.now();
+      const nowMs       = Date.now();
+      const LOCAL_CD    = 60000;   // 1 min local cooldown
+      const SERVER_CD   = 60000;   // 1 min server cooldown (independent)
+      const CONF_UPLOAD = 0.70;    // minimum conf to trigger server log
+      const CONF_DELTA  = 0.05;    // min improvement to update displayed conf
+
       detections.forEach(det => {
         const spId    = det.species.id;
+        const conf    = det.confidence;
         const lastEvt = this._detectionCooldown[spId] || 0;
-        const cooldownMs = 60000; // 1 min UI cooldown (prevents duplicate counts)
+        const inLocalCD = (nowMs - lastEvt) < LOCAL_CD;
 
-        if (now60 - lastEvt >= cooldownMs) {
-          // ── NEW EVENT: first detection after 60s cooldown ─────────────────
-          // One detection per device per species per minute — client + server both enforce this.
-          this._detectionCooldown[spId] = now60;
+        if (!inLocalCD) {
+          // ── NEW LOCAL EVENT: first detection after local cooldown ──────────
+          this._detectionCooldown[spId] = nowMs;
+          this._bestConf[spId]          = conf;
 
-          // Count: +1 per event in UI
+          // Count +1 in UI
           this.sessionCounts[spId]++;
 
-          // Server upload: exactly once per cooldown window
-          this.fedClient.reportDetection(det);
-
-          // Federated learning update
+          // Federated learning
           const labelIdx = SPECIES_DB.findIndex(sp => sp.id === spId);
           if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
 
-          // Map: add one marker per event
+          // Map marker
           if (this.deviceLat !== null && this.deviceLng !== null) {
             const jitter = 0.02;
             const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
             const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
             this.mapCtrl.addLocalDetection(lat, lng, det.species);
           }
+        } else {
+          // ── WITHIN LOCAL COOLDOWN: update best conf if meaningfully higher ─
+          if (conf > (this._bestConf[spId] || 0) + CONF_DELTA) {
+            this._bestConf[spId] = conf;
+            // Inject updated confidence back into det for display
+            det.confidence = conf;
+          }
+        }
+
+        // ── SERVER UPLOAD: only if best conf ≥ 0.70 and server cooldown elapsed ─
+        const lastUpload   = this._serverCooldown[spId] || 0;
+        const inServerCD   = (nowMs - lastUpload) < SERVER_CD;
+        const bestConf     = Math.max(this._bestConf[spId] || 0, conf);
+
+        if (!inServerCD && bestConf >= CONF_UPLOAD) {
+          this._serverCooldown[spId] = nowMs;
+          // Pass the best confidence seen, not just the current frame's
+          const detToUpload = { ...det, confidence: bestConf };
+          this.fedClient.reportDetection(detToUpload);
         }
       });
 
