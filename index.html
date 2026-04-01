@@ -1257,11 +1257,6 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 
       <!-- Detection grid (fills remaining height, NEVER changes height) -->
       <div class="listen-bottom">
-        <div class="panel-label">Species Detection · 10 Species</div>
-
-        <!-- Color legend — built by JS -->
-        <div id="species-legend"></div>
-
         <!-- Detection grid — populated by JS once -->
         <div class="detection-grid" id="detection-grid"></div>
 
@@ -1500,9 +1495,13 @@ function locateUser() {
         // Auto-disable non-native species now that we have GPS
         try {
           const ns3 = getNativeSpecies(lat, lng);
-          window._app._disabledSpecies = new Set(
-            SPECIES_DB.filter(sp => !ns3.has(sp.id)).map(sp => sp.id)
-          );
+          // Only set disabled species on FIRST GPS fix — never overwrite user toggles
+          if (!window._app._nativeInitialized) {
+            window._app._nativeInitialized = true;
+            window._app._disabledSpecies = new Set(
+              SPECIES_DB.filter(sp => !ns3.has(sp.id)).map(sp => sp.id)
+            );
+          }
           window._app.buildDetectionGrid();
           SPECIES_DB.forEach(sp => {
             const c = document.getElementById('dc-' + sp.id);
@@ -3041,52 +3040,55 @@ class FederatedLearningClient {
   // ── Report a confirmed detection ──────────────────────────────────────────
   // Sends species, confidence, frequency, and DP-jittered location.
   // Server enforces 60s per-device per-species cooldown server-side too.
-  async reportDetection(det) {
+  reportDetection(det) {
     if (!window.SERVER_URL) return;
     const app = window._app;
-    // DP jitter ±0.025° ≈ ±2.5km for privacy
     let lat = null, lng = null;
     if (app && app.deviceLat !== null) {
       const jitter = 0.025;
       lat = app.deviceLat + (Math.random() - 0.5) * jitter;
       lng = app.deviceLng + (Math.random() - 0.5) * jitter;
     }
-    try {
-      const resp = await fetchWithTimeout(`${window.SERVER_URL}/detection`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceId:     this.getAnonymousId(),
-          species:      det.species.id,
-          speciesName:  det.species.name,
-          disease:      det.species.disease,
-          confidence:   parseFloat(det.confidence.toFixed(3)),
-          frequency:    parseFloat(det.frequency.toFixed(1)),
-          risk:         det.species.risk || 'UNKNOWN',
-          asymptomatic: !!det.species.asymptomatic,
-          ts:           new Date().toISOString(),
-          lat, lng,
-        }),
-      }, 8000);
-      if (resp.ok) {
-        const data = await resp.json();
+    // Use XHR — bypasses service worker, avoids CORS preflight on iOS PWA
+    // fetch() POST with Content-Type: application/json triggers preflight = fails
+    const payload = JSON.stringify({
+      deviceId:     this.getAnonymousId(),
+      species:      det.species.id,
+      speciesName:  det.species.name,
+      disease:      det.species.disease,
+      confidence:   parseFloat(det.confidence.toFixed(3)),
+      frequency:    parseFloat(det.frequency.toFixed(1)),
+      risk:         det.species.risk || 'UNKNOWN',
+      asymptomatic: !!det.species.asymptomatic,
+      ts:           new Date().toISOString(),
+      lat, lng,
+    });
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${window.SERVER_URL}/detection`, true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.timeout = 10000;
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
         if (data.received) {
-          // Update nb-ever immediately — visible confirmation data was stored
           const everEl = document.getElementById('nb-ever');
           if (everEl && data.total_detections) {
             everEl.textContent = Number(data.total_detections).toLocaleString();
-            // Flash the element green briefly
             everEl.style.color = 'var(--green)';
             setTimeout(() => { everEl.style.color = ''; }, 1200);
           }
-          // Update map hotspot data
           if (app && app.mapCtrl) {
-            app.mapCtrl.totalDetections = data.total_detections || app.mapCtrl.totalDetections;
+            app.mapCtrl.totalDetections = data.total_detections || 0;
           }
-          console.log(`[Det→Server] ${det.species.id} stored. Server total: ${data.total_detections}`);
+          console.log(`[Det→Server] ${det.species.id} stored. Total ever: ${data.total_detections}`);
+        } else {
+          console.warn('[Det→Server] rejected:', data.reason);
         }
-      }
-    } catch(e) { console.warn('[Det→Server] failed:', e.message); }
+      } catch(e) { console.warn('[Det→Server] parse error', e); }
+    };
+    xhr.onerror   = () => console.warn('[Det→Server] network error');
+    xhr.ontimeout = () => console.warn('[Det→Server] timeout');
+    xhr.send(payload);
   }
 
   saveLocal() {
@@ -4240,12 +4242,15 @@ self.addEventListener('fetch', e => {
       // Store and show on map
       this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
 
-      // Rebuild grid; auto-disable non-native species
+      // Rebuild grid; auto-disable non-native only on first GPS fix
       try {
-        const nsAcq = getNativeSpecies(this.deviceLat, this.deviceLng);
-        this._disabledSpecies = new Set(
-          SPECIES_DB.filter(sp => !nsAcq.has(sp.id)).map(sp => sp.id)
-        );
+        if (!this._nativeInitialized) {
+          this._nativeInitialized = true;
+          const nsAcq = getNativeSpecies(this.deviceLat, this.deviceLng);
+          this._disabledSpecies = new Set(
+            SPECIES_DB.filter(sp => !nsAcq.has(sp.id)).map(sp => sp.id)
+          );
+        }
         this.buildDetectionGrid();
         SPECIES_DB.forEach(sp => {
           const c = document.getElementById('dc-' + sp.id);
@@ -4537,16 +4542,23 @@ self.addEventListener('fetch', e => {
     // Determine native species for user's location
     const ns = getNativeSpecies(this.deviceLat, this.deviceLng);
 
-    // Sort: native vectors → other vectors → native harmless → rest
-    const sorted = [...SPECIES_DB].sort((a, b) => {
-      const score = sp => {
-        if (!sp.asymptomatic && ns.has(sp.id)) return 0;  // native vector
-        if (!sp.asymptomatic)                  return 1;  // other vector
-        if (sp.asymptomatic  && ns.has(sp.id)) return 2;  // native harmless
-        return 3;
-      };
-      return score(a) - score(b);
-    });
+    // Sort order: computed ONCE on first GPS fix, then preserved.
+    // Subsequent rebuilds reuse stored order so user toggles/preferences are kept.
+    let sorted;
+    if (this._speciesSortOrder && this._speciesSortOrder.length === SPECIES_DB.length) {
+      sorted = this._speciesSortOrder.map(id => SPECIES_DB.find(sp => sp.id === id)).filter(Boolean);
+    } else {
+      sorted = [...SPECIES_DB].sort((a, b) => {
+        const score = sp => {
+          if (!sp.asymptomatic && ns.has(sp.id)) return 0;  // native vector
+          if (!sp.asymptomatic)                  return 1;  // other vector
+          if (sp.asymptomatic  && ns.has(sp.id)) return 2;  // native harmless
+          return 3;
+        };
+        return score(a) - score(b);
+      });
+      this._speciesSortOrder = sorted.map(sp => sp.id);
+    }
 
     // ── Build color legend ────────────────────────────────────────
     if (legend) {
