@@ -4520,21 +4520,23 @@ self.addEventListener('fetch', e => {
       detections.forEach(det => {
         const spId    = det.species.id;
         const lastEvt = this._detectionCooldown[spId] || 0;
-        const cooldownMs = 60000; // 1 minute per species per device
+        const cooldownMs = 60000; // 1 min UI cooldown (prevents duplicate counts)
+
+        // ── Server upload: EVERY confirmed detection, no cooldown ──────────
+        // The server logs all detections for scientific analysis.
+        this.fedClient.reportDetection(det);
 
         if (now60 - lastEvt >= cooldownMs) {
-          // ── NEW EVENT: first detection after cooldown ───────────
+          // ── NEW UI EVENT: first detection after 60s cooldown ──────────────
+          // Only increment display counters once per minute per species
           this._detectionCooldown[spId] = now60;
 
-          // Count: exactly +1 per event (not per frame)
+          // Count: +1 per event in UI
           this.sessionCounts[spId]++;
 
           // Federated learning update
           const labelIdx = SPECIES_DB.findIndex(sp => sp.id === spId);
           if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
-
-          // Server report (also throttled server-side)
-          this.fedClient.reportDetection(det);
 
           // Map: add one marker per event
           if (this.deviceLat !== null && this.deviceLng !== null) {
@@ -4544,7 +4546,6 @@ self.addEventListener('fetch', e => {
             this.mapCtrl.addLocalDetection(lat, lng, det.species);
           }
         }
-        // If still within cooldown: panel shows LOCKED but NO new count/report
       });
 
       // Update top-bar counter from session counts (whole numbers, event-based)
