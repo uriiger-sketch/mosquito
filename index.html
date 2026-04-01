@@ -439,7 +439,12 @@ body::after {
   position: relative;
   overflow: hidden;
   transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
-  min-height: 0;
+  /* Fixed height: ensures all 12 cards are exactly the same size */
+  height: 96px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 /* Left colour strip — always visible, brightens on detection */
@@ -465,14 +470,30 @@ body::after {
   box-shadow: none;
   opacity: 0.85;
 }
-.detect-cell.asymptomatic .dc-disease {
-  font-style: italic;
-  color: var(--text3);
-}
-/* Native/local species: gold accent border */
+.detect-cell.asymptomatic /* Native/local species: gold accent border */
 .detect-cell.native {
   border-color: rgba(250,204,21,0.45);
   box-shadow: inset 0 0 0 1px rgba(250,204,21,0.15);
+}
+.dc-disease {
+  font-size: 0.54rem;
+  font-style: italic;
+  color: var(--text3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+  height: 14px;
+  flex-shrink: 0;
+}
+.dc-asym-badge {
+  font-size: 0.42rem;
+  background: rgba(100,116,139,0.2);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--text2);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .dc-native-badge {
   display: inline-block;
@@ -516,10 +537,23 @@ body::after {
 
 /* ── Row 1: species header ── */
 .dc-header {
-  display: flex; align-items: center; gap: 8px;
-  margin-bottom: 9px;
+  flex-shrink: 0;
+  height: 36px;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 1px;
+}
+.dc-name-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  overflow: hidden;
 }
 .dc-dot {
+  display: none;  /* removed — color strip on left edge replaces it */
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--cell-color, var(--text3));
   flex-shrink: 0;
@@ -532,24 +566,26 @@ body::after {
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 .dc-species {
-  font-size: 0.68rem; font-weight: 700;
-  color: var(--text1); flex: 1;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text1);
   letter-spacing: -0.01em;
-}
-.dc-disease {
-  font-size: 0.58rem;
-  color: var(--text2);
-  font-family: 'Syne Mono', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.2;
 }
 
 /* ── CHARGE BAR — the hero element ── */
 .dc-charge-wrap {
   position: relative;
-  height: 24px;
+  height: 20px;
+  flex-shrink: 0;
   background: var(--s3);
-  border-radius: 5px;
+  border-radius: 4px;
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 5px;
   border: 1px solid rgba(255,255,255,0.04);
 }
 .dc-charge-fill {
@@ -621,8 +657,13 @@ body::after {
 
 /* ── Row 3: metadata ── */
 .dc-meta-row {
-  display: flex; align-items: center;
-  justify-content: space-between; gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex-shrink: 0;
+  overflow: hidden;
+  height: 14px;
 }
 .dc-freq {
   font-family: 'Syne Mono', monospace;
@@ -1821,6 +1862,79 @@ function getNativeSpecies(lat, lng) {
   if (IN(-20, 15, -18, 25)) s.add('toxorhynchites'); // W/C Africa
 
   return s;
+}
+
+
+// ── getLocalDisease(speciesId, lat, lng) ─────────────────────────────────────
+// Returns the disease(s) actually transmitted by this species IN THIS REGION.
+// A species may carry a pathogen globally but only transmit it where the
+// pathogen is also present. Sources: WHO Disease Maps 2024, CDC ArboNET,
+// ECDC Threat Reports, ProMED Disease Watch.
+function getLocalDisease(speciesId, lat, lng) {
+  if (lat === null || lat === undefined) return null; // use default from SPECIES_DB
+  const IN = (la0,la1,lo0,lo1) => lat>=la0&&lat<=la1&&lng>=lo0&&lng<=lo1;
+
+  switch (speciesId) {
+
+    case 'anopheles':
+    case 'anopheles_stephensi':
+      // Malaria is actively transmitted wherever these mosquitoes live
+      // (Mediterranean species: historic risk, now very low in EU/Israel)
+      if (IN(28,42,-6,42)) return 'Malaria (low risk)'; // Med/Middle East: low now
+      return 'Malaria';
+
+    case 'aedes_aegypti':
+      // Dengue/Zika/Chikungunya only where these viruses circulate.
+      // In Med/Middle East the mosquito may be present but no active circulation.
+      if (IN(-35, 5,-82,-33)) return 'Dengue · Zika · Chikungunya';    // S.America
+      if (IN( -5,25,-100,-60)) return 'Dengue · Chikungunya';           // C.America
+      if (IN(-15, 5,-18, 12)) return 'Yellow Fever · Dengue';           // W.Africa
+      if (IN(-10,15, 12, 52)) return 'Yellow Fever · Dengue';           // E/C Africa
+      if (IN(  5,28, 65,122)) return 'Dengue · Chikungunya · Zika';     // S/SE Asia
+      if (IN( 20,32,100,125)) return 'Dengue · Chikungunya';            // E.Asia/Taiwan/Japan
+      // Americas Caribbean/Gulf
+      if (IN( 10,35,-100,-60)) return 'Dengue · Chikungunya · Zika';
+      // Mediterranean/Middle East: vector present, no endemic circulation
+      if (IN( 28,42, -6, 42)) return 'Present (no endemic outbreak)';
+      return 'Present (no active outbreak)';
+
+    case 'aedes_albopictus':
+      if (IN(  5,28, 65,122)) return 'Dengue · Chikungunya';           // SE/E Asia endemic
+      if (IN(-10,15, 12, 52)) return 'Chikungunya · Dengue';           // E.Africa
+      if (IN(-35, 5,-82,-33)) return 'Dengue · Chikungunya';           // S.America
+      if (IN( 10,35,-100,-60)) return 'Dengue · Chikungunya';          // C.America/Caribbean
+      if (IN( 28,50, -8, 42)) return 'Chikungunya risk · WNV';         // S.Europe/Med: limited
+      return 'Potential vector · low current risk';
+
+    case 'culex':
+      // Culex quinquefasciatus vectors differ by region
+      if (IN(  5,32, 65, 95)) return 'Japanese Encephalitis · Filariasis'; // S.Asia JE belt
+      if (IN(-10,25, 95,125)) return 'Japanese Encephalitis · Filariasis'; // SE Asia JE belt
+      if (IN(-35, 5, -18, 52)) return 'Filariasis';                    // Sub-Saharan Africa
+      if (IN( 25,52,-130,-60)) return 'West Nile Virus';               // USA/Canada WNV
+      if (IN( 15,55, -15, 65)) return 'West Nile Virus';               // Europe/Med/M.East
+      return 'West Nile Virus';
+
+    case 'aedes_japonicus':
+      // Competent WNV/Usutu vector but primary circulation via Culex
+      if (IN( 30,46,120,145)) return 'West Nile · SFTS virus';         // native Japan/Korea
+      return 'West Nile · Usutu (low risk)';
+
+    case 'aedes_vexans':
+      // Secondary vector, actual disease transmission is very regional
+      if (IN(-15,25,-18,52)) return 'Rift Valley Fever';               // Africa
+      if (IN( 15,55,-15,65)) return 'West Nile (bridging vector)';     // Europe/M.East
+      if (IN( 20,60,-110,-60)) return 'West Nile (bridging vector)';   // N.America
+      return 'Rift Valley Fever · secondary WNV';
+
+    case 'mansonia_uniformis':
+      if (IN(-8,28,95,130)) return 'Brugian Filariasis';               // SE Asia primary
+      if (IN( 5,25,65,95))  return 'Brugian Filariasis';               // India
+      return 'Filariasis';
+
+    default:
+      return null; // use SPECIES_DB default
+  }
 }
 
 
@@ -3698,11 +3812,13 @@ class MapController {
         const sp   = SPECIES_DB.find(s => s.id === spId) || SPECIES_DB[0];
         const alpha = 0.12 + intensity * 0.45;
         const size  = 4 + intensity * 9;
+        // Non-vector species: unified grey (visual clutter reduction)
+        const circleColor = sp.asymptomatic ? '#475569' : sp.color;
         const circle = L.circleMarker([lat, lng], {
           radius: size * 0.55,
-          fillColor: sp.color,
+          fillColor: circleColor,
           color: 'transparent',
-          fillOpacity: alpha * 0.65,
+          fillOpacity: sp.asymptomatic ? alpha * 0.35 : alpha * 0.65,
           weight: 0,
         }).addTo(this._layerGroup);
         this.markers.push(circle);
@@ -3815,21 +3931,32 @@ class MapController {
       div.style.cssText = `
         background: rgba(3,11,20,0.92);
         border: 1px solid rgba(0,232,192,0.15);
-        border-radius: 8px; padding: 8px 12px;
+        border-radius: 6px; padding: 6px 9px;
         font-family: 'Syne Mono', monospace;
-        font-size: 9px; color: #4d7a99; line-height: 2;
-        max-width: 180px;
+        font-size: 8.5px; color: #4d7a99; line-height: 1.9;
+        max-width: 140px;
       `;
-      // Build legend rows dynamically from SPECIES_DB
-      const rows = SPECIES_DB.map(sp => {
-        const tag = sp.asymptomatic
-          ? `<span style="opacity:0.5">(non-vector)</span>`
-          : `<span style="color:${sp.color};opacity:0.85">${sp.disease.split('/')[0].trim()}</span>`;
-        return `<div><span style="color:${sp.color};font-size:11px">●</span> ` +
-               `<span style="color:#8ab0c8">${sp.name.split(' ').slice(0,2).join(' ')}</span> ` +
-               tag + `</div>`;
-      }).join('');
-      div.innerHTML = `<div style="color:#c8dff0;margin-bottom:5px;font-weight:700;font-size:8px;letter-spacing:0.1em">VECTOR DATABASE</div>` + rows;
+      // Vectors only — one row per disease vector species
+      const vectorRows = SPECIES_DB
+        .filter(sp => !sp.asymptomatic)
+        .map(sp => {
+          const disease = sp.disease.split('/')[0].split('·')[0].trim();
+          return `<div style="display:flex;align-items:center;gap:5px">` +
+            `<span style="color:${sp.color};font-size:10px;flex-shrink:0">●</span>` +
+            `<span style="color:#8ab0c8">${disease}</span>` +
+            `</div>`;
+        }).join('');
+
+      // All non-vectors collapsed into one grey row
+      const nonVectorRow =
+        `<div style="display:flex;align-items:center;gap:5px;opacity:0.45">` +
+        `<span style="color:#64748b;font-size:10px;flex-shrink:0">●</span>` +
+        `<span style="color:#64748b">Non-vector</span>` +
+        `</div>`;
+
+      div.innerHTML =
+        `<div style="color:#c8dff0;margin-bottom:4px;font-weight:700;font-size:7.5px;letter-spacing:0.1em">VECTOR DATABASE</div>` +
+        vectorRows + nonVectorRow;
       return div;
     };
     legend.addTo(this.map);
@@ -4443,13 +4570,20 @@ self.addEventListener('fetch', e => {
       const nativeBadge = (isNative && !sp.asymptomatic)
         ? `<span class="dc-native-badge">★ LOCAL</span>` : '';
       const asymBadge = sp.asymptomatic
-        ? `<span style="font-size:0.42rem;background:rgba(100,116,139,0.2);border-radius:3px;padding:1px 4px;color:var(--text2)">non-vector</span>` : '';
+        ? `<span class="dc-asym-badge">non-vector</span>` : '';
+
+      // Get region-specific disease label (only relevant diseases for this location)
+      const localDis = (!sp.asymptomatic && window._app)
+        ? (getLocalDisease(sp.id, window._app.deviceLat, window._app.deviceLng) || sp.disease)
+        : sp.disease;
 
       cell.innerHTML = `
         <div class="dc-header">
           <div class="dc-dot"></div>
-          <div class="dc-species">${displayName}${nativeBadge}${asymBadge}</div>
-          <div class="dc-disease">${sp.disease}</div>
+          <div class="dc-name-row">
+            <span class="dc-species">${displayName}</span>${nativeBadge}${asymBadge}
+          </div>
+          <div class="dc-disease">${localDis}</div>
         </div>
         <div class="dc-charge-wrap">
           <div class="dc-charge-fill" id="dc-bar-${sp.id}" style="width:0%"></div>
