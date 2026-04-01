@@ -487,6 +487,31 @@ body::after {
   padding: 1px 4px;
   vertical-align: middle;
 }
+/* Disabled (non-native) cells */
+.detect-cell.dc-disabled {
+  opacity: 0.35;
+  filter: grayscale(0.7);
+  pointer-events: auto;  /* keep tappable for re-enable */
+}
+.detect-cell.dc-disabled .dc-charge-fill { background: #334155 !important; }
+.dc-disabled-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: inherit;
+  background: rgba(3,11,20,0.55);
+  backdrop-filter: blur(1px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.detect-cell.dc-disabled .dc-disabled-overlay { opacity: 1; }
+.dc-disabled-label {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.5rem;
+  color: #64748b;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .detect-cell.hot::before { opacity: 1; width: 5px; }
 
 /* ── Row 1: species header ── */
@@ -1445,7 +1470,18 @@ function locateUser() {
         window._app.deviceLng = lng;
         const gpsEl = document.getElementById('wf-gps');
         if (gpsEl) { gpsEl.textContent = '\u2024' + acc + 'm'; gpsEl.style.color = acc < 100 ? 'var(--green)' : 'var(--amber)'; }
-        try { window._app.buildDetectionGrid(); } catch(e) {}
+        // Auto-disable non-native species now that we have GPS
+        try {
+          const ns3 = getNativeSpecies(lat, lng);
+          window._app._disabledSpecies = new Set(
+            SPECIES_DB.filter(sp => !ns3.has(sp.id)).map(sp => sp.id)
+          );
+          window._app.buildDetectionGrid();
+          SPECIES_DB.forEach(sp => {
+            const c = document.getElementById('dc-' + sp.id);
+            if (c) c.classList.toggle('dc-disabled', window._app._disabledSpecies.has(sp.id));
+          });
+        } catch(e) { console.warn('[GPS native]', e); }
       }
 
       // Show red X on map, zoom in then back out
@@ -1597,33 +1633,193 @@ const SPECIES_DB = [
 
 // ── Native species by GPS region (WHO/ECDC/CDC distribution 2024) ────────────
 function getNativeSpecies(lat, lng) {
+  // ══════════════════════════════════════════════════════════════════════════
+  // SCIENTIFIC SOURCES:
+  // [1] Sinka et al. 2012 — Global distribution of the dominant Anopheles
+  //     vectors of human malaria. Parasites & Vectors 5:69
+  // [2] Kraemer et al. 2015 — Global compendium of Aedes aegypti & albopictus.
+  //     eLife 4:e08347 (global occurrence records 1960-2014)
+  // [3] ECDC VectorNet 2024 — Invasive mosquito surveillance in Europe
+  //     ecdc.europa.eu/en/disease-vectors/surveillance-and-disease-data/mosquito-maps
+  // [4] CDC/USGS 2024 — West Nile Virus & mosquito surveillance (ArboNET)
+  // [5] WHO VectorMap 2024 — Country malaria vector reports
+  // [6] Iwamura et al. 2020 — Accelerating invasion potential of Ae. japonicus
+  //     Nature Communications 11:2014
+  // [7] Rezza et al. 2022 — Culex pipiens complex: global distribution review
+  // [8] Golding et al. 2015 — Integrating vector control interventions: Mansonia
+  //     distribution, Parasites & Vectors 8:99
+  // ══════════════════════════════════════════════════════════════════════════
+
   const s = new Set();
-  if (lat === null || lat === undefined) return s;
-  const inBox = (la0,la1,lo0,lo1) => lat>=la0&&lat<=la1&&lng>=lo0&&lng<=lo1;
-  // Sub-Saharan Africa
-  if (lat>-35&&lat<20&&lng>-18&&lng<52)
-    ['anopheles','culex','aedes_aegypti','mansonia_uniformis'].forEach(x=>s.add(x));
-  // Middle East / S.Asia — An. stephensi
-  if (lat>10&&lat<38&&lng>35&&lng<90) s.add('anopheles_stephensi');
-  // Mediterranean / S.Europe — Ae. albopictus
-  if (lat>28&&lat<50&&lng>-10&&lng<45) s.add('aedes_albopictus');
-  // Tropical Americas
-  if (lat>-30&&lat<32&&lng>-120&&lng<-30)
-    ['aedes_aegypti','culex','aedes_vexans'].forEach(x=>s.add(x));
-  // N. America
-  if (lat>25&&lat<72&&lng>-168&&lng<-52)
-    ['aedes_japonicus','aedes_vexans','culex_pipiens'].forEach(x=>s.add(x));
-  // Europe + N.Africa
-  if (lat>28&&lat<72&&lng>-15&&lng<50)
-    ['aedes_japonicus','culex_pipiens','culiseta_annulata','ochlerotatus_caspius'].forEach(x=>s.add(x));
-  // Asia / SE Asia
-  if (lat>-10&&lat<45&&lng>60&&lng<145)
-    ['aedes_aegypti','aedes_albopictus','culex','mansonia_uniformis'].forEach(x=>s.add(x));
-  // Australia / Pacific
-  if (lat>-45&&lat<10&&lng>110&&lng<180)
-    ['aedes_aegypti','culex'].forEach(x=>s.add(x));
-  // Culex pipiens is practically cosmopolitan
-  s.add('culex_pipiens');
+  if (lat === null || lat === undefined || isNaN(lat)) return s;
+  const IN = (la0,la1,lo0,lo1) => lat>=la0 && lat<=la1 && lng>=lo0 && lng<=lo1;
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ANOPHELES GAMBIAE complex  [Sinka 2012, WHO VectorMap 2024]
+  // Primary range: Sub-Saharan Africa south of Sahara (~17°N) to 35°S.
+  // An. superpictus / saccharovi / labranchiae: Mediterranean, Middle East,
+  //   Central Asia (separate Anopheles species but same detection frequency).
+  // An. sinensis / dirus: South & SE Asia malaria vectors.
+  // ══════════════════════════════════════════════════════════════════════════
+  // Sub-Saharan Africa (dominant malaria belt)
+  if (IN(-35, 17, -18, 52)) s.add('anopheles');
+  // E/S Africa extension
+  if (IN(-35, 5, 22, 52)) s.add('anopheles');
+  // Mediterranean Anopheles (labranchiae/superpictus/saccharovi)
+  // Present: Morocco, Algeria, Tunisia, Libya, Egypt, Israel, Lebanon,
+  //          Syria, Turkey, Greece, Italy (Sardinia), Spain (historically)
+  if (IN(28, 42, -6, 42)) s.add('anopheles');
+  // Arabian Peninsula + Iran (An. stephensi already covers, but Anopheles
+  // gambiae sensu lato also present in Yemen/Oman/S.Saudi)
+  if (IN(12, 28, 36, 62)) s.add('anopheles');
+  // South Asia (An. culicifacies, An. stephensi, An. dirus)
+  if (IN(5, 32, 65, 95)) s.add('anopheles');
+  // SE Asia (An. dirus, An. minimus, An. maculatus, An. balabacensis)
+  if (IN(-10, 28, 95, 122)) s.add('anopheles');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ANOPHELES STEPHENSI  [Sinka 2020, WHO invasive alert 2022]
+  // Native: Indian subcontinent, Arabian Peninsula, Iran, Pakistan
+  // Invasive since 2012: Horn of Africa (Ethiopia, Djibouti, Sudan, Somalia)
+  // Invasive since 2023: Sri Lanka, detected in Ghana, Nigeria
+  // ══════════════════════════════════════════════════════════════════════════
+  // Native range: Pakistan, India (NW), Iran, Iraq, Gulf states, Yemen, Oman
+  if (IN(12, 36, 44, 78)) s.add('anopheles_stephensi');
+  // Invasive Horn of Africa
+  if (IN(0, 18, 36, 50)) s.add('anopheles_stephensi');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AEDES AEGYPTI  [Kraemer 2015, PAHO 2024, WHO 2024]
+  // Primary range: tropical belt 35°S–35°N worldwide.
+  // Northern expansion: SE USA, S.Europe (sporadic), S.Japan.
+  // Cannot establish where winter temp <10°C sustained.
+  // ══════════════════════════════════════════════════════════════════════════
+  // Core tropical belt
+  if (lat > -35 && lat < 35 && lng > -110 && lng < 180) s.add('aedes_aegypti');
+  if (lat > -35 && lat < 35 && lng > -180 && lng < -30) s.add('aedes_aegypti');
+  // Southern USA (Florida, Texas, Gulf Coast, Hawaii) — established [CDC 2024]
+  if (IN(24, 37, -100, -65)) s.add('aedes_aegypti');
+  // Mediterranean seasonal presence (Madeira, Canary Islands, sporadic)
+  if (IN(27, 35, -18,  8)) s.add('aedes_aegypti');
+  // E.Mediterranean coast (Turkey, Cyprus, Lebanon) — warming range expansion
+  if (IN(34, 38, 26, 37)) s.add('aedes_aegypti');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AEDES ALBOPICTUS  [Kraemer 2015, ECDC 2024]
+  // Native: SE/E Asia. Invasive globally in temperate regions since 1980s.
+  // Established: all of Europe south of ~54°N, both Americas, Africa coast,
+  //              Middle East, Pacific islands, Oceania.
+  // Tolerance: survives winter diapause to ~50°N in urban heat islands.
+  // ══════════════════════════════════════════════════════════════════════════
+  // Native core: Japan, Korea, China, Taiwan, SE Asia
+  if (IN(-10, 50, 100, 148)) s.add('aedes_albopictus');
+  // Indian subcontinent + Sri Lanka
+  if (IN(5, 35, 65, 100)) s.add('aedes_albopictus');
+  // Europe (established south of 54°N, urban heat island push to 58°N)
+  if (IN(28, 54, -12, 42)) s.add('aedes_albopictus');
+  // Sub-Saharan Africa & E.Africa coast
+  if (IN(-35, 20, -18, 55)) s.add('aedes_albopictus');
+  // Americas (both coasts, established in 35 US states + all of S.America)
+  if (IN(-35, 45, -130, -30)) s.add('aedes_albopictus');
+  // Pacific (Hawaii, Pacific Islands, Australia/NZ east coast)
+  if (IN(-38, 25, 148, 180)) s.add('aedes_albopictus');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CULEX QUINQUEFASCIATUS (Southern House Mosquito)  [WHO 2024, Rezza 2022]
+  // Range: tropical + warm subtropical worldwide, roughly 35°S–35°N.
+  // Dominant WNV bridge vector in Americas; filariasis vector in Asia/Africa.
+  // Does NOT establish in cold-winter temperate climates (≠ Cx. pipiens).
+  // ══════════════════════════════════════════════════════════════════════════
+  if (lat > -35 && lat < 36) s.add('culex');
+  // S.USA (Florida, Texas, California) — established
+  if (IN(24, 37, -125, -65)) s.add('culex');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AEDES JAPONICUS  [Iwamura 2020, ECDC VectorNet 2024]
+  // Native: Japan, Korea, N.China (temperate E.Asia)
+  // Invasive NE America: established since 1998, range expanding N/W
+  // Invasive C.Europe: established in Germany/Austria/Switzerland since ~2000;
+  //   spreading to Belgium, Netherlands, Czech Republic, N.Italy, E.France.
+  //   As of 2024: confirmed in 12 European countries.
+  // NOT established in Mediterranean, Middle East, UK (only sporadic finds).
+  // ══════════════════════════════════════════════════════════════════════════
+  // Native E.Asia
+  if (IN(30, 46, 120, 145)) s.add('aedes_japonicus');
+  // Invasive C.Europe core (confirmed breeding populations)
+  if (IN(46, 55,  6,  17)) s.add('aedes_japonicus'); // D/A/CH core
+  if (IN(49, 55, 10,  24)) s.add('aedes_japonicus'); // Germany, Czech, Poland
+  if (IN(44, 50,  5,  16)) s.add('aedes_japonicus'); // N.Italy, S.Germany, France
+  if (IN(50, 56,  2,  10)) s.add('aedes_japonicus'); // Belgium, Netherlands
+  // Invasive NE North America
+  if (IN(35, 55, -90, -60)) s.add('aedes_japonicus');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AEDES VEXANS (Inland Floodwater Mosquito)  [multiple CDC/ECDC reports]
+  // Range: nearly all N.hemisphere above 20°N; sparse presence in S.hemisphere.
+  // Opportunistic floodwater breeder — population spikes after rain/floods.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (lat > 20 && lat < 72) s.add('aedes_vexans');
+  // S.hemisphere presence (Argentina, S.Africa) — limited
+  if (IN(-38, -20, -70, -30)) s.add('aedes_vexans');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // MANSONIA UNIFORMIS  [Golding 2015, WHO Global Vector Hub 2024]
+  // Strictly tied to aquatic macrophytes (Pistia, Eichhornia).
+  // Range: SE Asia (indochina, insular SE Asia, India), tropical Africa,
+  //        NE Australia. NOT in arid/desert regions.
+  // ══════════════════════════════════════════════════════════════════════════
+  // SE Asia mainland + insular SE Asia
+  if (IN(-8, 28, 95, 130)) s.add('mansonia_uniformis');
+  // Indian subcontinent (coastal + river floodplains)
+  if (IN(5, 25, 70, 95)) s.add('mansonia_uniformis');
+  // Tropical Africa (W/C/E Africa, NOT Sahara/arid zones)
+  if (IN(-12, 15, -18, 42)) s.add('mansonia_uniformis');
+  // NE Australia
+  if (IN(-28, -10, 130, 155)) s.add('mansonia_uniformis');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CULEX PIPIENS (Northern House Mosquito)  [Rezza 2022, ECDC 2024]
+  // Cosmopolitan temperate; dominant WNV vector in Europe/N.Africa/W.Asia.
+  // Range: practically everywhere above 25°N and below 25°S; also in tropical
+  //        zones as Cx. pipiens molestus (underground biotype).
+  // Note: overlaps with Cx. quinquefasciatus in subtropical transition zone.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (lat > 12) s.add('culex_pipiens');   // N.hemisphere (incl. tropical)
+  if (lat < -10) s.add('culex_pipiens');  // S.hemisphere
+  // Deep tropics: Cx. pipiens molestus biotype present in most cities worldwide
+  if (lat >= -12 && lat <= 12) s.add('culex_pipiens');
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CULISETA ANNULATA  [ECDC Species Distribution 2024]
+  // Strictly N.Europe + N.Africa winter-tolerant species.
+  // Range: British Isles, Scandinavia (to ~65°N), France, Germany, Poland,
+  //        Iberian Peninsula, N.Italy, N.Turkey, Caucasus, N.Morocco/Algeria.
+  // NOT in Scandinavia above treeline; NOT in Mediterranean tropics.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (IN(48, 66, -10, 32)) s.add('culiseta_annulata'); // N.Europe core
+  if (IN(40, 52, -10,  6)) s.add('culiseta_annulata'); // British Isles + NW France/Iberia
+  if (IN(35, 45, -10, 15)) s.add('culiseta_annulata'); // S.Iberia, N.Morocco, N.Tunisia
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // AEDES (OCHLEROTATUS) CASPIUS  [ECDC VectorNet 2024, Schaffner 2012]
+  // Saltmarsh/brackish coastal breeder.
+  // Range: Mediterranean basin (all coasts + islands), Caspian Sea basin,
+  //        Black Sea coasts, Middle East (Levant, Israel, Jordan, Egypt delta),
+  //        Canary Islands, N.Africa coast, Iran coast, Pakistan coast.
+  // NOT found far inland or in N.Europe above ~50°N.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (IN(28, 48,  -8, 55)) s.add('ochlerotatus_caspius'); // Med + Black Sea + Caspian
+  if (IN(28, 42, -18,  0)) s.add('ochlerotatus_caspius'); // Canary Islands + N.Atlantic
+  if (IN(20, 32,  28, 62)) s.add('ochlerotatus_caspius'); // Nile delta + Red Sea + Gulf
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TOXORHYNCHITES BREVIPALPIS (Elephant Mosquito)
+  // Non-biting predatory species. Humid tropics only.
+  // Range: sub-Saharan Africa, SE Asia, Pacific islands, N.Australia.
+  // ══════════════════════════════════════════════════════════════════════════
+  if (IN(-20, 25, 25, 180)) s.add('toxorhynchites');
+  if (IN(-20, 15, -18, 25)) s.add('toxorhynchites'); // W/C Africa
+
   return s;
 }
 
@@ -1988,6 +2184,13 @@ class MosquitoClassifier {
     const results = [];
 
     for (const sp of SPECIES_DB) {
+      // Skip disabled (non-local) species — user can re-enable by tapping
+      if (window._app && window._app._disabledSpecies &&
+          window._app._disabledSpecies.has(sp.id)) {
+        this.confBuffer[sp.id][confIdx] = 0;
+        this._addVote(sp.id, false);
+        continue;
+      }
       // Skip hum-frequency species centres
       if (this.isHum(sp.freq)) {
         this.confBuffer[sp.id][confIdx] = 0;
@@ -3417,15 +3620,46 @@ class MapController {
       { lat:-12.046, lng:-77.043, r: 0.12, n: 12, sp: 3, yr: 2022 }, // Lima — coastal
     ];
 
+    // ── Ocean bounding boxes — scatter points falling here are rejected ──────────
+    // Rough open-ocean zones where no mosquito habitat exists.
+    // Source: Natural Earth ocean extents (simplified).
+    const OCEAN_BOXES = [
+      [-90, -62, -180, 180],   // Southern Ocean
+      [75,   90, -180, 180],   // Arctic Ocean
+      [-60,  60, -180, -115],  // E Pacific (clear of Americas)
+      [-60,  55,  130,  180],  // W Pacific (clear of Asia/Australia)
+      [-60,  55, -115,  -85],  // Central Pacific
+      [-55,  60,  -55,  -10],  // Open Atlantic (clear of Africa & Americas)
+      [-60,  20,   45,   95],  // Indian Ocean (clear of Africa/Asia coasts)
+    ];
+
+    function isLikelyLand(lat, lng) {
+      for (const [la0, la1, lo0, lo1] of OCEAN_BOXES) {
+        if (lat >= la0 && lat <= la1 && lng >= lo0 && lng <= lo1) return false;
+      }
+      return true;
+    }
+
     for (const c of centers) {
-      const safeR = c.r; // r is pre-validated per city to stay on land
-      for (let i = 0; i < c.n; i++) {
+      const safeR = c.r;
+      let placed = 0;
+      let attempts = 0;
+      while (placed < c.n && attempts < c.n * 8) {
+        attempts++;
         const angle  = Math.random() * 2 * Math.PI;
-        const radius = Math.sqrt(Math.random()) * safeR; // uniform disk
+        const radius = Math.sqrt(Math.random()) * safeR;
         const lat = c.lat + radius * Math.cos(angle);
         const lng = c.lng + radius * Math.sin(angle);
+        if (!isLikelyLand(lat, lng)) continue;  // skip if in open ocean
         const intensity = 0.3 + Math.random() * 0.7;
         points.push([lat, lng, intensity, c.sp, c.yr || 2024]);
+        placed++;
+      }
+      // Fallback: if all attempts failed, use city center
+      while (placed < c.n) {
+        const jitter = (Math.random() - 0.5) * 0.02;
+        points.push([c.lat + jitter, c.lng + jitter, 0.5, c.sp, c.yr || 2024]);
+        placed++;
       }
     }
     return points;
@@ -3629,6 +3863,10 @@ class App {
     // Session detection tallies
     this.sessionCounts = {};
     SPECIES_DB.forEach(sp => { this.sessionCounts[sp.id] = 0; });
+
+    // Disabled species (non-local, or user-toggled off)
+    // Auto-populated when GPS fix arrives
+    this._disabledSpecies = new Set();
 
     // Debounce map additions
     this.lastMapAdd = {};
@@ -3865,8 +4103,18 @@ self.addEventListener('fetch', e => {
       // Store and show on map
       this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
 
-      // Rebuild detection grid with native species highlighted for this location
-      try { this.buildDetectionGrid(); } catch(e) {}
+      // Rebuild grid; auto-disable non-native species
+      try {
+        const nsAcq = getNativeSpecies(this.deviceLat, this.deviceLng);
+        this._disabledSpecies = new Set(
+          SPECIES_DB.filter(sp => !nsAcq.has(sp.id)).map(sp => sp.id)
+        );
+        this.buildDetectionGrid();
+        SPECIES_DB.forEach(sp => {
+          const c = document.getElementById('dc-' + sp.id);
+          if (c) c.classList.toggle('dc-disabled', this._disabledSpecies.has(sp.id));
+        });
+      } catch(e) { console.warn('[GPS native]', e); }
     };
 
     const onErr = (err) => {
@@ -4216,6 +4464,35 @@ self.addEventListener('fetch', e => {
           <span class="dc-snr"  id="dc-snr-${sp.id}">— dB SNR</span>
           <span class="dc-reason" id="dc-reason-${sp.id}">listening…</span>
         </div>`;
+      // ── Disabled overlay for non-native species ──────────────────
+      if (!isNative) {
+        const overlay = document.createElement('div');
+        overlay.className = 'dc-disabled-overlay';
+        overlay.id = `dc-overlay-${sp.id}`;
+        overlay.innerHTML = `<span class="dc-disabled-label">non-local · tap to ${(window._app && window._app._disabledSpecies && window._app._disabledSpecies.has(sp.id)) ? 'enable' : 'enable'}</span>`;
+        cell.appendChild(overlay);
+      }
+
+      // Click to toggle enable/disable (only for non-native species)
+      if (!isNative) {
+        cell.style.cursor = 'pointer';
+        cell.addEventListener('click', () => {
+          if (!window._app) return;
+          const ds = window._app._disabledSpecies;
+          const ovl = document.getElementById(`dc-overlay-${sp.id}`);
+          if (ds.has(sp.id)) {
+            ds.delete(sp.id);
+            cell.classList.remove('dc-disabled');
+            if (ovl) ovl.querySelector('.dc-disabled-label').textContent = 'tap to disable';
+            setTimeout(() => { if (ovl) cell.classList.remove('dc-recently-enabled'); }, 800);
+          } else {
+            ds.add(sp.id);
+            cell.classList.add('dc-disabled');
+            if (ovl) ovl.querySelector('.dc-disabled-label').textContent = 'tap to enable';
+          }
+        });
+      }
+
       grid.appendChild(cell);
     });
   }
