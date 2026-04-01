@@ -4550,23 +4550,30 @@ self.addEventListener('fetch', e => {
       }
 
       const nowMs       = Date.now();
-      const LOCAL_CD    = 60000;   // 1 min local cooldown
-      const SERVER_CD   = 60000;   // 1 min server cooldown (independent)
-      const CONF_UPLOAD = 0.70;    // minimum conf to trigger server log
-      const CONF_DELTA  = 0.05;    // min improvement to update displayed conf
+      const LOCAL_CD    = 60000;  // 1 min: local event cooldown
+      const SERVER_CD   = 60000;  // 1 min: server upload cooldown (independent)
+      const CONF_UPLOAD = 0.70;   // min peak conf required to log to server
 
       detections.forEach(det => {
-        const spId    = det.species.id;
-        const conf    = det.confidence;
-        const lastEvt = this._detectionCooldown[spId] || 0;
+        const spId      = det.species.id;
+        const conf      = det.confidence;
+        const lastEvt   = this._detectionCooldown[spId] || 0;
         const inLocalCD = (nowMs - lastEvt) < LOCAL_CD;
 
-        if (!inLocalCD) {
-          // ── NEW LOCAL EVENT: first detection after local cooldown ──────────
-          this._detectionCooldown[spId] = nowMs;
-          this._bestConf[spId]          = conf;
+        // ── Always update peak confidence upward (never down) ────────────────
+        if (conf > (this._bestConf[spId] || 0)) {
+          this._bestConf[spId] = conf;
+        }
+        // Make display always show the best conf achieved so far this event
+        det.confidence = this._bestConf[spId];
 
-          // Count +1 in UI
+        if (!inLocalCD) {
+          // ── NEW LOCAL EVENT: cooldown just expired, fresh detection ──────────
+          this._detectionCooldown[spId] = nowMs;
+          this._bestConf[spId]          = conf;   // reset peak for new event
+          det.confidence                = conf;
+
+          // UI counter +1
           this.sessionCounts[spId]++;
 
           // Federated learning
@@ -4580,25 +4587,22 @@ self.addEventListener('fetch', e => {
             const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
             this.mapCtrl.addLocalDetection(lat, lng, det.species);
           }
-        } else {
-          // ── WITHIN LOCAL COOLDOWN: update best conf if meaningfully higher ─
-          if (conf > (this._bestConf[spId] || 0) + CONF_DELTA) {
-            this._bestConf[spId] = conf;
-            // Inject updated confidence back into det for display
-            det.confidence = conf;
-          }
         }
+        // (during local cooldown: peak conf already updated above, no other action)
 
-        // ── SERVER UPLOAD: only if best conf ≥ 0.70 and server cooldown elapsed ─
-        const lastUpload   = this._serverCooldown[spId] || 0;
-        const inServerCD   = (nowMs - lastUpload) < SERVER_CD;
-        const bestConf     = Math.max(this._bestConf[spId] || 0, conf);
+        // ── SERVER UPLOAD ────────────────────────────────────────────────────
+        // Fires when:
+        //   1. Peak conf for this detection has reached ≥ 0.70
+        //   2. Server cooldown has elapsed (1 min independent timer)
+        // Sends the HIGHEST conf achieved during this detection period.
+        const lastUpload = this._serverCooldown[spId] || 0;
+        const inServerCD = (nowMs - lastUpload) < SERVER_CD;
+        const peakConf   = this._bestConf[spId] || 0;
 
-        if (!inServerCD && bestConf >= CONF_UPLOAD) {
+        if (!inServerCD && peakConf >= CONF_UPLOAD) {
           this._serverCooldown[spId] = nowMs;
-          // Pass the best confidence seen, not just the current frame's
-          const detToUpload = { ...det, confidence: bestConf };
-          this.fedClient.reportDetection(detToUpload);
+          // Clone det with peak confidence for upload
+          this.fedClient.reportDetection({ ...det, confidence: peakConf });
         }
       });
 
