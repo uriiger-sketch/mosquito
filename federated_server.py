@@ -251,8 +251,8 @@ def detection():
                         _save_state()
                         break
             snap = dict(full_stats())
-        return jsonify({'received': True, 'updated': True,
-                        'detection_id': rec['det_id'], **snap})
+            return jsonify({'received': True, 'updated': True,
+                            'detection_id': rec['det_id'], **snap})
 
         # ── New detection ─────────────────────────────────────────────────────
         det_id = next_detection_id[0]
