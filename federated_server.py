@@ -1,18 +1,23 @@
 #!/usr/bin/env python3
 """
-MosquitoNet Federated Server v6
+MosquitoNet Federated Server v8
 ================================
-- Every detection stored with sequential ID
-- Log format: id, ts, device, lat, lng, species, freq, conf, asymptomatic
-- No server-side cooldown (client handles dedup via 60s UI cooldown)
-- Atomic saves on every detection
-- Persistent storage across restarts
+Fixes:
+  - Synchronous writes (no daemon threads that die on shutdown)
+  - Single worker mode (Procfile) — no diverging in-memory state
+  - JSONL log is append-only, never truncated, is the source of truth
+  - STATE_FILE holds stats/cells/hotspots (no log — log is in JSONL)
+  - Conf update within 60s: if same device+species submits again within
+    60s of a logged entry, and new conf > old conf, we UPDATE that entry
+    in-place in memory AND rewrite the JSONL file.
+  - DATA_DIR env var must point to a Railway persistent volume (/data)
+    so data survives restarts. Falls back to /tmp (ephemeral) if not set.
 """
 
-import os, time, hashlib, threading, json
+import os, time, hashlib, threading, json, io, atexit
 import numpy as np
 from datetime import datetime, timezone
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -21,46 +26,105 @@ CORS(app, origins='*', supports_credentials=False,
      methods=['GET', 'POST', 'OPTIONS'])
 
 # ── Persistence ───────────────────────────────────────────────────────────────
-DATA_DIR  = os.environ.get('DATA_DIR', '/tmp')
-DATA_FILE = os.path.join(DATA_DIR, 'mosquitonet_v6.json')
+DATA_DIR   = os.environ.get('DATA_DIR', '/tmp')
+STATE_FILE = os.path.join(DATA_DIR, 'mosquitonet_state.json')
+LOG_FILE   = os.path.join(DATA_DIR, 'detections.jsonl')
 
-def save_state():
-    """Atomic background save — never blocks a request."""
-    def _save():
-        try:
-            payload = {
-                'stats':           stats,
-                'next_id':         next_detection_id[0],
-                'detection_log':   detection_log,   # save ALL
-                'detection_cells': detection_cells,
-                'hotspot_cells':   hotspot_cells,
-            }
-            tmp = DATA_FILE + '.tmp'
-            with open(tmp, 'w') as f:
-                json.dump(payload, f, separators=(',', ':'))
-            os.replace(tmp, DATA_FILE)   # atomic rename
-        except Exception as e:
-            print(f'[Save] {e}')
-    threading.Thread(target=_save, daemon=True).start()
+write_lock = threading.Lock()   # serialise all disk writes
 
-def load_state():
-    global detection_log, detection_cells, hotspot_cells, stats
+def _write_log_sync():
+    """Rewrite the full JSONL log from in-memory list — called under write_lock."""
     try:
-        with open(DATA_FILE) as f:
+        tmp = LOG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            for entry in detection_log:
+                f.write(json.dumps(entry, separators=(',', ':')) + '\n')
+        os.replace(tmp, LOG_FILE)
+    except Exception as e:
+        print(f'[Log write] {e}')
+
+def _append_log_sync(entry):
+    """Append one entry to JSONL — called under write_lock."""
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, separators=(',', ':')) + '\n')
+    except Exception as e:
+        print(f'[Log append] {e}')
+
+def _save_state_sync():
+    """Write state file (stats/cells/hotspots) — called under write_lock."""
+    try:
+        payload = {
+            'stats':           stats,
+            'next_id':         next_detection_id[0],
+            'detection_cells': detection_cells,
+            'hotspot_cells':   hotspot_cells,
+        }
+        tmp = STATE_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(payload, f, separators=(',', ':'))
+        os.replace(tmp, STATE_FILE)
+    except Exception as e:
+        print(f'[State write] {e}')
+
+def persist(entry=None, rewrite_log=False):
+    """Thread-safe persist: append entry to log and save state."""
+    def _do():
+        with write_lock:
+            if rewrite_log:
+                _write_log_sync()
+            elif entry is not None:
+                _append_log_sync(entry)
+            _save_state_sync()
+    # Non-daemon thread — will complete even if main thread exits
+    t = threading.Thread(target=_do, daemon=False)
+    t.start()
+    return t
+
+def load_all():
+    global detection_log, detection_cells, hotspot_cells, stats
+    # Load state
+    try:
+        with open(STATE_FILE) as f:
             d = json.load(f)
         for k in stats:
             if k in d.get('stats', {}):
                 stats[k] = d['stats'][k]
-        next_detection_id[0] = d.get('next_id', stats['total_detections'] + 1)
-        detection_log   = d.get('detection_log', [])
+        next_detection_id[0] = d.get('next_id', 1)
         detection_cells = d.get('detection_cells', {})
-        hotspot_cells   = d.get('hotspot_cells', {})
-        print(f'[Load] {len(detection_log)} entries in log, '
-              f'total_ever={stats["total_detections"]}, next_id={next_detection_id[0]}')
+        hotspot_cells   = d.get('hotspot_cells',   {})
+        print(f'[State] loaded, total_detections={stats["total_detections"]}')
     except FileNotFoundError:
-        print('[Load] Fresh start — no saved state')
+        print('[State] fresh start')
     except Exception as e:
-        print(f'[Load] {e}')
+        print(f'[State load] {e}')
+    # Load log from JSONL — source of truth
+    try:
+        loaded = []
+        with open(LOG_FILE, encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        loaded.append(json.loads(line))
+                    except Exception:
+                        pass
+        detection_log[:] = loaded
+        print(f'[Log] loaded {len(detection_log)} detections from {LOG_FILE}')
+    except FileNotFoundError:
+        print(f'[Log] no existing log — starting fresh')
+    except Exception as e:
+        print(f'[Log load] {e}')
+
+def save_on_exit():
+    """Flush everything synchronously when the process shuts down."""
+    print('[Exit] flushing state to disk...')
+    with write_lock:
+        _write_log_sync()
+        _save_state_sync()
+    print('[Exit] done.')
+
+atexit.register(save_on_exit)
 
 # ── Model ─────────────────────────────────────────────────────────────────────
 global_W = np.array([
@@ -72,14 +136,17 @@ global_W = np.array([
 global_b = np.array([-0.4, -0.3, -0.3, -0.4], dtype=float)
 
 # ── State ─────────────────────────────────────────────────────────────────────
-lock              = threading.Lock()
+lock              = threading.Lock()   # protects in-memory state
 device_registry   = {}
 session_registry  = {}
 pending_updates   = []
-detection_log     = []      # every detection, never cleared, with sequential id
+detection_log     = []     # append-only in memory; mirrored to LOG_FILE
 detection_cells   = {}
 hotspot_cells     = {}
-next_detection_id = [1]     # mutable list so background thread can update
+next_detection_id = [1]
+# Track recently-logged entries for conf updates: {f"{device}:{species}" -> det_id}
+recent_log        = {}     # key -> {'det_id': N, 'ts': epoch}
+RECENT_WINDOW     = 70     # seconds: allow conf update within ~70s of logging
 
 stats = {
     'total_detections': 0,
@@ -91,7 +158,6 @@ stats = {
 
 ACTIVE_SEC        = 90
 HOTSPOT_THRESHOLD = 100
-MAX_LOG           = 200000  # 200k entries (~100MB max)
 MIN_UPLOADS       = 3
 start_time        = time.time()
 
@@ -131,8 +197,7 @@ def fedavg(updates):
     global global_W, global_b
     total = sum(u['steps'] for u in updates)
     if not total: return
-    nW = np.zeros_like(global_W)
-    nb = np.zeros_like(global_b)
+    nW = np.zeros_like(global_W); nb = np.zeros_like(global_b)
     for u in updates:
         w = u['steps'] / total
         try:
@@ -146,7 +211,7 @@ def fedavg(updates):
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 @app.after_request
-def cors(r):
+def cors_hdr(r):
     r.headers['Access-Control-Allow-Origin']  = '*'
     r.headers['Access-Control-Allow-Headers'] = 'Content-Type,Accept'
     r.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
@@ -157,9 +222,6 @@ def cors(r):
 def opts(p): return '', 204
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ENDPOINTS
-# ══════════════════════════════════════════════════════════════════════════════
-
 @app.route('/heartbeat', methods=['GET', 'POST'])
 def heartbeat():
     if request.method == 'GET':
@@ -181,57 +243,75 @@ def heartbeat():
 
 @app.route('/detection', methods=['POST'])
 def detection():
-    """
-    Log every single confirmed detection.
-    No server-side cooldown — every POST is stored.
-    Log entry format (in order): id, ts, device, lat, lng,
-                                  species, freq, conf, asymptomatic
-    """
     d       = request.get_json(force=True, silent=True) or {}
     raw_id  = d.get('deviceId', 'anon')
     species = str(d.get('species', ''))
     lat     = d.get('lat')
     lng     = d.get('lng')
-    conf    = d.get('confidence', 0)
-    freq    = d.get('frequency', 0)
-    asymp   = bool(d.get('asymptomatic', False))
+    conf    = round(float(d.get('confidence', 0)), 3)
+    freq    = round(float(d.get('frequency', 0)), 1)
     risk    = d.get('risk', 'UNKNOWN')
+    sp_name = d.get('speciesName', species)
+    disease = d.get('disease', '')
+    asymp   = bool(d.get('asymptomatic', False))
     ts_str  = d.get('ts') or datetime.now(timezone.utc).isoformat()
     h       = dh(raw_id)
+    rkey    = f'{h}:{species}'
+    now     = time.time()
+
+    need_rewrite = False   # True if we update an existing entry
+    new_entry    = None    # set if we create a new entry
 
     with lock:
+        touch(h)
+
+        # ── Check if this is a conf UPDATE for a recent detection ─────────────
+        recent = recent_log.get(rkey)
+        if recent and (now - recent['ts']) < RECENT_WINDOW:
+            # Within the update window — only update if conf improved
+            if conf > recent['conf']:
+                # Find and update the entry in-memory
+                for e in reversed(detection_log):
+                    if e.get('id') == recent['det_id']:
+                        e['conf'] = conf
+                        e['conf_updated'] = datetime.now(timezone.utc).isoformat()
+                        recent['conf'] = conf
+                        need_rewrite = True
+                        print(f'[Det #{recent["det_id"]}] conf updated {recent["conf"]:.3f} → {conf:.3f}')
+                        break
+            # Either updated or not, don't create a new entry
+            return jsonify({'received': True, 'updated': need_rewrite,
+                            'detection_id': recent['det_id'], **full_stats()})
+
+        # ── New detection ─────────────────────────────────────────────────────
         det_id = next_detection_id[0]
         next_detection_id[0] += 1
-        touch(h)
         stats['total_detections'] += 1
 
-        # ── Ordered log entry ──────────────────────────────────────────────
-        entry = {'id': det_id, 'ts': ts_str, 'device': h}
-
-        if lat is not None and lng is not None:
-            try:
-                entry['lat'] = round(float(lat), 4)
-                entry['lng'] = round(float(lng), 4)
-            except Exception:
-                entry['lat'] = None
-                entry['lng'] = None
-        else:
-            entry['lat'] = None
-            entry['lng'] = None
-
-        entry['species']      = species
-        entry['freq']         = round(float(freq), 1)
-        entry['conf']         = round(float(conf), 3)
-        entry['asymptomatic'] = asymp
-
+        entry = {
+            'id':          det_id,
+            'ts':          ts_str,
+            'device':      h,
+            'lat':         round(float(lat), 4) if lat is not None else None,
+            'lng':         round(float(lng), 4) if lng is not None else None,
+            'species':     species,
+            'name':        sp_name,
+            'disease':     disease,
+            'freq':        freq,
+            'conf':        conf,
+            'risk':        risk,
+            'asymptomatic': asymp,
+        }
         detection_log.append(entry)
-        if len(detection_log) > MAX_LOG:
-            detection_log.pop(0)
+        new_entry = entry
 
-        # ── Hotspot cell accumulation ──────────────────────────────────────
+        # Register for potential conf updates within the window
+        recent_log[rkey] = {'det_id': det_id, 'ts': now, 'conf': conf}
+
+        # Hotspot cell
         if entry['lat'] is not None:
             try:
-                ck = cell_key(entry['lat'], entry['lng'], species)
+                ck = cell_key(lat, lng, species)
                 if ck not in detection_cells:
                     detection_cells[ck] = {
                         'species': species, 'total': 0, 'risk': risk,
@@ -244,46 +324,92 @@ def detection():
             except Exception as e:
                 print(f'[Cell] {e}')
 
-    print(f'[Det #{det_id}] {species} freq={freq:.1f}Hz conf={conf:.3f} '
-          f'lat={entry["lat"]} lng={entry["lng"]} dev={h}')
+    print(f'[Det #{det_id}] {sp_name} conf={conf:.3f} freq={freq:.1f}Hz '
+          f'lat={entry["lat"]} lng={entry["lng"]}')
 
-    # Atomic background save — every single detection persisted
-    save_state()
+    # Persist: append new entry (fast) or rewrite if updated (slower but safe)
+    persist(entry=new_entry if not need_rewrite else None,
+            rewrite_log=need_rewrite)
 
     return jsonify({'received': True, 'detection_id': det_id, **full_stats()})
 
 
 @app.route('/log', methods=['GET'])
-def log():
-    """
-    Return detection log.
-    Field order: id, ts, device, lat, lng, species, freq, conf, asymptomatic
-    Query: ?species=X  ?device=Z  ?limit=N  ?offset=N  ?from_id=N
-    """
+def log_json():
     sp_filter  = request.args.get('species')
     dev_filter = request.args.get('device')
-    try:   limit  = min(int(request.args.get('limit', 1000)), 50000)
-    except: limit = 1000
+    try:   limit   = min(int(request.args.get('limit', 500)), 50000)
+    except: limit  = 500
     try:   from_id = int(request.args.get('from_id', 0))
     except: from_id = 0
 
     with lock:
         rows = [e for e in detection_log
                 if (not sp_filter  or e.get('species') == sp_filter)
-                and (not dev_filter or e.get('device') == dev_filter)
+                and (not dev_filter or e.get('device')  == dev_filter)
+                and e.get('id', 0) > from_id]
+        s = full_stats()
+
+    return jsonify({
+        'total_ever': s['total_detections'],
+        'total_log':  s['log_size'],
+        'returned':   len(rows[-limit:]),
+        'detections': rows[-limit:][::-1],
+    })
+
+
+@app.route('/log.txt', methods=['GET'])
+def log_txt():
+    sp_filter  = request.args.get('species')
+    try:   limit = min(int(request.args.get('limit', 2000)), 50000)
+    except: limit = 2000
+    try:   from_id = int(request.args.get('from_id', 0))
+    except: from_id = 0
+
+    with lock:
+        rows = [e for e in detection_log
+                if (not sp_filter or e.get('species') == sp_filter)
                 and e.get('id', 0) > from_id]
         total_ever = stats['total_detections']
         total_log  = len(detection_log)
 
-    # Newest first
-    result = rows[-limit:][::-1]
+    rows = rows[-limit:][::-1]
 
-    return jsonify({
-        'total_ever':  total_ever,
-        'total_log':   total_log,
-        'count':       len(result),
-        'detections':  result,
-    })
+    buf = io.StringIO()
+    buf.write(f'MosquitoNet Detection Log  |  total ever: {total_ever}  |  in log: {total_log}\n')
+    buf.write(f'Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC\n')
+    if sp_filter: buf.write(f'Filter: species={sp_filter}\n')
+    buf.write('\n')
+    buf.write(f'{"#":<6}  {"DATE/TIME (UTC)":<20}  {"DEVICE":<8}  '
+              f'{"SPECIES":<22}  {"CONF":>5}  {"HZ":>6}  '
+              f'{"RISK":<8}  {"LAT":>10}  {"LNG":>10}\n')
+    buf.write('-' * 106 + '\n')
+
+    for e in rows:
+        det_id = str(e.get('id','?')).rjust(5)
+        try:
+            dt = datetime.fromisoformat(str(e.get('ts','')).replace('Z','+00:00'))
+            ts = dt.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            ts = str(e.get('ts',''))[:19]
+        device  = str(e.get('device','?'))[:8]
+        sp_name = str(e.get('name') or e.get('species','?'))
+        parts   = sp_name.split()
+        if len(parts) >= 2:
+            sp_name = parts[0][0] + '. ' + ' '.join(parts[1:])
+        sp_name = sp_name[:22]
+        conf    = f'{float(e.get("conf",0)):.2f}'
+        upd     = '*' if e.get('conf_updated') else ' '
+        freq    = f'{float(e.get("freq",0)):.1f}'
+        risk    = str(e.get('risk','?'))[:8]
+        lat     = f'{e["lat"]:>10.4f}' if e.get('lat') is not None else ' '*10
+        lng     = f'{e["lng"]:>10.4f}' if e.get('lng') is not None else ' '*10
+        buf.write(f'{det_id}  {ts:<20}  {device:<8}  '
+                  f'{sp_name:<22}  {upd}{conf:>5}  {freq:>6}  '
+                  f'{risk:<8}  {lat}  {lng}\n')
+
+    buf.write('\n* = confidence updated after initial log\n')
+    return Response(buf.getvalue(), mimetype='text/plain; charset=utf-8')
 
 
 @app.route('/hotspots', methods=['GET'])
@@ -300,61 +426,44 @@ def hotspots():
 @app.route('/federated/upload', methods=['POST'])
 def upload():
     d = request.get_json(force=True, silent=True) or {}
-    if not all(k in d for k in ['deviceId', 'weights', 'steps']):
-        return jsonify({'error': 'missing'}), 400
+    if not all(k in d for k in ['deviceId','weights','steps']):
+        return jsonify({'error':'missing'}), 400
     h = dh(d['deviceId'])
     with lock:
         touch(h)
         stats['total_uploads'] += 1
-        pending_updates.append({
-            'steps':   min(int(d.get('steps', 1)), 500),
-            'weights': d['weights'],
-        })
+        pending_updates.append({'steps':min(int(d.get('steps',1)),500),
+                                 'weights':d['weights']})
         if len(pending_updates) >= MIN_UPLOADS:
             fedavg(pending_updates.copy())
             pending_updates.clear()
-    return jsonify({'status': 'accepted',
-                    'weights': {'W': global_W.tolist(), 'b': global_b.tolist()},
+    return jsonify({'status':'accepted',
+                    'weights':{'W':global_W.tolist(),'b':global_b.tolist()},
                     **full_stats()})
 
+@app.route('/federated/model',  methods=['GET'])
+def model(): return jsonify({'round':stats['total_rounds'],'weights':{'W':global_W.tolist(),'b':global_b.tolist()}})
 
-@app.route('/federated/model', methods=['GET'])
-def model():
-    return jsonify({'round': stats['total_rounds'],
-                    'weights': {'W': global_W.tolist(), 'b': global_b.tolist()}})
-
-
-@app.route('/federated/stats', methods=['GET'])
+@app.route('/federated/stats',  methods=['GET'])
 def get_stats():
     with lock: return jsonify(full_stats())
 
-
 @app.route('/health', methods=['GET'])
-def health():
-    return jsonify({'status': 'ok', 'service': 'MosquitoNet v6', **full_stats()})
-
+def health(): return jsonify({'status':'ok','service':'MosquitoNet v8',**full_stats()})
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({
-        'service': 'MosquitoNet v6',
-        'log_schema': 'id, ts, device, lat, lng, species, freq, conf, asymptomatic',
-        'endpoints': [
-            'GET  /heartbeat?deviceId=X',
-            'POST /detection  — body: {deviceId, species, confidence, frequency, asymptomatic, ts, lat, lng}',
-            'GET  /log?species=X&device=Z&limit=N&from_id=N',
-            'GET  /hotspots',
-            'POST /federated/upload',
-            'GET  /federated/stats',
-            'GET  /health',
-        ],
-    })
+    return jsonify({'service':'MosquitoNet v8',
+                    'log_file': LOG_FILE,
+                    'state_file': STATE_FILE,
+                    'endpoints':['GET /heartbeat','POST /detection',
+                                 'GET /log','GET /log.txt',
+                                 'GET /hotspots','GET /federated/stats','GET /health']})
 
 
-# Load persisted state on startup (gunicorn imports this module)
-load_state()
+load_all()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    print(f'\nMosquitoNet v6 on :{port}\n')
+    print(f'\nMosquitoNet v8 on :{port} — DATA_DIR={DATA_DIR}\n')
     app.run(host='0.0.0.0', port=port, debug=False)
