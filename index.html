@@ -469,6 +469,24 @@ body::after {
   font-style: italic;
   color: var(--text3);
 }
+/* Native/local species: gold accent border */
+.detect-cell.native {
+  border-color: rgba(250,204,21,0.45);
+  box-shadow: inset 0 0 0 1px rgba(250,204,21,0.15);
+}
+.dc-native-badge {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 0.47rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #facc15;
+  background: rgba(250,204,21,0.12);
+  border: 1px solid rgba(250,204,21,0.35);
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+}
 .detect-cell.hot::before { opacity: 1; width: 5px; }
 
 /* ── Row 1: species header ── */
@@ -1515,6 +1533,39 @@ const SPECIES_DB = [
     asymptomatic: true,   regions: ['Africa / SE Asia / Pacific'],
   },
 ];
+
+// ── Native species by GPS region (WHO/ECDC/CDC distribution 2024) ────────────
+function getNativeSpecies(lat, lng) {
+  const s = new Set();
+  if (lat === null || lat === undefined) return s;
+  const inBox = (la0,la1,lo0,lo1) => lat>=la0&&lat<=la1&&lng>=lo0&&lng<=lo1;
+  // Sub-Saharan Africa
+  if (lat>-35&&lat<20&&lng>-18&&lng<52)
+    ['anopheles','culex','aedes_aegypti','mansonia_uniformis'].forEach(x=>s.add(x));
+  // Middle East / S.Asia — An. stephensi
+  if (lat>10&&lat<38&&lng>35&&lng<90) s.add('anopheles_stephensi');
+  // Mediterranean / S.Europe — Ae. albopictus
+  if (lat>28&&lat<50&&lng>-10&&lng<45) s.add('aedes_albopictus');
+  // Tropical Americas
+  if (lat>-30&&lat<32&&lng>-120&&lng<-30)
+    ['aedes_aegypti','culex','aedes_vexans'].forEach(x=>s.add(x));
+  // N. America
+  if (lat>25&&lat<72&&lng>-168&&lng<-52)
+    ['aedes_japonicus','aedes_vexans','culex_pipiens'].forEach(x=>s.add(x));
+  // Europe + N.Africa
+  if (lat>28&&lat<72&&lng>-15&&lng<50)
+    ['aedes_japonicus','culex_pipiens','culiseta_annulata','ochlerotatus_caspius'].forEach(x=>s.add(x));
+  // Asia / SE Asia
+  if (lat>-10&&lat<45&&lng>60&&lng<145)
+    ['aedes_aegypti','aedes_albopictus','culex','mansonia_uniformis'].forEach(x=>s.add(x));
+  // Australia / Pacific
+  if (lat>-45&&lat<10&&lng>110&&lng<180)
+    ['aedes_aegypti','culex'].forEach(x=>s.add(x));
+  // Culex pipiens is practically cosmopolitan
+  s.add('culex_pipiens');
+  return s;
+}
+
 
 
 class MosquitoAudioEngine {
@@ -2770,44 +2821,49 @@ class MapController {
     const lat = this._pendingLat;
     const lng = this._pendingLng;
 
-    // Update existing marker or create new one
+    // Large red X — unmistakable user location marker
+    const xIcon = L.divIcon({
+      className: '',
+      html: `<div style="
+        position:relative; width:36px; height:36px;
+        display:flex; align-items:center; justify-content:center;
+        filter: drop-shadow(0 2px 6px rgba(0,0,0,0.8));
+      ">
+        <!-- X shape via two thick bars -->
+        <div style="position:absolute;width:34px;height:5px;background:#e11d48;border-radius:3px;transform:rotate(45deg);"></div>
+        <div style="position:absolute;width:34px;height:5px;background:#e11d48;border-radius:3px;transform:rotate(-45deg);"></div>
+        <!-- White inner highlight -->
+        <div style="position:absolute;width:30px;height:3px;background:rgba(255,255,255,0.5);border-radius:2px;transform:rotate(45deg);"></div>
+        <div style="position:absolute;width:30px;height:3px;background:rgba(255,255,255,0.5);border-radius:2px;transform:rotate(-45deg);"></div>
+      </div>`,
+      iconSize: [36, 36],
+      iconAnchor: [18, 18],
+    });
+
     if (this._userMarker) {
       this._userMarker.setLatLng([lat, lng]);
       if (this._userRing) this._userRing.setLatLng([lat, lng]);
     } else {
-      // Create the "You are here" marker
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-          width:18px;height:18px;border-radius:50%;
-          background:#2563eb;
-          border:3px solid #fff;
-          box-shadow:0 0 0 5px rgba(37,99,235,0.4), 0 2px 8px rgba(0,0,0,0.5);
-          animation:pulse-user 2s ease-in-out infinite;
-        "></div>`,
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
-      });
-
-      this._userMarker = L.marker([lat, lng], { icon, zIndexOffset: 9999 })
+      this._userMarker = L.marker([lat, lng], { icon: xIcon, zIndexOffset: 9999 })
         .addTo(this.map)
-        .bindPopup('<b>📍 You are here</b><br>Your GPS location');
+        .bindPopup(`<b style="color:#e11d48">✕ You are here</b><br>${lat.toFixed(4)}, ${lng.toFixed(4)}<br><small>GPS position</small>`);
 
+      // Accuracy ring
       this._userRing = L.circleMarker([lat, lng], {
-        radius: 24,
-        color: '#2563eb',
-        fillColor: '#2563eb',
-        fillOpacity: 0.08,
+        radius: 20,
+        color: '#e11d48',
+        fillColor: '#e11d48',
+        fillOpacity: 0.07,
         weight: 2,
-        opacity: 0.4,
+        opacity: 0.6,
+        dashArray: '4 3',
       }).addTo(this.map);
     }
 
-    // Pan to user on first map open (or if forced)
+    // Pan on first fix
     if (!this._pannedToUser) {
       this._pannedToUser = true;
-      this.map.setView([lat, lng], 6, { animate: true });
-      console.log('[GPS] Map panned to user:', lat.toFixed(4), lng.toFixed(4));
+      this.map.setView([lat, lng], 8, { animate: true });
     }
   }
 
@@ -3536,7 +3592,15 @@ class App {
 
     // ── 3. Button wiring ──────────────────────────────────────────────────
     const listenBtn = document.getElementById('btn-listen');
-    if (listenBtn) listenBtn.addEventListener('click', () => this.toggleListening());
+    if (listenBtn) listenBtn.addEventListener('click', () => {
+      // GPS MUST be here — synchronous button click = iOS gesture context
+      // Any await before this kills the gesture chain and iOS blocks geolocation
+      if (!this._geoStarted) {
+        this._geoStarted = true;
+        try { this.acquireGeolocation(); } catch(e) { console.warn('[GPS]', e); }
+      }
+      this.toggleListening();
+    });
     const allowBtn = document.getElementById('btn-allow');
     if (allowBtn) allowBtn.addEventListener('click', () => this.requestMic());
 
@@ -3739,6 +3803,9 @@ self.addEventListener('fetch', e => {
 
       // Store and show on map
       this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
+
+      // Rebuild detection grid with native species highlighted for this location
+      try { this.buildDetectionGrid(); } catch(e) {}
     };
 
     const onErr = (err) => {
@@ -3807,13 +3874,6 @@ self.addEventListener('fetch', e => {
 
   async startListening() {
     try {
-      // GPS must be called SYNCHRONOUSLY before any await —
-      // iOS Safari only allows geolocation in the synchronous gesture callstack.
-      if (!this._geoStarted) {
-        this._geoStarted = true;
-        try { this.acquireGeolocation(); } catch(e) {}
-      }
-
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
@@ -4025,63 +4085,63 @@ self.addEventListener('fetch', e => {
     const grid   = document.getElementById('detection-grid');
     const legend = document.getElementById('species-legend');
     if (!grid) return;
-    grid.innerHTML   = '';
+    grid.innerHTML = '';
     if (legend) legend.innerHTML = '';
+
+    // Determine native species for user's location
+    const ns = getNativeSpecies(this.deviceLat, this.deviceLng);
+
+    // Sort: native vectors → other vectors → native harmless → rest
+    const sorted = [...SPECIES_DB].sort((a, b) => {
+      const score = sp => {
+        if (!sp.asymptomatic && ns.has(sp.id)) return 0;  // native vector
+        if (!sp.asymptomatic)                  return 1;  // other vector
+        if (sp.asymptomatic  && ns.has(sp.id)) return 2;  // native harmless
+        return 3;
+      };
+      return score(a) - score(b);
+    });
 
     // ── Build color legend ────────────────────────────────────────
     if (legend) {
-      const vectors = SPECIES_DB.filter(sp => !sp.asymptomatic);
-      const asyms   = SPECIES_DB.filter(sp =>  sp.asymptomatic);
-
+      const vectors = sorted.filter(sp => !sp.asymptomatic);
+      const asyms   = sorted.filter(sp =>  sp.asymptomatic);
       const makeChips = (list, cls) => list.map(sp => {
-        const abbr = sp.name.split(' ').slice(0, 2).map((w, i) =>
-          i === 0 ? w[0] + '.' : w).join(' ');
-        return `<div class="legend-chip ${cls}"
-                     title="${sp.name} — ${sp.disease} — ~${sp.freq} Hz"
-                     style="background:${sp.color}22;border-color:${sp.color}44">
-          <div class="legend-chip-dot" style="background:${sp.color}"></div>
-          ${abbr}
-        </div>`;
+        const abbr = sp.name.split(' ').slice(0,2).map((w,i)=>i===0?w[0]+'.':w).join(' ');
+        const nat = ns.has(sp.id) ? ' ★' : '';
+        return `<div class="legend-chip ${cls}" title="${sp.name} — ${sp.disease} — ~${sp.freq} Hz"
+          style="background:${sp.color}22;border-color:${sp.color}44${ns.has(sp.id)?';border-color:rgba(250,204,21,0.45)':''}">
+          <div class="legend-chip-dot" style="background:${sp.color}"></div>${abbr}${nat}</div>`;
       }).join('');
-
       legend.innerHTML = `
-        <div class="legend-group">
-          <span class="legend-group-label">⚠ Vector</span>
-          ${makeChips(vectors, '')}
-        </div>
-        <div class="legend-group">
-          <span class="legend-group-label">◻ Harmless</span>
-          ${makeChips(asyms, 'asym')}
-        </div>`;
+        <div class="legend-group"><span class="legend-group-label">⚠ Vector</span>${makeChips(vectors,'')}</div>
+        <div class="legend-group"><span class="legend-group-label">◻ Harmless</span>${makeChips(asyms,'asym')}</div>`;
     }
 
     // ── Build detection cards ─────────────────────────────────────
-    // Color comes directly from sp.color
-
-    SPECIES_DB.forEach((sp, i) => {
+    sorted.forEach(sp => {
+      const isNative = ns.has(sp.id);
       const cell = document.createElement('div');
       cell.className = sp.asymptomatic ? 'detect-cell asymptomatic' : 'detect-cell';
+      if (isNative && !sp.asymptomatic) cell.classList.add('native');
       cell.id = `dc-${sp.id}`;
       cell.style.setProperty('--cell-color', sp.color);
 
-      // Full species name split: genus abbrev + epithet
-      const nameParts = sp.name.split(' ');
+      const nameParts  = sp.name.split(' ');
       const displayName = nameParts.length > 1
-        ? `${nameParts[0][0]}. ${nameParts.slice(1).join(' ')}`
-        : sp.name;
+        ? `${nameParts[0][0]}. ${nameParts.slice(1).join(' ')}` : sp.name;
 
+      const nativeBadge = (isNative && !sp.asymptomatic)
+        ? `<span class="dc-native-badge">★ LOCAL</span>` : '';
       const asymBadge = sp.asymptomatic
-        ? `<span style="font-size:0.42rem;background:rgba(100,116,139,0.2);border-radius:3px;padding:1px 4px;color:var(--text2)">non-vector</span>`
-        : '';
+        ? `<span style="font-size:0.42rem;background:rgba(100,116,139,0.2);border-radius:3px;padding:1px 4px;color:var(--text2)">non-vector</span>` : '';
 
       cell.innerHTML = `
         <div class="dc-header">
           <div class="dc-dot"></div>
-          <div class="dc-species">${displayName} ${asymBadge}</div>
+          <div class="dc-species">${displayName}${nativeBadge}${asymBadge}</div>
           <div class="dc-disease">${sp.disease}</div>
         </div>
-
-        <!-- CHARGE BAR — fills over ~1.2s of sustained signal -->
         <div class="dc-charge-wrap">
           <div class="dc-charge-fill" id="dc-bar-${sp.id}" style="width:0%"></div>
           <div class="dc-charge-tick"></div>
@@ -4090,14 +4150,11 @@ self.addEventListener('fetch', e => {
             <span class="dc-charge-status" id="dc-status-${sp.id}">~${sp.freq} Hz target</span>
           </div>
         </div>
-
-        <!-- Metadata row -->
         <div class="dc-meta-row">
           <span class="dc-freq" id="dc-freq-${sp.id}">— Hz</span>
           <span class="dc-snr"  id="dc-snr-${sp.id}">— dB SNR</span>
           <span class="dc-reason" id="dc-reason-${sp.id}">listening…</span>
         </div>`;
-
       grid.appendChild(cell);
     });
   }
