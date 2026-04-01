@@ -3056,23 +3056,37 @@ class FederatedLearningClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          deviceId:   this.getAnonymousId(),
+          deviceId:     this.getAnonymousId(),
           species:      det.species.id,
+          speciesName:  det.species.name,
+          disease:      det.species.disease,
           confidence:   parseFloat(det.confidence.toFixed(3)),
           frequency:    parseFloat(det.frequency.toFixed(1)),
           risk:         det.species.risk || 'UNKNOWN',
           asymptomatic: !!det.species.asymptomatic,
+          ts:           new Date().toISOString(),
           lat, lng,
         }),
-      });
+      }, 8000);
       if (resp.ok) {
         const data = await resp.json();
-        // Update hotspots on map if available
-        if (app && app.mapCtrl) {
-          app.mapCtrl.totalDetections = data.total_detections || app.mapCtrl.totalDetections;
+        if (data.received) {
+          // Update nb-ever immediately — visible confirmation data was stored
+          const everEl = document.getElementById('nb-ever');
+          if (everEl && data.total_detections) {
+            everEl.textContent = Number(data.total_detections).toLocaleString();
+            // Flash the element green briefly
+            everEl.style.color = 'var(--green)';
+            setTimeout(() => { everEl.style.color = ''; }, 1200);
+          }
+          // Update map hotspot data
+          if (app && app.mapCtrl) {
+            app.mapCtrl.totalDetections = data.total_detections || app.mapCtrl.totalDetections;
+          }
+          console.log(`[Det→Server] ${det.species.id} stored. Server total: ${data.total_detections}`);
         }
       }
-    } catch { /* offline */ }
+    } catch(e) { console.warn('[Det→Server] failed:', e.message); }
   }
 
   saveLocal() {
