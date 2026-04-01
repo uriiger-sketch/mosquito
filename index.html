@@ -1265,16 +1265,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
         </div>
 
         <!-- Find Me button -->
-        <button id="btn-findme" onclick="
-          if(window._app && window._app.deviceLat !== null) {
-            window._app.mapCtrl.applyPendingUserLocation();
-            window._app.mapCtrl.map && window._app.mapCtrl.map.setView(
-              [window._app.deviceLat, window._app.deviceLng], 10, {animate:true});
-          } else {
-            window._app && window._app.acquireGeolocation();
-            document.getElementById('btn-findme').textContent = '📍 Locating…';
-          }
-        " style="
+        <button id="btn-findme" onclick="locateUser()" style="
           width:100%;padding:7px;border-radius:6px;
           background:rgba(37,99,235,0.15);border:1px solid rgba(37,99,235,0.4);
           color:#93c5fd;font-family:'Syne Mono',monospace;font-size:0.62rem;
@@ -1429,6 +1420,76 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 <script>'use strict';
 
 const SERVER_URL = 'https://mosquito.charity';
+
+// ── locateUser() — called directly by the Find Me button onclick ─────────────
+// Top-level function so inline onclick="locateUser()" can reach it.
+// Calls navigator.geolocation directly — this IS the user gesture context.
+function locateUser() {
+  const btn = document.getElementById('btn-findme');
+  if (btn) btn.textContent = '📍 Locating…';
+
+  if (!navigator.geolocation) {
+    if (btn) btn.textContent = '📍 No GPS';
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    function(pos) {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = Math.round(pos.coords.accuracy);
+
+      // Store in app if running
+      if (window._app) {
+        window._app.deviceLat = lat;
+        window._app.deviceLng = lng;
+        const gpsEl = document.getElementById('wf-gps');
+        if (gpsEl) { gpsEl.textContent = '\u2024' + acc + 'm'; gpsEl.style.color = acc < 100 ? 'var(--green)' : 'var(--amber)'; }
+        try { window._app.buildDetectionGrid(); } catch(e) {}
+      }
+
+      // Show red X on map, zoom in then back out
+      if (window._app && window._app.mapCtrl) {
+        const mc = window._app.mapCtrl;
+        mc._pendingLat = lat;
+        mc._pendingLng = lng;
+        mc.applyPendingUserLocation();
+        const map = mc.map;
+        if (map) {
+          map.setView([lat, lng], 14, { animate: true, duration: 0.8 });
+          setTimeout(function() {
+            map.setView([lat, lng], 8, { animate: true, duration: 1.5 });
+          }, 3000);
+        }
+      }
+
+      if (btn) btn.textContent = '\u00b1' + acc + 'm \u2713';
+
+      // Continue watching for GPS updates
+      if (!window._locateWatchId) {
+        window._locateWatchId = navigator.geolocation.watchPosition(
+          function(p) {
+            const la = p.coords.latitude, lo = p.coords.longitude;
+            if (window._app) { window._app.deviceLat = la; window._app.deviceLng = lo; }
+            if (window._app && window._app.mapCtrl) {
+              window._app.mapCtrl._pendingLat = la;
+              window._app.mapCtrl._pendingLng = lo;
+              window._app.mapCtrl.applyPendingUserLocation();
+            }
+          },
+          function() {},
+          { enableHighAccuracy: true, maximumAge: 30000 }
+        );
+      }
+    },
+    function(err) {
+      var msg = err.code === 1 ? '📍 Denied' : err.code === 3 ? '📍 Timeout' : '📍 Error';
+      if (btn) btn.textContent = msg;
+      if (err.code === 1) alert('Location denied.\nOn iPhone: Settings → Privacy & Security → Location Services → Safari → Allow While Using App');
+    },
+    { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
+  );
+}
 
 // fetchWithTimeout: Promise.race with timeout, no AbortSignal
 function fetchWithTimeout(url, opts, ms) {
