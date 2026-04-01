@@ -1191,22 +1191,29 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
   <div id="net-bar">
     <div class="nb-item">
       <span class="nb-dot" id="nb-rec-dot"></span>
-      <span id="nb-rec-label">STANDBY</span>
+      <span id="nb-rec-label">🎙 IDLE</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
       <span class="srv-dot disconnected" id="server-dot"></span>
-      <span id="server-lbl">SERVER…</span>
+      <span id="server-lbl">OFFLINE</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
       <span class="nb-icon">👥</span>
-      <span id="nb-live">— online</span>
+      <span id="nb-live">—</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
       <span class="nb-icon">🔬</span>
-      <span id="nb-detections">0 det.</span>
+      <span id="nb-detections">0</span>
+      <span class="nb-det-label">here</span>
+    </div>
+    <div class="nb-sep"></div>
+    <div class="nb-item">
+      <span class="nb-icon">🌐</span>
+      <span id="nb-ever">—</span>
+      <span class="nb-det-label">ever</span>
     </div>
   </div>
 
@@ -1306,18 +1313,6 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
     <div class="view" id="view-map">
 
       <div class="map-controls">
-        <!-- What the circles mean -->
-        <div class="map-key-banner">
-          <div class="map-key-icon">🔵</div>
-          <div>
-            <strong style="color:var(--text1);font-size:0.62rem;">What each circle represents:</strong>
-            Each dot = one city-level vector presence record (WHO/PAHO/CDC/ECDC data).
-            Circle colour matches the species colour in the Listen detection cards.
-            Opacity = relative burden intensity.
-            <span class="tag">drag to pan</span> <span class="tag">pinch to zoom</span>
-          </div>
-        </div>
-
         <!-- Year slider -->
         <div class="year-row">
           <span class="year-lbl">YEAR</span>
@@ -1338,16 +1333,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
           cursor:pointer;margin-bottom:6px;
         ">📍 Find My Location</button>
 
-        <!-- Legend -->
-        <div class="map-legend-row">
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp0)"></div>An. gambiae · Malaria</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp1)"></div>An. stephensi · Malaria</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp2)"></div>Ae. aegypti · Dengue</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp3)"></div>Ae. albopictus · Dengue</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp4)"></div>Culex · West Nile</div>
-          <div class="ml-item"><div class="ml-circle" style="background:var(--sp8)"></div>Non-vector species</div>
-          <div class="ml-item"><div class="ml-circle" style="background:#2563eb;border:2px solid white"></div>Your location</div>
-        </div>
+
       </div>
 
       <div id="map-container">
@@ -3936,21 +3922,31 @@ class MapController {
         font-size: 8.5px; color: #4d7a99; line-height: 1.9;
         max-width: 140px;
       `;
-      // Vectors only — one row per disease vector species
-      const vectorRows = SPECIES_DB
-        .filter(sp => !sp.asymptomatic)
-        .map(sp => {
-          const disease = sp.disease.split('/')[0].split('·')[0].trim();
-          return `<div style="display:flex;align-items:center;gap:5px">` +
-            `<span style="color:${sp.color};font-size:10px;flex-shrink:0">●</span>` +
-            `<span style="color:#8ab0c8">${disease}</span>` +
-            `</div>`;
-        }).join('');
+      // Build deduplicated legend: one row per unique disease group.
+      // Multiple species with same disease (e.g. both Anopheles → Malaria)
+      // are merged into ONE row showing a blended color swatch.
+      const seen = new Map(); // disease → [colors]
+      SPECIES_DB.filter(sp => !sp.asymptomatic).forEach(sp => {
+        const disease = sp.disease.split('/')[0].split('·')[0].trim();
+        if (!seen.has(disease)) seen.set(disease, []);
+        seen.get(disease).push(sp.color);
+      });
 
-      // All non-vectors collapsed into one grey row
+      const vectorRows = [...seen.entries()].map(([disease, colors]) => {
+        // If multiple species share this disease, show multiple small dots
+        const dots = colors.map(c =>
+          `<span style="color:${c};font-size:10px;line-height:1">●</span>`
+        ).join('');
+        return `<div style="display:flex;align-items:center;gap:5px">` +
+          `<span style="display:flex;gap:1px;flex-shrink:0">${dots}</span>` +
+          `<span style="color:#8ab0c8">${disease}</span>` +
+          `</div>`;
+      }).join('');
+
+      // All non-vectors: one grey row
       const nonVectorRow =
-        `<div style="display:flex;align-items:center;gap:5px;opacity:0.45">` +
-        `<span style="color:#64748b;font-size:10px;flex-shrink:0">●</span>` +
+        `<div style="display:flex;align-items:center;gap:5px;opacity:0.4">` +
+        `<span style="color:#475569;font-size:10px;flex-shrink:0">●</span>` +
         `<span style="color:#64748b">Non-vector</span>` +
         `</div>`;
 
@@ -4096,8 +4092,9 @@ class App {
       const totalSess   = data.total_sessions ?? 0;
 
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-      set('nb-live',           `${activeNow} online`);
-      set('nb-ever',           `${everConn} ever`);
+      set('nb-live', activeNow > 0 ? String(activeNow) : '—');
+      // nb-ever = total detections EVER logged by server (all users, all time)
+      set('nb-ever', totalDet > 0 ? totalDet.toLocaleString() : '—');
       set('stat-contrib',      String(everConn));
       set('stat-server-rounds', String(totalRounds));
       set('fed-round',         `Round ${totalRounds}`);
@@ -4106,8 +4103,7 @@ class App {
       if (contribSub) contribSub.textContent =
         `${activeNow} online now · ${totalDet} detections · ${totalSess} sessions`;
 
-      const nbDet = document.getElementById('nb-detections');
-      if (nbDet) nbDet.textContent = `${totalDet} detection${totalDet !== 1 ? 's' : ''}`;
+      // nb-detections is set by analysis loop (local session only)
     };
 
     // Heartbeat: POST to /heartbeat — registers this device as online right now
@@ -4803,7 +4799,7 @@ self.addEventListener('fetch', e => {
         nbLabel.style.color = 'var(--red)';
       } else {
         nbDot.classList.remove('live');
-        nbLabel.textContent = 'STANDBY';
+        nbLabel.textContent = '🎙 IDLE';
         nbLabel.style.color = 'var(--text3)';
       }
     }
