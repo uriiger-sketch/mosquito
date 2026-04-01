@@ -105,6 +105,7 @@ body::after {
   display: flex;
   flex-direction: column;
   height: 100dvh;
+  max-height: 100dvh;
   overflow: hidden;
 }
 
@@ -235,6 +236,7 @@ body::after {
   display: flex;
   background: var(--s1);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .tab {
@@ -270,6 +272,7 @@ body::after {
 /* ─────────── VIEWS ─────────── */
 #views {
   flex: 1;
+  min-height: 0;      /* critical: allows flex child to shrink below content size */
   overflow: hidden;
   position: relative;
 }
@@ -439,8 +442,8 @@ body::after {
   position: relative;
   overflow: hidden;
   transition: border-color 0.25s, background 0.25s, box-shadow 0.25s;
-  /* Fixed height: ensures all 12 cards are exactly the same size */
-  height: 96px;
+  /* Fixed height: all cards same size regardless of content */
+  height: 88px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1288,9 +1291,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
         <!-- ── Species catch counts ── -->
         <div id="sp-stat-cards"></div>
 
-        <!-- ── Federation bar ── -->
-        <!-- federated learning strip removed -->
-        </div>
+        <!-- ── Federation bar (moved to Info > Debugging) ── -->
       </div>
     </div>
 
@@ -1464,10 +1465,11 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
             <div>Session detections: <span id="dbg-session-det">0</span></div>
             <div>Server total ever: <span id="dbg-ever">—</span></div>
             <div>Last upload: <span id="dbg-last-upload">—</span></div>
-            <button onclick="fetch(window.SERVER_URL+'/health').then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2))).catch(e=>alert('Error: '+e))"
+            <button onclick="testServerConnection()" id="btn-test-server"
               style="margin-top:8px;padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-family:'Syne Mono',monospace;font-size:0.6rem;cursor:pointer">
-              Test Server Connection
+              🔍 Test Server Connection
             </button>
+            <div id="dbg-server-result" style="margin-top:6px;font-size:0.55rem;color:var(--accent);word-break:break-all;display:none"></div>
           </div>
         </div>
       </details>
@@ -1493,6 +1495,45 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 <script>'use strict';
 
 const SERVER_URL = 'https://mosquito.charity';
+window.SERVER_URL = SERVER_URL;
+
+// ── testServerConnection() — called from Debugging section in Info ────────────
+function testServerConnection() {
+  const btn = document.getElementById('btn-test-server');
+  const res = document.getElementById('dbg-server-result');
+  const url = window.SERVER_URL || 'https://mosquito.charity';
+
+  if (btn) btn.textContent = '⏳ Testing…';
+  if (res) { res.style.display = 'none'; res.textContent = ''; }
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('GET', url + '/health', true);
+  xhr.timeout = 8000;
+  xhr.onload = function() {
+    try {
+      const d = JSON.parse(xhr.responseText);
+      const msg = [
+        '✅ Server OK',
+        'active: ' + d.active_now,
+        'total detections: ' + d.total_detections,
+        'log size: ' + d.log_size,
+        'uptime: ' + Math.round((d.uptime_seconds||0)/60) + 'min',
+      ].join(' · ');
+      if (btn) btn.textContent = '✅ Connected';
+      if (res) { res.style.display = 'block'; res.style.color = 'var(--green)'; res.textContent = msg; }
+    } catch(e) {
+      if (btn) btn.textContent = '⚠️ Bad response';
+      if (res) { res.style.display = 'block'; res.style.color = 'var(--amber)'; res.textContent = 'Parse error: ' + xhr.responseText.slice(0,100); }
+    }
+    setTimeout(() => { if (btn) btn.textContent = '🔍 Test Server Connection'; }, 4000);
+  };
+  xhr.onerror = xhr.ontimeout = function() {
+    if (btn) btn.textContent = '❌ Unreachable';
+    if (res) { res.style.display = 'block'; res.style.color = 'var(--red)'; res.textContent = 'Cannot reach ' + url; }
+    setTimeout(() => { if (btn) btn.textContent = '🔍 Test Server Connection'; }, 4000);
+  };
+  xhr.send();
+}
 
 // ── locateUser() — called directly by the Find Me button onclick ─────────────
 // Top-level function so inline onclick="locateUser()" can reach it.
