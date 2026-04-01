@@ -4522,17 +4522,16 @@ self.addEventListener('fetch', e => {
         const lastEvt = this._detectionCooldown[spId] || 0;
         const cooldownMs = 60000; // 1 min UI cooldown (prevents duplicate counts)
 
-        // ── Server upload: EVERY confirmed detection, no cooldown ──────────
-        // The server logs all detections for scientific analysis.
-        this.fedClient.reportDetection(det);
-
         if (now60 - lastEvt >= cooldownMs) {
-          // ── NEW UI EVENT: first detection after 60s cooldown ──────────────
-          // Only increment display counters once per minute per species
+          // ── NEW EVENT: first detection after 60s cooldown ─────────────────
+          // One detection per device per species per minute — client + server both enforce this.
           this._detectionCooldown[spId] = now60;
 
           // Count: +1 per event in UI
           this.sessionCounts[spId]++;
+
+          // Server upload: exactly once per cooldown window
+          this.fedClient.reportDetection(det);
 
           // Federated learning update
           const labelIdx = SPECIES_DB.findIndex(sp => sp.id === spId);
