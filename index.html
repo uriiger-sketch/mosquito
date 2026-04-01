@@ -1207,7 +1207,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
     <div class="nb-item">
       <span class="nb-icon">🔬</span>
       <span id="nb-detections">0</span>
-      <span class="nb-det-label">here</span>
+      <span class="nb-det-label">detected</span>
     </div>
     <div class="nb-sep"></div>
     <div class="nb-item">
@@ -1289,17 +1289,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
         <div id="sp-stat-cards"></div>
 
         <!-- ── Federation bar ── -->
-        <div class="fed-strip">
-          <div class="fed-strip-top">
-            <span class="fed-strip-label">🧠 Model · <span id="fed-round">Round 0</span></span>
-            <span id="fed-upload" class="fed-strip-right">pending</span>
-          </div>
-          <div class="fed-bar"><div class="fed-bar-fill" id="fed-bar" style="width:0%"></div></div>
-          <div class="fed-strip-sub">
-            <span id="fed-steps">0 / 20 steps</span>
-            <span id="stat-contrib-sub" style="opacity:0.5"></span>
-            <span id="stat-server-sub" style="opacity:0"></span>
-          </div>
+        <!-- federated learning strip removed -->
         </div>
       </div>
     </div>
@@ -1443,6 +1433,42 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
             <li>Tap <strong>"Add"</strong></li>
           </ul>
           <p>The app will appear on your home screen and run fullscreen without browser chrome. Microphone access works because GitHub Pages serves HTTPS automatically.</p>
+        </div>
+      </details>
+
+      <details class="info-section">
+        <summary class="info-section-header">
+          <span class="ish-icon">🔧</span>
+          <span class="ish-title">Debugging</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <p style="font-size:0.7rem;color:var(--text2);margin-bottom:10px">
+            Internal diagnostics for the federated learning backend.
+          </p>
+          <div class="fed-strip" style="margin-bottom:0">
+            <div class="fed-strip-top">
+              <span class="fed-strip-label">🧠 Model · <span id="fed-round">Round 0</span></span>
+              <span id="fed-upload" class="fed-strip-right">pending</span>
+            </div>
+            <div class="fed-bar"><div class="fed-bar-fill" id="fed-bar" style="width:0%"></div></div>
+            <div class="fed-strip-sub">
+              <span id="fed-steps">0 / 20 steps</span>
+              <span id="stat-contrib-sub" style="opacity:0.5"></span>
+              <span id="stat-server-sub" style="opacity:0"></span>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-family:'Syne Mono',monospace;font-size:0.6rem;color:var(--text3)">
+            <div>Device ID: <span id="dbg-device-id">—</span></div>
+            <div>Server: <span id="dbg-server">https://mosquito.charity</span></div>
+            <div>Session detections: <span id="dbg-session-det">0</span></div>
+            <div>Server total ever: <span id="dbg-ever">—</span></div>
+            <div>Last upload: <span id="dbg-last-upload">—</span></div>
+            <button onclick="fetch(window.SERVER_URL+'/health').then(r=>r.json()).then(d=>alert(JSON.stringify(d,null,2))).catch(e=>alert('Error: '+e))"
+              style="margin-top:8px;padding:5px 10px;border-radius:5px;border:1px solid var(--border);background:var(--s2);color:var(--text2);font-family:'Syne Mono',monospace;font-size:0.6rem;cursor:pointer">
+              Test Server Connection
+            </button>
+          </div>
         </div>
       </details>
 
@@ -3065,7 +3091,9 @@ class FederatedLearningClient {
     });
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${window.SERVER_URL}/detection`, true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
+    // text/plain = "simple" CORS request = NO preflight = works on iOS PWA
+    // Flask's get_json(force=True) parses body regardless of Content-Type
+    xhr.setRequestHeader('Content-Type', 'text/plain');
     xhr.timeout = 10000;
     xhr.onload = () => {
       try {
@@ -4776,6 +4804,22 @@ self.addEventListener('fetch', e => {
         } else {
           uploadEl.textContent = s.uploadFailed > 0 ? `${s.uploadFailed} offline` : 'pending upload';
         }
+      }
+
+      // Populate debugging section
+      const dbgDev = document.getElementById('dbg-device-id');
+      if (dbgDev) dbgDev.textContent = this.fedClient.getAnonymousId().slice(0,8) + '…';
+      const dbgSess = document.getElementById('dbg-session-det');
+      if (dbgSess) {
+        const tot = Object.values(this.sessionCounts || {}).reduce((a,b)=>a+b,0);
+        dbgSess.textContent = tot;
+      }
+      const dbgEver = document.getElementById('dbg-ever');
+      const nbEver = document.getElementById('nb-ever');
+      if (dbgEver && nbEver) dbgEver.textContent = nbEver.textContent;
+      const dbgLast = document.getElementById('dbg-last-upload');
+      if (dbgLast && s.lastUpload) {
+        dbgLast.textContent = new Date(s.lastUpload).toLocaleTimeString();
       }
     } catch(e) { /* silent */ }
   }
