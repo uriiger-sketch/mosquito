@@ -2783,22 +2783,39 @@ class SpectrogramRenderer {
     ctx.restore();
 
     // 3. Species bands — thin coloured region borders + harmonic guides
+        // Compute enabled + local sets for spectrogram highlighting
+    const _ds  = window._app && window._app._disabledSpecies;
+    const _app = window._app;
+    const _ns  = (_app && _app.deviceLat !== null)
+                 ? getNativeSpecies(_app.deviceLat, _app.deviceLng)
+                 : new Set();
+
     SPECIES_DB.forEach(sp => {
-      const detected = this.lastDetections.some(d => d.species.id === sp.id);
-      const glow     = this.bandGlow[sp.id];
-      const yFund    = this.freqToY(sp.freq);
+      const detected  = this.lastDetections.some(d => d.species.id === sp.id);
+      const glow      = this.bandGlow[sp.id];
+      const isEnabled = !_ds || !_ds.has(sp.id);
+      const isLocal   = _ns.has(sp.id);
+      const yFund     = this.freqToY(sp.freq);
+
+      // Visibility tiers:
+      //   detected  → full brightness + glow
+      //   enabled+local → 50% alpha (clearly visible guide line)
+      //   enabled only  → 30% alpha
+      //   disabled  → 6% alpha (nearly invisible)
+      const lineAlpha = detected
+        ? 0.95
+        : !isEnabled ? 0.06
+        : isLocal    ? 0.50 + glow * 0.3
+        :              0.28 + glow * 0.3;
 
       ctx.save();
-
-      // Fundamental line
-      const lineAlpha = detected ? 0.9 : 0.12 + glow * 0.3;
       ctx.strokeStyle = sp.color;
       ctx.globalAlpha = lineAlpha;
-      ctx.lineWidth   = detected ? 1.5 : 1.0;
+      ctx.lineWidth   = detected ? 2.0 : isLocal ? 1.2 : 0.8;
       ctx.setLineDash([]);
       if (detected) {
         ctx.shadowColor = sp.color;
-        ctx.shadowBlur  = 8;
+        ctx.shadowBlur  = 10;
       }
       ctx.beginPath();
       ctx.moveTo(0, yFund); ctx.lineTo(W - PAD, yFund);
@@ -2808,22 +2825,11 @@ class SpectrogramRenderer {
       // 2nd harmonic guide
       const y2f = this.freqToY(sp.freq * 2);
       if (y2f > 1 && y2f < H - 1) {
-        ctx.globalAlpha = detected ? 0.45 : 0.07;
+        ctx.globalAlpha = detected ? 0.5 : !isEnabled ? 0.03 : isLocal ? 0.22 : 0.10;
         ctx.lineWidth   = 1;
         ctx.setLineDash([3, 6]);
         ctx.beginPath();
         ctx.moveTo(0, y2f); ctx.lineTo(W - PAD, y2f);
-        ctx.stroke();
-      }
-
-      // 3rd harmonic guide
-      const y3f = this.freqToY(sp.freq * 3);
-      if (y3f > 1 && y3f < H - 1) {
-        ctx.globalAlpha = detected ? 0.22 : 0.04;
-        ctx.lineWidth   = 0.8;
-        ctx.setLineDash([2, 8]);
-        ctx.beginPath();
-        ctx.moveTo(0, y3f); ctx.lineTo(W - PAD, y3f);
         ctx.stroke();
       }
 
@@ -2835,42 +2841,58 @@ class SpectrogramRenderer {
     ctx.fillStyle = 'rgba(3,11,20,0.85)';
     ctx.fillRect(W - PAD, 0, PAD, H);
 
-    // Hz labels
-    const LABELS = [200, 300, 400, 500, 600, 700, 800, 1000, 1200];
-    ctx.font      = '7.5px "Syne Mono", monospace';
+    // Hz axis labels — brighter and bigger
+    const LABELS = [400, 450, 500, 550, 600, 650, 700, 750, 800];
+    ctx.font      = '8px "Syne Mono", monospace';
     ctx.textAlign = 'right';
     LABELS.forEach(hz => {
       const y = this.freqToY(hz);
       if (y < 8 || y > H-4) return;
-      ctx.fillStyle = 'rgba(120,160,185,0.45)';
+      ctx.fillStyle   = 'rgba(160,200,220,0.70)';
+      ctx.globalAlpha = 1;
       ctx.fillText(`${hz}`, W-3, y+3);
     });
 
-    // Species labels with live glow
+    // Species labels — enabled/local shown prominently
+    const _ds2 = window._app && window._app._disabledSpecies;
+    const _ns2 = (window._app && window._app.deviceLat !== null)
+                 ? getNativeSpecies(window._app.deviceLat, window._app.deviceLng)
+                 : new Set();
+
     SPECIES_DB.forEach(sp => {
-      const detected = this.lastDetections.some(d => d.species.id === sp.id);
-      const glow     = this.bandGlow[sp.id];
+      const detected    = this.lastDetections.some(d => d.species.id === sp.id);
+      const glow        = this.bandGlow[sp.id];
+      const isEnabled   = !_ds2 || !_ds2.has(sp.id);
+      const isLocal     = _ns2.has(sp.id);
       const y = this.freqToY(sp.freq);
       if (y < 7 || y > H-7) return;
+      if (!isEnabled && !detected) { ctx.globalAlpha = 1; return; }
 
-      const abbr = sp.id === 'anopheles'         ? 'An.g'
-                 : sp.id === 'aedes_aegypti'      ? 'Ae.a'
-                 : sp.id === 'aedes_albopictus'   ? 'Ae.al'
-                 :                                  'Cx.q';
+      // Short abbreviation from species name
+      const parts = sp.name.split(' ');
+      const abbr  = parts[0][0] + '. ' + (parts[1] || '').slice(0,3);
+      const localStar = isLocal ? '★' : '';
 
-      const alpha = detected ? 0.95 : 0.18 + glow * 0.35;
-      ctx.font      = detected ? 'bold 7.5px "Syne Mono", monospace' : '7px "Syne Mono", monospace';
-      ctx.fillStyle = sp.color;
+      const alpha = detected ? 1.0
+                  : isLocal  ? 0.80 + glow * 0.2
+                  :            0.45 + glow * 0.3;
+
       ctx.globalAlpha = alpha;
+      ctx.fillStyle   = sp.color;
+      ctx.font        = detected
+        ? `bold 8px "Syne Mono", monospace`
+        : isLocal
+          ? `bold 7.5px "Syne Mono", monospace`
+          : `7px "Syne Mono", monospace`;
       ctx.textAlign = 'left';
-      ctx.fillText(`${abbr} ${Math.round(sp.freq)}`, W - PAD + 3, y + 3);
+      ctx.fillText(`${localStar}${abbr} ${Math.round(sp.freq)}`, W - PAD + 2, y + 3);
 
-      // "2f" label next to harmonic line
+      // 2f label
       const y2f = this.freqToY(sp.freq * 2);
       if (y2f > 7 && y2f < H-7) {
-        ctx.globalAlpha = detected ? 0.4 : 0.06;
+        ctx.globalAlpha = detected ? 0.5 : isLocal ? 0.28 : 0.10;
         ctx.font = '6px "Syne Mono", monospace';
-        ctx.fillText('2f', W - PAD + 3, y2f + 2);
+        ctx.fillText('2f', W - PAD + 2, y2f + 2);
       }
     });
 
@@ -4619,10 +4641,10 @@ self.addEventListener('fetch', e => {
     } else {
       sorted = [...SPECIES_DB].sort((a, b) => {
         const score = sp => {
-          if (!sp.asymptomatic && ns.has(sp.id)) return 0;  // native vector
-          if (!sp.asymptomatic)                  return 1;  // other vector
-          if (sp.asymptomatic  && ns.has(sp.id)) return 2;  // native harmless
-          return 3;
+          if (ns.has(sp.id) && !sp.asymptomatic) return 0;  // local vector — top
+          if (ns.has(sp.id) &&  sp.asymptomatic) return 1;  // local harmless — second
+          if (!sp.asymptomatic)                  return 2;  // non-local vector
+          return 3;                                          // non-local harmless
         };
         return score(a) - score(b);
       });
