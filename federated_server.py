@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-MosquitoNet Federated Server v8
+MosquitoNet Federated Server v9
 ================================
-Fixes:
-  - Synchronous writes (no daemon threads that die on shutdown)
-  - Single worker mode (Procfile) — no diverging in-memory state
-  - JSONL log is append-only, never truncated, is the source of truth
-  - STATE_FILE holds stats/cells/hotspots (no log — log is in JSONL)
-  - Conf update within 60s: if same device+species submits again within
-    60s of a logged entry, and new conf > old conf, we UPDATE that entry
-    in-place in memory AND rewrite the JSONL file.
-  - DATA_DIR env var must point to a Railway persistent volume (/data)
-    so data survives restarts. Falls back to /tmp (ephemeral) if not set.
+Log format (human-readable at /log.txt):
+
+  #42  |  device: a1b2c3d4  |  32.0821, 34.7913  |  2025-01-15 14:32:07 UTC
+  Ae. albopictus  |  RISK: HIGH  |  668.0 Hz  |  conf: 0.83
+
+Fixes vs v8:
+  - All writes are synchronous under write_lock — no race between
+    rewrite and append threads (that caused disappearing entries)
+  - No background threads for I/O — gunicorn's threads handle concurrency
+  - Single write_lock serialises everything; writes are <2ms each
+  - atexit flush is still present for clean shutdown
 """
 
 import os, time, hashlib, threading, json, io, atexit
@@ -30,29 +31,34 @@ DATA_DIR   = os.environ.get('DATA_DIR', '/tmp')
 STATE_FILE = os.path.join(DATA_DIR, 'mosquitonet_state.json')
 LOG_FILE   = os.path.join(DATA_DIR, 'detections.jsonl')
 
-write_lock = threading.Lock()   # serialise all disk writes
+# Single lock for BOTH in-memory state AND all disk writes — no races possible
+write_lock = threading.Lock()
 
-def _write_log_sync():
-    """Rewrite the full JSONL log from in-memory list — called under write_lock."""
-    try:
-        tmp = LOG_FILE + '.tmp'
-        with open(tmp, 'w', encoding='utf-8') as f:
-            for entry in detection_log:
-                f.write(json.dumps(entry, separators=(',', ':')) + '\n')
-        os.replace(tmp, LOG_FILE)
-    except Exception as e:
-        print(f'[Log write] {e}')
-
-def _append_log_sync(entry):
-    """Append one entry to JSONL — called under write_lock."""
+def _append_entry(entry):
+    """Append one JSONL line. Called under write_lock."""
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, separators=(',', ':')) + '\n')
+            f.flush()
+            os.fsync(f.fileno())   # guarantee kernel flushes to disk
     except Exception as e:
-        print(f'[Log append] {e}')
+        print(f'[append] {e}')
 
-def _save_state_sync():
-    """Write state file (stats/cells/hotspots) — called under write_lock."""
+def _rewrite_log():
+    """Rewrite full JSONL atomically. Called under write_lock."""
+    try:
+        tmp = LOG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            for e in detection_log:
+                f.write(json.dumps(e, separators=(',', ':')) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, LOG_FILE)
+    except Exception as e:
+        print(f'[rewrite] {e}')
+
+def _save_state():
+    """Write state file. Called under write_lock."""
     try:
         payload = {
             'stats':           stats,
@@ -63,27 +69,14 @@ def _save_state_sync():
         tmp = STATE_FILE + '.tmp'
         with open(tmp, 'w') as f:
             json.dump(payload, f, separators=(',', ':'))
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp, STATE_FILE)
     except Exception as e:
-        print(f'[State write] {e}')
-
-def persist(entry=None, rewrite_log=False):
-    """Thread-safe persist: append entry to log and save state."""
-    def _do():
-        with write_lock:
-            if rewrite_log:
-                _write_log_sync()
-            elif entry is not None:
-                _append_log_sync(entry)
-            _save_state_sync()
-    # Non-daemon thread — will complete even if main thread exits
-    t = threading.Thread(target=_do, daemon=False)
-    t.start()
-    return t
+        print(f'[state] {e}')
 
 def load_all():
     global detection_log, detection_cells, hotspot_cells, stats
-    # Load state
     try:
         with open(STATE_FILE) as f:
             d = json.load(f)
@@ -93,60 +86,49 @@ def load_all():
         next_detection_id[0] = d.get('next_id', 1)
         detection_cells = d.get('detection_cells', {})
         hotspot_cells   = d.get('hotspot_cells',   {})
-        print(f'[State] loaded, total_detections={stats["total_detections"]}')
+        print(f'[State] loaded, total={stats["total_detections"]}')
     except FileNotFoundError:
         print('[State] fresh start')
     except Exception as e:
         print(f'[State load] {e}')
-    # Load log from JSONL — source of truth
     try:
-        loaded = []
         with open(LOG_FILE, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line:
                     try:
-                        loaded.append(json.loads(line))
+                        detection_log.append(json.loads(line))
                     except Exception:
                         pass
-        detection_log[:] = loaded
-        print(f'[Log] loaded {len(detection_log)} detections from {LOG_FILE}')
+        print(f'[Log] loaded {len(detection_log)} entries from {LOG_FILE}')
     except FileNotFoundError:
-        print(f'[Log] no existing log — starting fresh')
+        print(f'[Log] starting fresh at {LOG_FILE}')
     except Exception as e:
         print(f'[Log load] {e}')
 
-def save_on_exit():
-    """Flush everything synchronously when the process shuts down."""
-    print('[Exit] flushing state to disk...')
+@atexit.register
+def _flush_on_exit():
+    print('[Exit] flushing...')
     with write_lock:
-        _write_log_sync()
-        _save_state_sync()
-    print('[Exit] done.')
-
-atexit.register(save_on_exit)
+        _rewrite_log()
+        _save_state()
+    print('[Exit] done')
 
 # ── Model ─────────────────────────────────────────────────────────────────────
-global_W = np.array([
-    [ 2.8, 0.9, 1.2, 0.8],
-    [-0.6, 0.7, 1.0, 0.7],
-    [-1.1, 0.7, 1.0, 0.6],
-    [ 1.8, 0.8, 1.3, 0.9],
-], dtype=float)
-global_b = np.array([-0.4, -0.3, -0.3, -0.4], dtype=float)
+global_W = np.array([[ 2.8,0.9,1.2,0.8],[-0.6,0.7,1.0,0.7],
+                     [-1.1,0.7,1.0,0.6],[ 1.8,0.8,1.3,0.9]], dtype=float)
+global_b = np.array([-0.4,-0.3,-0.3,-0.4], dtype=float)
 
 # ── State ─────────────────────────────────────────────────────────────────────
-lock              = threading.Lock()   # protects in-memory state
 device_registry   = {}
 session_registry  = {}
 pending_updates   = []
-detection_log     = []     # append-only in memory; mirrored to LOG_FILE
+detection_log     = []
 detection_cells   = {}
 hotspot_cells     = {}
 next_detection_id = [1]
-# Track recently-logged entries for conf updates: {f"{device}:{species}" -> det_id}
-recent_log        = {}     # key -> {'det_id': N, 'ts': epoch}
-RECENT_WINDOW     = 70     # seconds: allow conf update within ~70s of logging
+recent_log        = {}     # rkey → {det_id, ts, conf}
+RECENT_WINDOW     = 70     # seconds: conf update allowed within this window
 
 stats = {
     'total_detections': 0,
@@ -155,7 +137,6 @@ stats = {
     'total_rounds':     0,
     'last_aggregate':   None,
 }
-
 ACTIVE_SEC        = 90
 HOTSPOT_THRESHOLD = 100
 MIN_UPLOADS       = 3
@@ -173,9 +154,7 @@ def touch(h):
     device_registry[h] = time.time()
 
 def cell_key(lat, lng, sp):
-    clat = round(float(lat) / 0.05) * 0.05
-    clng = round(float(lng) / 0.05) * 0.05
-    return f'{clat:.3f},{clng:.3f},{sp}'
+    return f'{round(float(lat)/0.05)*0.05:.3f},{round(float(lng)/0.05)*0.05:.3f},{sp}'
 
 def full_stats():
     return {
@@ -187,10 +166,8 @@ def full_stats():
         'total_rounds':     stats['total_rounds'],
         'total_detections': stats['total_detections'],
         'hotspot_count':    len(hotspot_cells),
-        'pending_updates':  len(pending_updates),
-        'last_aggregate':   stats['last_aggregate'],
-        'uptime_seconds':   int(time.time() - start_time),
         'log_size':         len(detection_log),
+        'uptime_seconds':   int(time.time() - start_time),
     }
 
 def fedavg(updates):
@@ -204,8 +181,8 @@ def fedavg(updates):
             nW += w * np.array(u['weights']['W'])
             nb += w * np.array(u['weights']['b'])
         except Exception: pass
-    global_W = 0.3 * global_W + 0.7 * nW
-    global_b = 0.3 * global_b + 0.7 * nb
+    global_W = 0.3*global_W + 0.7*nW
+    global_b = 0.3*global_b + 0.7*nb
     stats['total_rounds'] += 1
     stats['last_aggregate'] = datetime.now(timezone.utc).isoformat()
 
@@ -217,26 +194,23 @@ def cors_hdr(r):
     r.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return r
 
-@app.route('/', defaults={'p': ''}, methods=['OPTIONS'])
+@app.route('/', defaults={'p':''}, methods=['OPTIONS'])
 @app.route('/<path:p>', methods=['OPTIONS'])
 def opts(p): return '', 204
 
 # ══════════════════════════════════════════════════════════════════════════════
-@app.route('/heartbeat', methods=['GET', 'POST'])
+
+@app.route('/heartbeat', methods=['GET','POST'])
 def heartbeat():
-    if request.method == 'GET':
-        raw_id   = request.args.get('deviceId', 'anon')
-        sess_val = request.args.get('sess', '')
-    else:
-        d        = request.get_json(force=True, silent=True) or {}
-        raw_id   = d.get('deviceId', 'anon')
-        sess_val = str(d.get('sessionStart', ''))
+    raw_id = request.args.get('deviceId','anon') if request.method=='GET' \
+             else (request.get_json(force=True,silent=True) or {}).get('deviceId','anon')
+    sess   = request.args.get('sess','') if request.method=='GET' else ''
     h = dh(raw_id)
-    with lock:
-        new_s = sess_val and session_registry.get(h) != sess_val
+    with write_lock:
+        new_s = sess and session_registry.get(h) != sess
         touch(h)
         if new_s:
-            session_registry[h] = sess_val
+            session_registry[h] = sess
             stats['total_sessions'] += 1
     return jsonify(full_stats())
 
@@ -259,29 +233,25 @@ def detection():
     rkey    = f'{h}:{species}'
     now     = time.time()
 
-    need_rewrite = False   # True if we update an existing entry
-    new_entry    = None    # set if we create a new entry
-
-    with lock:
+    with write_lock:
         touch(h)
 
-        # ── Check if this is a conf UPDATE for a recent detection ─────────────
-        recent = recent_log.get(rkey)
-        if recent and (now - recent['ts']) < RECENT_WINDOW:
-            # Within the update window — only update if conf improved
-            if conf > recent['conf']:
-                # Find and update the entry in-memory
+        # ── Conf update for recent detection? ─────────────────────────────────
+        rec = recent_log.get(rkey)
+        if rec and (now - rec['ts']) < RECENT_WINDOW:
+            if conf > rec['conf']:
                 for e in reversed(detection_log):
-                    if e.get('id') == recent['det_id']:
+                    if e.get('id') == rec['det_id']:
+                        old_conf = e['conf']
                         e['conf'] = conf
                         e['conf_updated'] = datetime.now(timezone.utc).isoformat()
-                        recent['conf'] = conf
-                        need_rewrite = True
-                        print(f'[Det #{recent["det_id"]}] conf updated {recent["conf"]:.3f} → {conf:.3f}')
+                        rec['conf'] = conf
+                        print(f'[Det #{rec["det_id"]}] conf {old_conf:.3f}→{conf:.3f}')
+                        _rewrite_log()   # rewrite under same lock — no race possible
+                        _save_state()
                         break
-            # Either updated or not, don't create a new entry
-            return jsonify({'received': True, 'updated': need_rewrite,
-                            'detection_id': recent['det_id'], **full_stats()})
+            return jsonify({'received': True, 'updated': True,
+                            'detection_id': rec['det_id'], **full_stats()})
 
         # ── New detection ─────────────────────────────────────────────────────
         det_id = next_detection_id[0]
@@ -289,26 +259,23 @@ def detection():
         stats['total_detections'] += 1
 
         entry = {
-            'id':          det_id,
-            'ts':          ts_str,
-            'device':      h,
-            'lat':         round(float(lat), 4) if lat is not None else None,
-            'lng':         round(float(lng), 4) if lng is not None else None,
-            'species':     species,
-            'name':        sp_name,
-            'disease':     disease,
-            'freq':        freq,
-            'conf':        conf,
-            'risk':        risk,
+            'id':           det_id,
+            'ts':           ts_str,
+            'device':       h,
+            'lat':          round(float(lat), 4) if lat is not None else None,
+            'lng':          round(float(lng), 4) if lng is not None else None,
+            'species':      species,
+            'name':         sp_name,
+            'disease':      disease,
+            'freq':         freq,
+            'conf':         conf,
+            'risk':         risk,
             'asymptomatic': asymp,
         }
         detection_log.append(entry)
-        new_entry = entry
-
-        # Register for potential conf updates within the window
         recent_log[rkey] = {'det_id': det_id, 'ts': now, 'conf': conf}
 
-        # Hotspot cell
+        # Hotspot
         if entry['lat'] is not None:
             try:
                 ck = cell_key(lat, lng, species)
@@ -324,13 +291,12 @@ def detection():
             except Exception as e:
                 print(f'[Cell] {e}')
 
+        # Write under the same lock — guaranteed no concurrent append/rewrite
+        _append_entry(entry)
+        _save_state()
+
     print(f'[Det #{det_id}] {sp_name} conf={conf:.3f} freq={freq:.1f}Hz '
           f'lat={entry["lat"]} lng={entry["lng"]}')
-
-    # Persist: append new entry (fast) or rewrite if updated (slower but safe)
-    persist(entry=new_entry if not need_rewrite else None,
-            rewrite_log=need_rewrite)
-
     return jsonify({'received': True, 'detection_id': det_id, **full_stats()})
 
 
@@ -342,128 +308,110 @@ def log_json():
     except: limit  = 500
     try:   from_id = int(request.args.get('from_id', 0))
     except: from_id = 0
-
-    with lock:
+    with write_lock:
         rows = [e for e in detection_log
-                if (not sp_filter  or e.get('species') == sp_filter)
-                and (not dev_filter or e.get('device')  == dev_filter)
+                if (not sp_filter  or e.get('species')  == sp_filter)
+                and (not dev_filter or e.get('device')   == dev_filter)
                 and e.get('id', 0) > from_id]
-        s = full_stats()
-
-    return jsonify({
-        'total_ever': s['total_detections'],
-        'total_log':  s['log_size'],
-        'returned':   len(rows[-limit:]),
-        'detections': rows[-limit:][::-1],
-    })
+        s = dict(full_stats())
+    return jsonify({'total_ever': s['total_detections'], 'total_log': s['log_size'],
+                    'returned': len(rows[-limit:]), 'detections': rows[-limit:][::-1]})
 
 
 @app.route('/log.txt', methods=['GET'])
 def log_txt():
-    sp_filter  = request.args.get('species')
-    try:   limit = min(int(request.args.get('limit', 2000)), 50000)
-    except: limit = 2000
+    sp_filter = request.args.get('species')
+    try:   limit   = min(int(request.args.get('limit', 2000)), 50000)
+    except: limit  = 2000
     try:   from_id = int(request.args.get('from_id', 0))
     except: from_id = 0
 
-    with lock:
+    with write_lock:
         rows = [e for e in detection_log
                 if (not sp_filter or e.get('species') == sp_filter)
                 and e.get('id', 0) > from_id]
         total_ever = stats['total_detections']
         total_log  = len(detection_log)
 
-    rows = rows[-limit:][::-1]
+    rows = rows[-limit:][::-1]   # newest first
 
     buf = io.StringIO()
-    buf.write(f'MosquitoNet Detection Log  |  total ever: {total_ever}  |  in log: {total_log}\n')
-    buf.write(f'Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC\n')
-    if sp_filter: buf.write(f'Filter: species={sp_filter}\n')
-    buf.write('\n')
-    buf.write(f'{"#":<6}  {"DATE/TIME (UTC)":<20}  {"DEVICE":<8}  '
-              f'{"SPECIES":<22}  {"CONF":>5}  {"HZ":>6}  '
-              f'{"RISK":<8}  {"LAT":>10}  {"LNG":>10}\n')
-    buf.write('-' * 106 + '\n')
+    buf.write('━' * 60 + '\n')
+    buf.write(f'  MosquitoNet Detection Log\n')
+    buf.write(f'  Total ever: {total_ever}  |  In log: {total_log}\n')
+    buf.write(f'  {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")} UTC\n')
+    buf.write('━' * 60 + '\n\n')
 
     for e in rows:
-        det_id = str(e.get('id','?')).rjust(5)
+        det_id  = e.get('id', '?')
+        device  = str(e.get('device', '?'))[:8]
+        lat     = f'{e["lat"]:.4f}' if e.get('lat') is not None else 'n/a'
+        lng     = f'{e["lng"]:.4f}' if e.get('lng') is not None else 'n/a'
         try:
             dt = datetime.fromisoformat(str(e.get('ts','')).replace('Z','+00:00'))
-            ts = dt.strftime('%Y-%m-%d %H:%M:%S')
+            ts = dt.strftime('%Y-%m-%d %H:%M:%S UTC')
         except Exception:
             ts = str(e.get('ts',''))[:19]
-        device  = str(e.get('device','?'))[:8]
-        sp_name = str(e.get('name') or e.get('species','?'))
+
+        sp_name = str(e.get('name') or e.get('species', '?'))
         parts   = sp_name.split()
         if len(parts) >= 2:
             sp_name = parts[0][0] + '. ' + ' '.join(parts[1:])
-        sp_name = sp_name[:22]
-        conf    = f'{float(e.get("conf",0)):.2f}'
-        upd     = '*' if e.get('conf_updated') else ' '
-        freq    = f'{float(e.get("freq",0)):.1f}'
-        risk    = str(e.get('risk','?'))[:8]
-        lat     = f'{e["lat"]:>10.4f}' if e.get('lat') is not None else ' '*10
-        lng     = f'{e["lng"]:>10.4f}' if e.get('lng') is not None else ' '*10
-        buf.write(f'{det_id}  {ts:<20}  {device:<8}  '
-                  f'{sp_name:<22}  {upd}{conf:>5}  {freq:>6}  '
-                  f'{risk:<8}  {lat}  {lng}\n')
 
-    buf.write('\n* = confidence updated after initial log\n')
+        risk    = str(e.get('risk', '?'))
+        freq    = f'{float(e.get("freq", 0)):.1f} Hz'
+        conf    = f'{float(e.get("conf", 0)):.2f}'
+        upd     = '  *(conf updated)' if e.get('conf_updated') else ''
+
+        buf.write(f'#{det_id}  |  device: {device}  |  {lat}, {lng}  |  {ts}\n')
+        buf.write(f'  {sp_name}  |  risk: {risk}  |  {freq}  |  conf: {conf}{upd}\n')
+        buf.write('\n')
+
     return Response(buf.getvalue(), mimetype='text/plain; charset=utf-8')
 
 
 @app.route('/hotspots', methods=['GET'])
 def hotspots():
-    with lock:
-        hot  = [{'key': k, **v} for k, v in hotspot_cells.items()]
-        near = [{'key': k, **v, 'approaching': True}
-                for k, v in detection_cells.items()
-                if k not in hotspot_cells and v['total'] >= 50]
-    return jsonify({'hotspots': hot, 'approaching': near,
-                    'threshold': HOTSPOT_THRESHOLD})
-
+    with write_lock:
+        hot  = [{'key':k,**v} for k,v in hotspot_cells.items()]
+        near = [{'key':k,**v,'approaching':True} for k,v in detection_cells.items()
+                if k not in hotspot_cells and v['total']>=50]
+    return jsonify({'hotspots':hot,'approaching':near,'threshold':HOTSPOT_THRESHOLD})
 
 @app.route('/federated/upload', methods=['POST'])
 def upload():
     d = request.get_json(force=True, silent=True) or {}
     if not all(k in d for k in ['deviceId','weights','steps']):
-        return jsonify({'error':'missing'}), 400
+        return jsonify({'error':'missing'}),400
     h = dh(d['deviceId'])
-    with lock:
-        touch(h)
-        stats['total_uploads'] += 1
-        pending_updates.append({'steps':min(int(d.get('steps',1)),500),
-                                 'weights':d['weights']})
-        if len(pending_updates) >= MIN_UPLOADS:
-            fedavg(pending_updates.copy())
-            pending_updates.clear()
-    return jsonify({'status':'accepted',
-                    'weights':{'W':global_W.tolist(),'b':global_b.tolist()},
-                    **full_stats()})
+    with write_lock:
+        touch(h); stats['total_uploads']+=1
+        pending_updates.append({'steps':min(int(d.get('steps',1)),500),'weights':d['weights']})
+        if len(pending_updates)>=MIN_UPLOADS:
+            fedavg(pending_updates.copy()); pending_updates.clear()
+    return jsonify({'status':'accepted','weights':{'W':global_W.tolist(),'b':global_b.tolist()},**full_stats()})
 
 @app.route('/federated/model',  methods=['GET'])
 def model(): return jsonify({'round':stats['total_rounds'],'weights':{'W':global_W.tolist(),'b':global_b.tolist()}})
 
 @app.route('/federated/stats',  methods=['GET'])
 def get_stats():
-    with lock: return jsonify(full_stats())
+    with write_lock: return jsonify(full_stats())
 
 @app.route('/health', methods=['GET'])
-def health(): return jsonify({'status':'ok','service':'MosquitoNet v8',**full_stats()})
+def health(): return jsonify({'status':'ok','service':'MosquitoNet v9',
+                               'data_dir':DATA_DIR,'log_file':LOG_FILE,**full_stats()})
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({'service':'MosquitoNet v8',
-                    'log_file': LOG_FILE,
-                    'state_file': STATE_FILE,
+    return jsonify({'service':'MosquitoNet v9','data_dir':DATA_DIR,
                     'endpoints':['GET /heartbeat','POST /detection',
-                                 'GET /log','GET /log.txt',
-                                 'GET /hotspots','GET /federated/stats','GET /health']})
-
+                                 'GET /log','GET /log.txt','GET /hotspots',
+                                 'GET /federated/stats','GET /health']})
 
 load_all()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    print(f'\nMosquitoNet v8 on :{port} — DATA_DIR={DATA_DIR}\n')
+    print(f'\nMosquitoNet v9 — DATA_DIR={DATA_DIR}  port={port}\n')
     app.run(host='0.0.0.0', port=port, debug=False)
