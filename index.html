@@ -3164,9 +3164,14 @@ class FederatedLearningClient {
         if (data.received) {
           const everEl = document.getElementById('nb-ever');
           if (everEl && data.total_detections) {
-            everEl.textContent = Number(data.total_detections).toLocaleString();
-            everEl.style.color = 'var(--green)';
-            setTimeout(() => { everEl.style.color = ''; }, 1200);
+            const newVal = Number(data.total_detections);
+            const curVal = parseInt(everEl.dataset.raw || '0', 10);
+            if (newVal > curVal) {   // nb-ever only ever goes UP
+              everEl.dataset.raw = newVal;
+              everEl.textContent = newVal.toLocaleString();
+              everEl.style.color = 'var(--green)';
+              setTimeout(() => { everEl.style.color = ''; }, 1200);
+            }
           }
           if (app && app.mapCtrl) {
             app.mapCtrl.totalDetections = data.total_detections || 0;
@@ -4201,7 +4206,17 @@ class App {
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
       set('nb-live', activeNow > 0 ? String(activeNow) : '—');
       // nb-ever = total detections EVER logged by server (all users, all time)
-      set('nb-ever', totalDet > 0 ? totalDet.toLocaleString() : '—');
+      // nb-ever only goes UP — never let a stale heartbeat reduce the count
+      const everEl2 = document.getElementById('nb-ever');
+      if (everEl2 && totalDet > 0) {
+        const curRaw = parseInt(everEl2.dataset.raw || '0', 10);
+        if (totalDet > curRaw) {
+          everEl2.dataset.raw = totalDet;
+          everEl2.textContent = totalDet.toLocaleString();
+        }
+      } else if (everEl2 && !everEl2.dataset.raw) {
+        everEl2.textContent = '—';
+      }
       set('stat-contrib',      String(everConn));
       set('stat-server-rounds', String(totalRounds));
       set('fed-round',         `Round ${totalRounds}`);
