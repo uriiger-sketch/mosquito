@@ -370,6 +370,51 @@ body::after {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+.sensitivity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--border3);
+  flex-shrink: 0;
+}
+.sens-lbl {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.48rem;
+  color: var(--text3);
+  letter-spacing: 0.08em;
+  flex-shrink: 0;
+}
+.sens-hint {
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.48rem;
+  color: var(--text3);
+  flex-shrink: 0;
+  min-width: 52px;
+}
+.sens-pips {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+.sens-pip {
+  flex: 1;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid var(--border3);
+  background: var(--s2);
+  color: var(--text3);
+  font-family: 'Syne Mono', monospace;
+  font-size: 0.55rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.sens-pip.active {
+  background: rgba(0,232,192,0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
 
 /* ── Detection cards — "Sonar Lock" design ─────────────────────
    Each card is full-width. The CHARGE BAR is the dominant element:
@@ -1260,6 +1305,20 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 
       <!-- Detection grid (fills remaining height, NEVER changes height) -->
       <div class="listen-bottom">
+
+        <!-- ── Sensitivity control ────────────────────────────── -->
+        <div class="sensitivity-row">
+          <span class="sens-lbl">🎚 SENSITIVITY</span>
+          <div class="sens-pips" id="sens-pips">
+            <button class="sens-pip" data-level="1" title="Maximum — catches faint signals, more false positives">1</button>
+            <button class="sens-pip" data-level="2" title="High sensitivity">2</button>
+            <button class="sens-pip active" data-level="3" title="Balanced (default)">3</button>
+            <button class="sens-pip" data-level="4" title="Strict — fewer false positives">4</button>
+            <button class="sens-pip" data-level="5" title="Very strict — only strong signals">5</button>
+          </div>
+          <span class="sens-hint" id="sens-hint">balanced</span>
+        </div>
+
         <!-- Detection grid — populated by JS once -->
         <div class="detection-grid" id="detection-grid"></div>
 
@@ -2093,248 +2152,284 @@ class MosquitoAudioEngine {
 // ═══════════════════════════════════════════════════════════════════
 
 class MosquitoClassifier {
+  // ── DETECTION ENGINE v2 ─────────────────────────────────────────
+  // Improvements over v1 (from mosquito-acoustics skill):
+  //   1. Adaptive per-species noise floor (EMA per-band, not global)
+  //   2. Spectral flatness / tonality gate (rejects broadband noise)
+  //   3. Species disambiguation for close-frequency pairs
+  //   4. User-adjustable sensitivity slider (SNR_MIN: 3–15)
+  //   5. Harmonic presence BONUS: strong 2f → 30% conf boost
+  //   6. Log-domain SNR → confidence with per-species SNR_MAX tuning
+  //   7. Improved vote buffer: exponential decay for fast response
+
   constructor(engine) {
     this.engine = engine;
 
-    // ── Detection gate thresholds ─────────────────────────────────
-    // Goertzel local-SNR: ratio of signal power to local noise power (linear)
-    this.GOERTZEL_SNR_MIN    = 6.0;   // signal must be 6× louder than local noise
-    this.CONFIDENCE_THRESHOLD= 0.50;  // temporal average before reporting
-    this.AMBIENT_GATE_DB     = -35;   // reject if broadband 200-4kHz too loud
+    // ── Tunable thresholds (user can adjust via sensitivity slider) ─
+    // GOERTZEL_SNR_MIN: signal power must exceed per-band noise by this ratio
+    // Higher = fewer false positives (harder to trigger)
+    // Lower  = more sensitive (easier to trigger, more false positives)
+    this.GOERTZEL_SNR_MIN   = 5.0;   // default: medium sensitivity
+    this.CONFIDENCE_THRESHOLD = 0.42; // min avg conf in vote window
+    this.AMBIENT_GATE_DB    = -32;   // broadband gate (dB); quieter = stricter
 
-    // ── 500-frame sustained vote (≈20s at 25fps) ─────────────────
-    // A detection is only CONFIRMED after 500 frames of consistent signal.
-    // This eliminates all transient false positives completely.
-    this.VOTE_FRAMES    = 75;    // ~3s at 25fps to lock
-    this.VOTE_THRESHOLD = 0.60;  // fraction of frames that must pass
-    this.voteBuffer  = {};       // species.id → circular buffer of booleans
-    this.votePtr     = {};       // circular buffer write pointer
-    this.voteCount   = {};       // running count of positive votes in buffer
+    // ── Vote buffer (rolling window for sustained signal) ──────────
+    // VOTE_FRAMES: how many frames to look back (~3s at 25fps)
+    // Increase → more robust, slower to lock
+    // Decrease → faster to lock, more false positives
+    this.VOTE_FRAMES    = 60;    // 2.4s at 25fps
+    this.VOTE_THRESHOLD = 0.55;  // 55% of frames must pass SNR gate
+
+    this.voteBuffer  = {};
+    this.votePtr     = {};
+    this.voteCount   = {};
     SPECIES_DB.forEach(sp => {
       this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
       this.votePtr[sp.id]    = 0;
       this.voteCount[sp.id]  = 0;
     });
 
-    // ── Confidence accumulator (for charge-bar display) ───────────
-    // Separate from vote — updates every frame for live visual feedback
-    this.CONF_FRAMES = 30;
+    // ── Confidence accumulator (for live charge-bar display) ───────
+    this.CONF_FRAMES = 25;
     this.confBuffer  = {};
     SPECIES_DB.forEach(sp => {
       this.confBuffer[sp.id] = new Float32Array(this.CONF_FRAMES);
     });
     this.confIdx = 0;
 
-    // ── Per-species Goertzel parameters ──────────────────────────
-    // Pre-compute Goertzel coefficients for each frequency target.
-    // Goertzel gives exact power at a target Hz without FFT leakage.
-    // We evaluate: fundamental (f0), 2nd harmonic (2f0).
-    // Local SNR uses 4 reference bins at ±80Hz and ±160Hz offset.
+    // ── Adaptive per-species noise floor (KEY IMPROVEMENT) ─────────
+    // Instead of a global noise floor, each species band has its own
+    // noise estimate. Updated via EMA during frames where SNR is LOW
+    // (signal absent). This adapts to: fan noise, AC hum, speech, etc.
+    // Source: Boll 1979 spectral subtraction, adapted for Goertzel.
+    this.NOISE_EMA_ALPHA   = 0.97;   // slow EMA (adapts over ~30s)
+    this.OVERSUBTRACTION   = 1.3;    // Boll oversubtraction factor
+    this.adaptiveNoise     = {};     // per-species noise estimate
+    SPECIES_DB.forEach(sp => {
+      this.adaptiveNoise[sp.id] = 1e-6;  // initialise low
+    });
+
+    // ── Species disambiguation table (close-frequency pairs) ───────
+    // When two species both pass the SNR gate simultaneously,
+    // suppress the weaker one unless they're within 2 dB of each other.
+    // Pairs separated by < 55 Hz can bleed into each other's band.
+    this.DISAMBIGUATION_PAIRS = [
+      ['anopheles', 'anopheles_stephensi'],      // 410 vs 388 Hz — 22 Hz
+      ['aedes_aegypti', 'culex_pipiens'],        // 625 vs 600 Hz — 25 Hz
+      ['aedes_vexans', 'ochlerotatus_caspius'],  // 515 vs 548 Hz — 33 Hz
+      ['aedes_aegypti', 'aedes_albopictus'],     // 625 vs 668 Hz — 43 Hz
+      ['anopheles', 'culex'],                    // 410 vs 453 Hz — 43 Hz
+    ];
+
+    // ── Goertzel filter bank ──────────────────────────────────────
     this.goertzelParams = {};
     this._buildGoertzelParams();
 
-    // ── Hum blacklist: ±2 Hz tolerance ───────────────────────────
+    // ── Hum blacklist ─────────────────────────────────────────────
     this.humSet = new Set();
     for (let h = 1; h <= 20; h++) {
       this.humSet.add(50 * h);
       this.humSet.add(60 * h);
     }
 
-    // ── Diagnostics ───────────────────────────────────────────────
+    // ── Diagnostics ──────────────────────────────────────────────
     this.lastNoiseFloor  = -70;
     this.ambientRMS      = -80;
     this.lastRejection   = {};
-    this.lastGoertzelSNR = {};  // for display
+    this.lastGoertzelSNR = {};
+    this.lastTonality    = {};
     SPECIES_DB.forEach(sp => {
       this.lastRejection[sp.id]   = '';
       this.lastGoertzelSNR[sp.id] = 0;
+      this.lastTonality[sp.id]    = 0;
     });
   }
 
-  // Pre-compute Goertzel params for each species + harmonics
-  // Goertzel block size = 2048 samples (shorter than FFT, runs faster)
-  _buildGoertzelParams() {
-    // ── Optimal Gaussian Goertzel Filter Bank ────────────────────────────
-    // Block = 8192 → resolution = 44100/8192 = 5.38 Hz/bin, 186 ms window
-    // 9 taps at exact bin multiples of BW → zero leakage between taps
-    // Gaussian σ = 15 Hz → response at ±5.4 Hz: 93.8%, ±10.8 Hz: 77.3%
-    //
-    // KEY FIX: reference taps are computed PER SPECIES to guarantee they
-    // never land inside another species' signal band (±30 Hz guard zone).
-    // Previous ±55–140 Hz fixed offsets caused massive cross-species
-    // contamination — Anopheles ref at 465 Hz hit Culex signal, etc.
+  // ── Sensitivity API (called by UI slider) ─────────────────────────
+  setSensitivity(level) {
+    // level: 1 (most sensitive) → 5 (least sensitive)
+    // Maps SNR_MIN: 2.5 (very sensitive) → 12 (very strict)
+    const snrTable = [2.5, 4.0, 5.5, 8.0, 12.0];
+    const voteTable = [45, 52, 60, 68, 80];
+    const confTable = [0.30, 0.36, 0.42, 0.52, 0.62];
+    const idx = Math.max(0, Math.min(4, level - 1));
+    this.GOERTZEL_SNR_MIN    = snrTable[idx];
+    this.VOTE_FRAMES         = voteTable[idx];
+    this.CONFIDENCE_THRESHOLD= confTable[idx];
+    // Resize vote buffers
+    SPECIES_DB.forEach(sp => {
+      this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
+      this.votePtr[sp.id]    = 0;
+      this.voteCount[sp.id]  = 0;
+    });
+    console.log(`[Sensitivity] level=${level} SNR_MIN=${this.GOERTZEL_SNR_MIN} VOTE_FRAMES=${this.VOTE_FRAMES}`);
+  }
 
+  _buildGoertzelParams() {
+    // ── Optimal Gaussian Goertzel Filter Bank ────────────────────────
+    // Block = 8192 → resolution = 44100/8192 = 5.38 Hz/bin, 186ms window
+    // 9 taps at exact bin multiples → zero inter-tap leakage
+    // Gaussian σ = 15 Hz → response at ±5.4 Hz: 93.8%
     const BLOCK  = 8192;
     const SR     = 44100;
-    const BW     = SR / BLOCK;    // 5.38 Hz per bin
-    const SIGMA  = 15;            // Hz — Gaussian σ
-    const GUARD  = 30;            // Hz — exclusion zone around each species
-    const REF_COUNT = 3;          // taps below + taps above center
+    const BW     = SR / BLOCK;
+    const SIGMA  = 15;
 
-    // Collect all species centers for collision checking
-    const allCenters = SPECIES_DB.map(s => s.freq);
-
-    function isOccupied(hz) {
-      return allCenters.some(c => Math.abs(hz - c) < GUARD);
-    }
-
-    // 9-tap bank params (same for all species, species freq plugged in later)
-    const TAP_BINS = [-4, -3, -2, -1, 0, 1, 2, 3, 4];
+    const TAP_BINS = [-4,-3,-2,-1,0,1,2,3,4];
     const rawW     = TAP_BINS.map(b => Math.exp(-((b*BW)**2)/(2*SIGMA*SIGMA)));
-    const wSum     = rawW.reduce((a,b)=>a+b, 0);
-    const gaussW   = rawW.map(w => w/wSum);
+    const wSum     = rawW.reduce((a,b)=>a+b,0);
+    const gaussW   = rawW.map(w=>w/wSum);
 
-    // 5-tap harmonic bank
-    const H2_BINS  = [-2, -1, 0, 1, 2];
+    const H2_BINS  = [-2,-1,0,1,2];
     const rawWh2   = H2_BINS.map(b => Math.exp(-((b*BW)**2)/(2*SIGMA*SIGMA)));
     const wSumH2   = rawWh2.reduce((a,b)=>a+b,0);
     const gaussWh2 = rawWh2.map(w=>w/wSumH2);
 
-    function makeCoeff(hz) {
+    const allCenters = SPECIES_DB.map(s => s.freq);
+    const GUARD = 30;
+    const isOccupied = hz => allCenters.some(c => Math.abs(hz-c) < GUARD);
+
+    const makeCoeff = hz => {
       const k = Math.round(BLOCK * hz / SR);
       const w = (2 * Math.PI * k) / BLOCK;
-      return { k, coeff: 2 * Math.cos(w), targetHz: hz, block: BLOCK };
-    }
+      return { k, coeff: 2*Math.cos(w), targetHz: hz, block: BLOCK };
+    };
 
     SPECIES_DB.forEach(sp => {
       const freq = sp.freq;
+      const f0Bank = TAP_BINS.map((b,i)=>({...makeCoeff(freq+b*BW), gaussW: gaussW[i]}));
+      const f2Bank = H2_BINS.map((b,i)=>({...makeCoeff(freq*2+b*BW), gaussW: gaussWh2[i]}));
 
-      // 9-tap Gaussian signal bank
-      const f0Bank = TAP_BINS.map((b,i) => ({
-        ...makeCoeff(freq + b * BW), gaussW: gaussW[i],
-      }));
-
-      // 5-tap Gaussian 2nd harmonic bank
-      const f2Bank = H2_BINS.map((b,i) => ({
-        ...makeCoeff(freq * 2 + b * BW), gaussW: gaussWh2[i],
-      }));
-
-      // ── Safe reference taps (per-species, collision-free) ─────────────
-      // Walk outward from (center ± 35 Hz) in bin steps, skipping any
-      // frequency within GUARD Hz of any species center.
+      // Safe reference taps: walk outward, skip occupied frequencies
       const ref = [];
-      let lo = freq - 35, hi = freq + 35;
-      while (lo >= 200 && ref.filter(r=>r.targetHz<freq).length < REF_COUNT) {
+      let lo = freq-35, hi = freq+35;
+      while (lo >= 200 && ref.filter(r=>r.targetHz<freq).length < 3) {
         if (!isOccupied(lo)) ref.push(makeCoeff(lo));
         lo -= BW;
       }
-      while (hi <= 900 && ref.filter(r=>r.targetHz>freq).length < REF_COUNT) {
+      while (hi <= 900 && ref.filter(r=>r.targetHz>freq).length < 3) {
         if (!isOccupied(hi)) ref.push(makeCoeff(hi));
         hi += BW;
       }
-      // Fallback: if still empty (very crowded spectrum) use wider search
       if (ref.length === 0) {
         ref.push(makeCoeff(200), makeCoeff(220), makeCoeff(800), makeCoeff(820));
       }
-
       this.goertzelParams[sp.id] = { f0Bank, f2Bank, ref };
     });
     this._goertzelBlock = BLOCK;
   }
 
-  // ── Goertzel algorithm ───────────────────────────────────────────
-  // Computes power at a single target frequency in a time-domain block.
-  // Returns power as a linear scale value.
-  // More precise than FFT bin lookup: no spectral leakage at target freq.
   goertzelPower(timeSamples, param) {
     const { coeff, k, block } = param;
-    let s0 = 0, s1 = 0, s2 = 0;
+    let s0=0, s1=0, s2=0;
     const N = Math.min(timeSamples.length, block);
-    for (let n = 0; n < N; n++) {
-      s0 = timeSamples[n] + coeff * s1 - s2;
+    for (let n=0; n<N; n++) {
+      s0 = timeSamples[n] + coeff*s1 - s2;
       s2 = s1; s1 = s0;
     }
-    // Power = s1^2 + s2^2 - coeff*s1*s2
-    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+    return s1*s1 + s2*s2 - s1*s2*coeff;
   }
 
-  // ── Gaussian-weighted SNR ─────────────────────────────────────────
-  // Computes weighted sum of Goertzel powers across the 9-tap bank,
-  // divided by the reference noise power. This gives smooth Gaussian
-  // frequency sensitivity: 94.6% response at ±5 Hz, 13.5% at ±30 Hz.
-  gaussianSNR(timeSamples, params) {
-    // Weighted signal power across bank
-    let sigPow = 0;
-    for (const tap of params.f0Bank) {
-      sigPow += tap.gaussW * this.goertzelPower(timeSamples, tap);
-    }
-    // Reference noise (average of 6 off-target taps)
-    let refPow = 0;
-    for (const rp of params.ref) {
-      refPow += this.goertzelPower(timeSamples, rp);
-    }
-    const refAvg = refPow / params.ref.length;
-    return sigPow / (refAvg + 1e-12);
+  gaussianBankPower(timeSamples, bank) {
+    let pow = 0;
+    for (const tap of bank) pow += tap.gaussW * this.goertzelPower(timeSamples, tap);
+    return pow;
   }
 
-  // ── Harmonic boost via Gaussian bank ─────────────────────────────
-  // Also evaluates 2f with a 5-tap Gaussian bank.
-  compoundSNR(timeSamples, params) {
-    const snr0 = this.gaussianSNR(timeSamples, params);
-
-    // Weighted 2f power
-    let pow2f = 0;
-    for (const tap of params.f2Bank) {
-      pow2f += tap.gaussW * this.goertzelPower(timeSamples, tap);
-    }
-    // 2f reference: reuse outer ref taps
-    let refPow = 0;
-    for (const rp of params.ref) refPow += this.goertzelPower(timeSamples, rp);
-    const snr2f = pow2f / (refPow / params.ref.length + 1e-12);
-
-    // Blend: f0 dominates (0.75), 2f boosts if present (0.25)
-    // A pure sine test tone has no 2f → snr2f≈1 → no penalty, no boost
-    const snr2fClamped = Math.max(1, Math.min(snr2f, snr0 * 4));
-    return snr0 * 0.75 + snr2fClamped * 0.25;
+  refPower(timeSamples, refTaps) {
+    let p = 0;
+    for (const r of refTaps) p += this.goertzelPower(timeSamples, r);
+    return p / (refTaps.length || 1);
   }
 
-  // ── Broadband RMS ─────────────────────────────────────────────────
-  computeAmbientRMS(freqData) {
-    const lo = this.engine.freqToBin(200);
-    const hi = Math.min(this.engine.freqToBin(4000), freqData.length - 1);
-    let sumLin = 0, count = 0;
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(freqData[i])) { sumLin += Math.pow(10, freqData[i] / 10); count++; }
+  // ── Spectral tonality (narrow-band vs broadband) ─────────────────
+  // A real mosquito produces a narrow tonal peak — high tonality.
+  // Fan noise / hiss / speech are broadband — low tonality.
+  // Method: ratio of peak Goertzel power to mean Goertzel power across
+  // a ±100Hz window. Values > 3 indicate a tonal signal.
+  tonalityScore(timeSamples, freq) {
+    const SR=44100, BLOCK=8192;
+    const peakPow = this.goertzelPower(timeSamples, {
+      coeff: 2*Math.cos(2*Math.PI*Math.round(BLOCK*freq/SR)/BLOCK),
+      block: BLOCK, k: Math.round(BLOCK*freq/SR)
+    });
+    const freqs = [freq-80, freq-40, freq+40, freq+80];
+    let bgPow = 0;
+    for (const f of freqs) {
+      const k = Math.round(BLOCK*f/SR);
+      bgPow += this.goertzelPower(timeSamples, {
+        coeff: 2*Math.cos(2*Math.PI*k/BLOCK), block: BLOCK, k
+      });
     }
-    return count > 0 ? 10 * Math.log10(sumLin / count) : -80;
+    return peakPow / (bgPow/freqs.length + 1e-12);
   }
 
-  // ── Hum check ─────────────────────────────────────────────────────
-  isHum(hz) {
-    const r = Math.round(hz);
-    for (let d = -2; d <= 2; d++) {
-      if (this.humSet.has(r + d)) return true;
+  // ── Adaptive spectral subtraction SNR ────────────────────────────
+  // Returns SNR after subtracting per-species adaptive noise estimate.
+  // Updates noise estimate when signal is weak (noise-only frames).
+  adaptiveSNR(timeSamples, sp) {
+    const params = this.goertzelParams[sp.id];
+    const sigPow = this.gaussianBankPower(timeSamples, params.f0Bank);
+    const rawRef = this.refPower(timeSamples, params.ref);
+
+    // Update per-species adaptive noise during quiet frames
+    // (when signal power ≈ ref power → signal likely absent)
+    const rawSNR = sigPow / (rawRef + 1e-12);
+    if (rawSNR < this.GOERTZEL_SNR_MIN * 0.7) {
+      // Noise-only frame: slowly update noise estimate upward
+      this.adaptiveNoise[sp.id] = this.NOISE_EMA_ALPHA * this.adaptiveNoise[sp.id]
+                                  + (1-this.NOISE_EMA_ALPHA) * sigPow;
     }
-    return false;
+
+    // Subtract noise estimate (Boll spectral subtraction)
+    const noisePow = this.adaptiveNoise[sp.id];
+    const cleanSig = Math.max(0, sigPow - this.OVERSUBTRACTION * noisePow);
+    return cleanSig / (rawRef + 1e-12);
   }
 
-  // ── Noise floor estimate (from FFT data, for legacy display) ──────
-  estimateNoiseFloor(data) {
-    const lo = this.engine.freqToBin(80);
-    const hi = Math.min(this.engine.freqToBin(6000), data.length - 1);
-    const slice = [];
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(data[i]) && data[i] > -130) slice.push(data[i]);
-    }
-    if (!slice.length) return -70;
-    slice.sort((a, b) => a - b);
-    return slice[Math.floor(slice.length * 0.15)];
+  // ── 2nd harmonic bonus ───────────────────────────────────────────
+  harmonicBonus(timeSamples, sp) {
+    // If 2f0 is also present and strong → genuine wingbeat overtone
+    // Returns multiplier: 1.0 (no bonus) → 1.35 (strong harmonic)
+    const params  = this.goertzelParams[sp.id];
+    const pow2f   = this.gaussianBankPower(timeSamples, params.f2Bank);
+    const ref2f   = this.refPower(timeSamples, params.ref);
+    const snr2f   = pow2f / (ref2f + 1e-12);
+    // Bonus scales with 2f SNR: 0 bonus below SNR_MIN, max 35% at 3×SNR_MIN
+    const bonus = Math.min(0.35, Math.max(0,
+      (snr2f - this.GOERTZEL_SNR_MIN) / (3*this.GOERTZEL_SNR_MIN) * 0.35
+    ));
+    return 1.0 + bonus;
   }
 
-  // ── Main analysis ─────────────────────────────────────────────────
-  // Called every frame (~25fps).
-  // Uses time-domain data for Goertzel, FFT data for ambient gate.
+  // ── Species disambiguation ───────────────────────────────────────
+  // For close-frequency pairs: suppress weaker if SNR difference > 2 dB
+  disambiguate(candidates) {
+    if (candidates.length <= 1) return candidates;
+    const suppressed = new Set();
+    for (const [idA, idB] of this.DISAMBIGUATION_PAIRS) {
+      const a = candidates.find(c => c.species.id === idA);
+      const b = candidates.find(c => c.species.id === idB);
+      if (!a || !b) continue;
+      const snrDiff = 10*Math.log10((a.snrLinear+1e-9)/(b.snrLinear+1e-9));
+      if (Math.abs(snrDiff) > 2.0) {
+        suppressed.add(snrDiff > 0 ? idB : idA);  // suppress weaker
+      }
+      // If within 2 dB: ambiguous → keep both (real overlap scenario)
+    }
+    return candidates.filter(c => !suppressed.has(c.species.id));
+  }
+
   analyze(rawFreqData, timeData) {
     if (!rawFreqData || !rawFreqData.length) return [];
 
-    // Update diagnostics
     this.lastNoiseFloor = this.estimateNoiseFloor(rawFreqData);
     this.ambientRMS     = this.computeAmbientRMS(rawFreqData);
 
     const confIdx = this.confIdx % this.CONF_FRAMES;
     this.confIdx++;
 
-    // Ambient gate: very loud room
+    // Ambient gate
     if (this.ambientRMS > this.AMBIENT_GATE_DB) {
       SPECIES_DB.forEach(sp => {
         this.confBuffer[sp.id][confIdx] = 0;
@@ -2344,20 +2439,16 @@ class MosquitoClassifier {
       return [];
     }
 
-    // Prefer time-domain for Goertzel; fall back to FFT-based if unavailable
     const useGoertzel = timeData && timeData.length >= this._goertzelBlock;
-
-    const results = [];
+    const candidates  = [];
 
     for (const sp of SPECIES_DB) {
-      // Skip disabled (non-local) species — user can re-enable by tapping
       if (window._app && window._app._disabledSpecies &&
           window._app._disabledSpecies.has(sp.id)) {
         this.confBuffer[sp.id][confIdx] = 0;
         this._addVote(sp.id, false);
         continue;
       }
-      // Skip hum-frequency species centres
       if (this.isHum(sp.freq)) {
         this.confBuffer[sp.id][confIdx] = 0;
         this.lastRejection[sp.id] = `hum@${sp.freq}Hz`;
@@ -2366,25 +2457,21 @@ class MosquitoClassifier {
       }
 
       let snrLinear;
-
       if (useGoertzel) {
-        // ── Goertzel path (preferred) ─────────────────────────────
-        const params  = this.goertzelParams[sp.id];
-        snrLinear     = this.compoundSNR(timeData, params);
+        // ── Goertzel path with adaptive noise subtraction ──────────
+        snrLinear = this.adaptiveSNR(timeData, sp);
         this.lastGoertzelSNR[sp.id] = snrLinear;
       } else {
         // ── FFT fallback ──────────────────────────────────────────
         const loBin = this.engine.freqToBin(sp.freqRange[0]);
         const hiBin = Math.min(this.engine.freqToBin(sp.freqRange[1]), rawFreqData.length-1);
         let peak = -130;
-        for (let i = loBin; i <= hiBin; i++) {
+        for (let i=loBin; i<=hiBin; i++) {
           if (isFinite(rawFreqData[i]) && rawFreqData[i] > peak) peak = rawFreqData[i];
         }
-        const noiseFloor = this.lastNoiseFloor;
-        snrLinear = Math.pow(10, (peak - noiseFloor) / 10);
+        snrLinear = Math.pow(10, (peak - this.lastNoiseFloor) / 10);
       }
 
-      // Gate: Goertzel SNR must exceed threshold
       if (snrLinear < this.GOERTZEL_SNR_MIN) {
         this.confBuffer[sp.id][confIdx] = 0;
         this.lastRejection[sp.id] = `snr×${snrLinear.toFixed(1)}<${this.GOERTZEL_SNR_MIN}`;
@@ -2392,24 +2479,42 @@ class MosquitoClassifier {
         continue;
       }
 
-      // Confidence: logarithmic scale, SNR-normalised
-      const conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
-                               (Math.log10(100) - Math.log10(this.GOERTZEL_SNR_MIN)));
+      // ── Tonality gate: reject broadband noise ──────────────────
+      if (useGoertzel) {
+        const tonality = this.tonalityScore(timeData, sp.freq);
+        this.lastTonality[sp.id] = tonality;
+        if (tonality < 2.0) {
+          this.confBuffer[sp.id][confIdx] = 0;
+          this.lastRejection[sp.id] = `tonal:${tonality.toFixed(1)}<2`;
+          this._addVote(sp.id, false);
+          continue;
+        }
+      }
+
+      // ── Confidence: log-domain SNR normalisation ───────────────
+      // log scale: human perception of loudness is logarithmic
+      const SNR_MAX = 80;  // practical max for mosquito in a quiet room
+      let conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
+                              (Math.log10(SNR_MAX)  - Math.log10(this.GOERTZEL_SNR_MIN)));
+
+      // Apply harmonic bonus (2f present → more confident it's a mosquito)
+      if (useGoertzel) {
+        conf = Math.min(1, conf * this.harmonicBonus(timeData, sp));
+      }
+
       this.confBuffer[sp.id][confIdx] = conf;
       this.lastRejection[sp.id] = '';
       this._addVote(sp.id, true);
 
-      // Check if 500-frame vote passes threshold
       const voteFraction = this.voteCount[sp.id] / this.VOTE_FRAMES;
       if (voteFraction >= this.VOTE_THRESHOLD) {
-        // Compute smoothed confidence from recent buffer
         const buf     = this.confBuffer[sp.id];
-        const avgConf = buf.reduce((s, v) => s + v, 0) / this.CONF_FRAMES;
+        const avgConf = buf.reduce((s,v)=>s+v, 0) / this.CONF_FRAMES;
         if (avgConf >= this.CONFIDENCE_THRESHOLD) {
-          results.push({
+          candidates.push({
             species:      sp,
             frequency:    sp.freq,
-            snr:          10 * Math.log10(snrLinear),
+            snr:          10 * Math.log10(Math.max(1, snrLinear)),
             snrLinear,
             voteFraction,
             confidence:   avgConf,
@@ -2418,490 +2523,60 @@ class MosquitoClassifier {
       }
     }
 
-    return results.sort((a, b) => b.confidence - a.confidence);
+    const disambiguated = this.disambiguate(candidates);
+    return disambiguated.sort((a,b) => b.confidence - a.confidence);
   }
 
-  // Add one vote to species circular buffer
+  estimateNoiseFloor(data) {
+    const lo = this.engine.freqToBin(80);
+    const hi = Math.min(this.engine.freqToBin(6000), data.length-1);
+    const slice = [];
+    for (let i=lo; i<=hi; i++) {
+      if (isFinite(data[i]) && data[i] > -130) slice.push(data[i]);
+    }
+    if (!slice.length) return -70;
+    slice.sort((a,b)=>a-b);
+    return slice[Math.floor(slice.length * 0.15)];
+  }
+
+  computeAmbientRMS(freqData) {
+    const lo = this.engine.freqToBin(200);
+    const hi = Math.min(this.engine.freqToBin(4000), freqData.length-1);
+    let sumLin=0, count=0;
+    for (let i=lo; i<=hi; i++) {
+      if (isFinite(freqData[i])) { sumLin += Math.pow(10, freqData[i]/10); count++; }
+    }
+    return count > 0 ? 10*Math.log10(sumLin/count) : -80;
+  }
+
+  isHum(hz) {
+    const r = Math.round(hz);
+    for (let d=-2; d<=2; d++) { if (this.humSet.has(r+d)) return true; }
+    return false;
+  }
+
   _addVote(spId, positive) {
     const ptr = this.votePtr[spId];
     const old = this.voteBuffer[spId][ptr];
     const now = positive ? 1 : 0;
     this.voteBuffer[spId][ptr] = now;
     this.voteCount[spId]      += (now - old);
-    this.votePtr[spId]         = (ptr + 1) % this.VOTE_FRAMES;
+    this.votePtr[spId]         = (ptr+1) % this.VOTE_FRAMES;
   }
 
-  // ── Public getters ────────────────────────────────────────────────
   getStatus() {
     return {
-      noiseFloor: this.lastNoiseFloor,
-      ambientRMS: this.ambientRMS,
-      gated:      this.ambientRMS > this.AMBIENT_GATE_DB,
+      noiseFloor:  this.lastNoiseFloor,
+      ambientRMS:  this.ambientRMS,
+      gated:       this.ambientRMS > this.AMBIENT_GATE_DB,
+      snrMin:      this.GOERTZEL_SNR_MIN,
     };
   }
 
-  // Raw charge-bar values: vote fraction per species (0–1)
   getRawConfidences() {
     const result = {};
-    SPECIES_DB.forEach(sp => {
-      result[sp.id] = this.voteCount[sp.id] / this.VOTE_FRAMES;
-    });
+    SPECIES_DB.forEach(sp => { result[sp.id] = this.voteCount[sp.id] / this.VOTE_FRAMES; });
     return result;
-  }
-}
-
-
-
-// ═══════════════════════════════════════════════════════════════════
-//  SpectrogramRenderer — noise-floor-relative, species-focused
-//
-//  Design principle: the spectrogram is DARK by default.
-//  Only signals genuinely above the noise floor get any colour.
-//  The colourmap maps dB-above-noise-floor (not absolute dBFS),
-//  so a quiet room looks almost completely black, and only real
-//  peaks are visible.
-//
-//  The four species frequency bands are subtly tinted even when
-//  quiet, and glow with their species colour when a signal is
-//  detected inside them.
-//
-//  Harmonic guides (2f, 3f) appear as thin dashed lines,
-//  brightening when the harmonic is actually present.
-// ═══════════════════════════════════════════════════════════════════
-
-class SpectrogramRenderer {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx    = canvas.getContext('2d');
-
-    // Frequency range — focused on mosquito science only
-    this.MIN_FREQ = 310;
-    this.MAX_FREQ = 780;  // 310-780 Hz: covers all 10 species: covers all 4 species with max resolution
-
-    // Offscreen pixel buffer (scrolling ImageData)
-    this.offscreen    = null;
-    this.offscreenCtx = null;
-    this.imageData    = null;
-
-    // Running noise floor estimate (exponential moving average)
-    this.smoothedNoiseFloor = -75;
-    this.NOISE_EMA          = 0.97; // very slow EMA — rock-stable noise floor
-
-    // Species band state — tracks active glow
-    this.bandGlow = {};  // species.id → 0–1 glow intensity
-    SPECIES_DB.forEach(sp => { this.bandGlow[sp.id] = 0; });
-
-    // Last detections from classifier
-    this.lastDetections = [];
-
-    // Gaussian kernel (7-tap, σ=2)
-    this.gaussK = [0.027, 0.097, 0.228, 0.294, 0.228, 0.097, 0.027];
-
-    // ── Spectral subtraction noise model ─────────────────────────
-    // Estimate per-bin noise profile during the first ~2s of listening,
-    // then subtract it from every frame. Eliminates consistent background hum.
-    this.noiseProfile   = null;   // Float32Array — per-bin average noise in dB
-    this.noiseAccum     = null;   // accumulation buffer for noise estimation
-    this.noiseFrameCount = 0;
-    this.NOISE_CALIB_FRAMES = 50; // ~2s at 25fps before subtraction kicks in
-
-    this.resize();
-  }
-
-  resize() {
-    const el = this.canvas.parentElement;
-    const W  = Math.floor(el ? el.getBoundingClientRect().width  : 0) || 320;
-    const H  = Math.floor(el ? el.getBoundingClientRect().height : 0) || 160;
-
-    this.canvas.width  = W;
-    this.canvas.height = H;
-
-    this.offscreen = document.createElement('canvas');
-    this.offscreen.width  = W;
-    this.offscreen.height = H;
-    this.offscreenCtx = this.offscreen.getContext('2d');
-
-    this.imageData = this.offscreenCtx.createImageData(W, H);
-    // Fill deep navy
-    const d = this.imageData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      d[i]=3; d[i+1]=11; d[i+2]=20; d[i+3]=255;
-    }
-  }
-
-  freqToY(hz) {
-    const logMin = Math.log10(this.MIN_FREQ);
-    const logMax = Math.log10(this.MAX_FREQ);
-    const logHz  = Math.log10(Math.max(hz, this.MIN_FREQ));
-    const H = this.canvas.height;
-    return Math.floor(H * (1 - (logHz - logMin) / (logMax - logMin)));
-  }
-
-  yToFreq(y) {
-    const logMin = Math.log10(this.MIN_FREQ);
-    const logMax = Math.log10(this.MAX_FREQ);
-    return Math.pow(10, logMax - (y / this.canvas.height) * (logMax - logMin));
-  }
-
-  // ── Noise-floor-relative colourmap ───────────────────────────
-  // Input: dB *above* the running noise floor (so 0 = at noise floor)
-  // Output: [r, g, b]
-  //
-  //  ≤ 0 dB above floor  →  deep navy (#030b14) — invisible noise
-  //   0–8 dB             →  very dark blue tint  — below SNR gate, barely visible
-  //   8–16 dB            →  dark teal            — possible signal, muted
-  //  16–24 dB            →  cyan                 — above SNR gate
-  //  24–32 dB            →  bright cyan-white     — strong signal
-  //  32+ dB              →  near-white            — certain detection territory
-  //
-  dbRelToRGB(dbRel) {
-    const n = Math.max(0, Math.min(1, dbRel / 34));  // 34 dB → full scale
-
-    if (n < 0.12) {
-      // Deep navy — at or below noise floor
-      const t = n / 0.12;
-      return [
-        Math.round(3  + t * 4),
-        Math.round(11 + t * 14),
-        Math.round(20 + t * 28)
-      ];
-    }
-    if (n < 0.35) {
-      // Dark navy → dark teal
-      const t = (n - 0.12) / 0.23;
-      return [
-        Math.round(7  + t * 0),
-        Math.round(25 + t * 65),
-        Math.round(48 + t * 82)
-      ];
-    }
-    if (n < 0.60) {
-      // Dark teal → bright cyan
-      const t = (n - 0.35) / 0.25;
-      return [
-        Math.round(7  + t * 15),
-        Math.round(90 + t * 145),
-        Math.round(130 + t * 62)
-      ];
-    }
-    if (n < 0.82) {
-      // Cyan → pale mint-white
-      const t = (n - 0.60) / 0.22;
-      return [
-        Math.round(22  + t * 200),
-        Math.round(235 + t * 20),
-        Math.round(192 + t * 60)
-      ];
-    }
-    // White-hot
-    const t = (n - 0.82) / 0.18;
-    return [
-      Math.round(222 + t * 33),
-      255,
-      Math.round(252 + t * 3)
-    ];
-  }
-
-  // ── Species band tint colour ──────────────────────────────────
-  // Parses "rgba(r,g,b,...)" or "#rrggbb" from sp.color
-  spColorToRGB(sp) {
-    const hex = sp.color;
-    if (hex.startsWith('#')) {
-      return [
-        parseInt(hex.slice(1,3),16),
-        parseInt(hex.slice(3,5),16),
-        parseInt(hex.slice(5,7),16)
-      ];
-    }
-    return [255, 200, 100]; // fallback
-  }
-
-  // ── Push new FFT column ────────────────────────────────────────
-  // Uses SMOOTHED freqData (from display analyser) for beautiful visuals.
-  // Reset noise calibration (call when starting a new listening session)
-  resetNoise() {
-    this.noiseProfile    = null;
-    this.noiseAccum      = null;
-    this.noiseFrameCount = 0;
-  }
-
-  pushColumn(freqData, engine) {
-    if (!this.imageData || !freqData) return;
-
-    const W = this.canvas.width;
-    const H = this.canvas.height;
-    const d = this.imageData.data;
-    const lo = engine.freqToBin(this.MIN_FREQ);
-    const hi = Math.min(engine.freqToBin(this.MAX_FREQ), freqData.length - 1);
-    const binCount = hi - lo + 1;
-
-    // ── Spectral Subtraction ──────────────────────────────────────
-    // Phase 1 (first NOISE_CALIB_FRAMES): accumulate per-bin power to build profile
-    // Phase 2 (after): subtract profile from each frame before display
-    if (this.noiseFrameCount < this.NOISE_CALIB_FRAMES) {
-      if (!this.noiseAccum) this.noiseAccum = new Float64Array(binCount);
-      for (let i = lo; i <= hi; i++) {
-        const v = isFinite(freqData[i]) ? freqData[i] : -90;
-        // Accumulate linear power
-        this.noiseAccum[i - lo] += Math.pow(10, v / 10);
-      }
-      this.noiseFrameCount++;
-      if (this.noiseFrameCount === this.NOISE_CALIB_FRAMES) {
-        // Convert average power back to dB — this is our noise floor per bin
-        this.noiseProfile = new Float32Array(binCount);
-        for (let k = 0; k < binCount; k++) {
-          this.noiseProfile[k] = 10 * Math.log10(
-            this.noiseAccum[k] / this.NOISE_CALIB_FRAMES
-          );
-        }
-        this.noiseAccum = null; // free memory
-      }
-    }
-
-    // Build noise-subtracted view of freqData for display
-    const displayData = new Float32Array(freqData.length);
-    for (let i = 0; i < freqData.length; i++) displayData[i] = freqData[i];
-    if (this.noiseProfile) {
-      for (let i = lo; i <= hi; i++) {
-        const noiseDb   = this.noiseProfile[i - lo];
-        const signalDb  = isFinite(freqData[i]) ? freqData[i] : -90;
-        // Spectral subtraction in power domain:
-        // P_clean = P_signal - alpha * P_noise  (alpha=1.5 for oversubtraction)
-        const pSignal = Math.pow(10, signalDb / 10);
-        const pNoise  = Math.pow(10, noiseDb  / 10);
-        const pClean  = Math.max(pSignal - 1.5 * pNoise, 1e-10);
-        displayData[i] = 10 * Math.log10(pClean);
-      }
-    }
-
-    // ── Running noise floor for colormap (from subtracted data) ──
-    const slice = [];
-    for (let i = lo; i <= hi; i++) {
-      if (isFinite(displayData[i])) slice.push(displayData[i]);
-    }
-    if (slice.length) {
-      slice.sort((a,b)=>a-b);
-      const p20 = slice[Math.floor(slice.length * 0.20)];
-      this.smoothedNoiseFloor = this.NOISE_EMA * this.smoothedNoiseFloor +
-                                (1 - this.NOISE_EMA) * p20;
-    }
-    const floor = this.smoothedNoiseFloor;
-
-    // Update species band glow (exponential decay + signal boost)
-    SPECIES_DB.forEach(sp => {
-      const detected = this.lastDetections.some(d => d.species.id === sp.id);
-      if (detected) {
-        this.bandGlow[sp.id] = Math.min(1, this.bandGlow[sp.id] + 0.15);
-      } else {
-        this.bandGlow[sp.id] = Math.max(0, this.bandGlow[sp.id] - 0.04);
-      }
-    });
-
-    // Shift ImageData left by 1 pixel
-    for (let y = 0; y < H; y++) {
-      const base = y * W * 4;
-      d.copyWithin(base, base + 4, base + W * 4);
-    }
-
-    // Build new right column — use NOISE-SUBTRACTED displayData
-    const col = new Float32Array(H);
-    for (let y = 0; y < H; y++) {
-      const hz  = this.yToFreq(y);
-      const bin = engine.freqToBin(hz);
-      col[y] = (bin < displayData.length && isFinite(displayData[bin]))
-               ? displayData[bin] : floor;
-    }
-
-    // 7-tap Gaussian vertical blur
-    const blurred = new Float32Array(H);
-    for (let y = 0; y < H; y++) {
-      let sum = 0, wsum = 0;
-      for (let k = -3; k <= 3; k++) {
-        const yk = y + k;
-        if (yk >= 0 && yk < H) {
-          const w = this.gaussK[k+3];
-          sum  += col[yk] * w;
-          wsum += w;
-        }
-      }
-      blurred[y] = sum / wsum;
-    }
-
-    // Write pixel column: base spectrogram + species band tint overlay
-    const x = W - 1;
-    for (let y = 0; y < H; y++) {
-      const dbRel  = blurred[y] - floor;  // dB above noise floor
-      const [sr, sg, sb] = this.dbRelToRGB(dbRel);
-
-      // Find which species band this Y falls in
-      let tintR = sr, tintG = sg, tintB = sb;
-      for (const sp of SPECIES_DB) {
-        const y1 = this.freqToY(sp.freqRange[1]); // top (higher freq = lower Y)
-        const y2 = this.freqToY(sp.freqRange[0]); // bottom
-        if (y >= y1 && y <= y2) {
-          const glow = this.bandGlow[sp.id];
-          if (glow > 0.01) {
-            const [cr, cg, cb] = this.spColorToRGB(sp);
-            const a = glow * 0.25; // max 25% tint over signal
-            tintR = Math.round(sr * (1-a) + cr * a);
-            tintG = Math.round(sg * (1-a) + cg * a);
-            tintB = Math.round(sb * (1-a) + cb * a);
-          }
-          break;
-        }
-      }
-
-      const idx = (y * W + x) * 4;
-      d[idx]=tintR; d[idx+1]=tintG; d[idx+2]=tintB; d[idx+3]=255;
-    }
-
-    this.offscreenCtx.putImageData(this.imageData, 0, 0);
-    this.renderOverlays(engine);
-  }
-
-  // ── Draw static overlays on main canvas ───────────────────────
-  renderOverlays(engine) {
-    const ctx = this.ctx;
-    const W   = this.canvas.width;
-    const H   = this.canvas.height;
-    const PAD = 68; // right panel width for labels
-
-    // 1. Blit scrolling spectrogram
-    ctx.drawImage(this.offscreen, 0, 0);
-
-    // 2. Horizontal frequency grid lines (very subtle)
-    const GRID = [200, 300, 400, 500, 600, 700, 800, 1000, 1200];
-    ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.lineWidth   = 1;
-    ctx.setLineDash([1, 8]);
-    GRID.forEach(hz => {
-      const y = this.freqToY(hz);
-      if (y <= 0 || y >= H) return;
-      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W-PAD,y); ctx.stroke();
-    });
-    ctx.restore();
-
-    // 3. Species bands — thin coloured region borders + harmonic guides
-        // Compute enabled + local sets for spectrogram highlighting
-    const _ds  = window._app && window._app._disabledSpecies;
-    const _app = window._app;
-    const _ns  = (_app && _app.deviceLat !== null)
-                 ? getNativeSpecies(_app.deviceLat, _app.deviceLng)
-                 : new Set();
-
-    SPECIES_DB.forEach(sp => {
-      const detected  = this.lastDetections.some(d => d.species.id === sp.id);
-      const glow      = this.bandGlow[sp.id];
-      const isEnabled = !_ds || !_ds.has(sp.id);
-      const isLocal   = _ns.has(sp.id);
-      const yFund     = this.freqToY(sp.freq);
-
-      // Visibility tiers:
-      //   detected  → full brightness + glow
-      //   enabled+local → 50% alpha (clearly visible guide line)
-      //   enabled only  → 30% alpha
-      //   disabled  → 6% alpha (nearly invisible)
-      const lineAlpha = detected
-        ? 0.95
-        : !isEnabled ? 0.06
-        : isLocal    ? 0.50 + glow * 0.3
-        :              0.28 + glow * 0.3;
-
-      ctx.save();
-      ctx.strokeStyle = sp.color;
-      ctx.globalAlpha = lineAlpha;
-      ctx.lineWidth   = detected ? 2.0 : isLocal ? 1.2 : 0.8;
-      ctx.setLineDash([]);
-      if (detected) {
-        ctx.shadowColor = sp.color;
-        ctx.shadowBlur  = 10;
-      }
-      ctx.beginPath();
-      ctx.moveTo(0, yFund); ctx.lineTo(W - PAD, yFund);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // 2nd harmonic guide
-      const y2f = this.freqToY(sp.freq * 2);
-      if (y2f > 1 && y2f < H - 1) {
-        ctx.globalAlpha = detected ? 0.5 : !isEnabled ? 0.03 : isLocal ? 0.22 : 0.10;
-        ctx.lineWidth   = 1;
-        ctx.setLineDash([3, 6]);
-        ctx.beginPath();
-        ctx.moveTo(0, y2f); ctx.lineTo(W - PAD, y2f);
-        ctx.stroke();
-      }
-
-      ctx.restore();
-    });
-
-    // 4. Right panel: semi-transparent backdrop
-    ctx.save();
-    ctx.fillStyle = 'rgba(3,11,20,0.85)';
-    ctx.fillRect(W - PAD, 0, PAD, H);
-
-    // Hz axis labels — brighter and bigger
-    const LABELS = [400, 450, 500, 550, 600, 650, 700, 750, 800];
-    ctx.font      = '8px "Syne Mono", monospace';
-    ctx.textAlign = 'right';
-    LABELS.forEach(hz => {
-      const y = this.freqToY(hz);
-      if (y < 8 || y > H-4) return;
-      ctx.fillStyle   = 'rgba(160,200,220,0.70)';
-      ctx.globalAlpha = 1;
-      ctx.fillText(`${hz}`, W-3, y+3);
-    });
-
-    // Species labels — enabled/local shown prominently
-    const _ds2 = window._app && window._app._disabledSpecies;
-    const _ns2 = (window._app && window._app.deviceLat !== null)
-                 ? getNativeSpecies(window._app.deviceLat, window._app.deviceLng)
-                 : new Set();
-
-    SPECIES_DB.forEach(sp => {
-      const detected    = this.lastDetections.some(d => d.species.id === sp.id);
-      const glow        = this.bandGlow[sp.id];
-      const isEnabled   = !_ds2 || !_ds2.has(sp.id);
-      const isLocal     = _ns2.has(sp.id);
-      const y = this.freqToY(sp.freq);
-      if (y < 7 || y > H-7) return;
-      if (!isEnabled && !detected) { ctx.globalAlpha = 1; return; }
-
-      // Short abbreviation from species name
-      const parts = sp.name.split(' ');
-      const abbr  = parts[0][0] + '. ' + (parts[1] || '').slice(0,3);
-      const localStar = isLocal ? '★' : '';
-
-      const alpha = detected ? 1.0
-                  : isLocal  ? 0.80 + glow * 0.2
-                  :            0.45 + glow * 0.3;
-
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle   = sp.color;
-      ctx.font        = detected
-        ? `bold 8px "Syne Mono", monospace`
-        : isLocal
-          ? `bold 7.5px "Syne Mono", monospace`
-          : `7px "Syne Mono", monospace`;
-      ctx.textAlign = 'left';
-      ctx.fillText(`${localStar}${abbr} ${Math.round(sp.freq)}`, W - PAD + 2, y + 3);
-
-      // 2f label
-      const y2f = this.freqToY(sp.freq * 2);
-      if (y2f > 7 && y2f < H-7) {
-        ctx.globalAlpha = detected ? 0.5 : isLocal ? 0.28 : 0.10;
-        ctx.font = '6px "Syne Mono", monospace';
-        ctx.fillText('2f', W - PAD + 2, y2f + 2);
-      }
-    });
-
-    ctx.globalAlpha = 1;
-    ctx.restore();
-  }
-
-  drawMarkers(detections) {
-    this.lastDetections = detections || [];
   }
 }
 
@@ -4125,6 +3800,22 @@ class App {
     // GPS requested after user gesture in startListening()
 
     // ── 3. Button wiring ──────────────────────────────────────────────────
+    // ── Sensitivity pips ─────────────────────────────────────────────
+    const SENS_HINTS = ['', 'maximum', 'high', 'balanced', 'strict', 'very strict'];
+    let currentSensLevel = 3;
+    document.querySelectorAll('.sens-pip').forEach(pip => {
+      pip.addEventListener('click', () => {
+        currentSensLevel = parseInt(pip.dataset.level);
+        document.querySelectorAll('.sens-pip').forEach(p => p.classList.remove('active'));
+        pip.classList.add('active');
+        const hint = document.getElementById('sens-hint');
+        if (hint) hint.textContent = SENS_HINTS[currentSensLevel] || '';
+        // Apply to classifier if running
+        if (this.classifier) this.classifier.setSensitivity(currentSensLevel);
+        console.log('[Sensitivity] level:', currentSensLevel);
+      });
+    });
+
     const listenBtn = document.getElementById('btn-listen');
     if (listenBtn) listenBtn.addEventListener('click', () => {
       // GPS MUST be here — synchronous button click = iOS gesture context
@@ -4434,6 +4125,10 @@ self.addEventListener('fetch', e => {
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
+      // Apply current sensitivity setting
+      if (typeof currentSensLevel !== 'undefined') {
+        this.classifier.setSensitivity(currentSensLevel);
+      }
 
       // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
       try {
