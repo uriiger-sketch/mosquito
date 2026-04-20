@@ -1213,6 +1213,66 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
   transform: translateX(-50%) translateY(0);
 }
 
+/* ─────────── DETECTION SHARE CARD ─────────── */
+#detect-share-card {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(120%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--s2); border: 1px solid var(--accent);
+  border-radius: calc(var(--r) + 2px); padding: 10px 12px;
+  z-index: 6500; max-width: min(92vw, 400px); width: max-content;
+  box-shadow: 0 0 20px rgba(0,232,192,0.15);
+  transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s;
+  opacity: 0; pointer-events: none;
+}
+#detect-share-card.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1; pointer-events: auto;
+}
+#dsc-icon { font-size: 1.5rem; flex-shrink: 0; line-height: 1; }
+#dsc-body { flex: 1; min-width: 0; }
+#dsc-title { font-size: 0.72rem; font-weight: 600; color: var(--accent); }
+#dsc-sub   { font-size: 0.62rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dsc-share-btn {
+  flex-shrink: 0; padding: 5px 12px;
+  background: var(--accent); border: none; border-radius: var(--r);
+  color: #030b14; font-size: 0.65rem; font-weight: 700; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#dsc-close-btn {
+  flex-shrink: 0; background: none; border: none;
+  color: var(--text3); font-size: 0.85rem; cursor: pointer; padding: 2px 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─────────── PWA INSTALL BANNER ─────────── */
+#pwa-install-banner {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120%);
+  display: flex; align-items: center; gap: 10px;
+  background: var(--s2); border: 1px solid var(--border2);
+  border-radius: calc(var(--r) + 2px); padding: 10px 14px;
+  z-index: 6400; max-width: min(92vw, 380px);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s;
+  opacity: 0; pointer-events: none;
+}
+#pwa-install-banner.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1; pointer-events: auto;
+}
+#pib-text { flex: 1; font-size: 0.68rem; color: var(--text1); }
+#pib-install-btn {
+  flex-shrink: 0; padding: 5px 14px;
+  background: var(--s3); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--accent);
+  font-size: 0.65rem; font-weight: 600; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+#pib-dismiss-btn {
+  flex-shrink: 0; background: none; border: none;
+  color: var(--text3); font-size: 0.85rem; cursor: pointer; padding: 2px 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* ─────────── FOOTER ─────────── */
 #footer {
   flex-shrink: 0;
@@ -1259,6 +1319,24 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 
 <!-- TOAST -->
 <div id="toast"></div>
+
+<!-- DETECTION SHARE CARD (slides up from bottom on new detection) -->
+<div id="detect-share-card" aria-live="polite">
+  <div id="dsc-icon">🦟</div>
+  <div id="dsc-body">
+    <div id="dsc-title">Mosquito detected!</div>
+    <div id="dsc-sub"></div>
+  </div>
+  <button id="dsc-share-btn" aria-label="Share detection">Share</button>
+  <button id="dsc-close-btn" aria-label="Dismiss">✕</button>
+</div>
+
+<!-- PWA INSTALL BANNER (slides up from bottom if installable) -->
+<div id="pwa-install-banner">
+  <span id="pib-text">📲 Add MosquitoNet to Home Screen</span>
+  <button id="pib-install-btn">Install</button>
+  <button id="pib-dismiss-btn" aria-label="Dismiss">✕</button>
+</div>
 
 <!-- APP -->
 <div id="app">
@@ -4121,6 +4199,49 @@ class App {
       } catch(e) { /* user cancelled share — no-op */ }
     });
 
+    // ── Detection share card ─────────────────────────────────────────────
+    this._dscTimeout = null;
+    const dscClose = document.getElementById('dsc-close-btn');
+    if (dscClose) dscClose.addEventListener('click', () => {
+      document.getElementById('detect-share-card').classList.remove('show');
+      if (this._dscTimeout) { clearTimeout(this._dscTimeout); this._dscTimeout = null; }
+    });
+    const dscShare = document.getElementById('dsc-share-btn');
+    if (dscShare) dscShare.addEventListener('click', async () => {
+      try {
+        const txt = document.getElementById('dsc-sub').textContent;
+        const shareData = { title: 'MosquitoNet Detection', text: txt, url: location.href };
+        if (navigator.share) await navigator.share(shareData);
+        else { await navigator.clipboard.writeText(`${txt} ${location.href}`); this.showToast('🔗 Copied — paste it anywhere'); }
+      } catch(e) {}
+    });
+
+    // ── PWA install banner ────────────────────────────────────────────────
+    let _deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      _deferredInstallPrompt = e;
+      // Show after 45s of use so we don't annoy immediately
+      setTimeout(() => {
+        const banner = document.getElementById('pwa-install-banner');
+        if (banner && _deferredInstallPrompt) banner.classList.add('show');
+      }, 45000);
+    });
+    const pibInstall = document.getElementById('pib-install-btn');
+    if (pibInstall) pibInstall.addEventListener('click', async () => {
+      if (!_deferredInstallPrompt) return;
+      _deferredInstallPrompt.prompt();
+      const { outcome } = await _deferredInstallPrompt.userChoice;
+      _deferredInstallPrompt = null;
+      document.getElementById('pwa-install-banner').classList.remove('show');
+      if (outcome === 'accepted') this.showToast('🦟 MosquitoNet installed! Tap the app icon to open.');
+    });
+    const pibDismiss = document.getElementById('pib-dismiss-btn');
+    if (pibDismiss) pibDismiss.addEventListener('click', () => {
+      document.getElementById('pwa-install-banner').classList.remove('show');
+      _deferredInstallPrompt = null;
+    });
+
     // ── 4. Tab system ─────────────────────────────────────────────────────
     this.mapInited = false;
     document.querySelectorAll('.tab').forEach(tab => {
@@ -4650,6 +4771,21 @@ self.addEventListener('fetch', e => {
             const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
             const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
             this.mapCtrl.addLocalDetection(lat, lng, det.species);
+          }
+
+          // Detection share card
+          const dscCard  = document.getElementById('detect-share-card');
+          const dscTitle = document.getElementById('dsc-title');
+          const dscSub   = document.getElementById('dsc-sub');
+          if (dscCard && dscTitle && dscSub) {
+            const sp   = det.species;
+            const pct  = Math.round(det.confidence * 100);
+            const risk = sp.asymptomatic ? 'nuisance species' : `⚠️ ${sp.disease}`;
+            dscTitle.textContent = `${sp.name} detected! (${pct}% conf)`;
+            dscSub.textContent   = `🦟 I just detected a ${sp.common} with @MosquitoNet — ${risk}. Check if YOU have mosquitoes near you!`;
+            dscCard.classList.add('show');
+            if (this._dscTimeout) clearTimeout(this._dscTimeout);
+            this._dscTimeout = setTimeout(() => dscCard.classList.remove('show'), 12000);
           }
         }
         // (during local cooldown: peak conf already updated above, no other action)
