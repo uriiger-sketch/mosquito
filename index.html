@@ -7,7 +7,22 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="MosquitoNet">
   <meta name="theme-color" content="#030b14">
-  <title>MosquitoNet</title>
+  <meta name="description" content="MosquitoNet — crowd-sourced mosquito acoustic surveillance. Detect disease vectors with your phone's microphone. Free, open, privacy-preserving.">
+  <meta name="keywords" content="mosquito, malaria, dengue, zika, surveillance, acoustic, citizen science, public health, disease vector">
+
+  <!-- Open Graph (Facebook, LinkedIn, WhatsApp link previews) -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="MosquitoNet — Detect Mosquitoes With Your Phone">
+  <meta property="og:description" content="Free acoustic surveillance. Turn your phone into a disease-vector detector. Join the global citizen-science network.">
+  <meta property="og:image" content="https://mosquitonet.app/preview.png">
+  <meta property="og:url" content="https://mosquitonet.app">
+
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="MosquitoNet — Detect Mosquitoes With Your Phone">
+  <meta name="twitter:description" content="Free acoustic surveillance. Turn your phone into a disease-vector detector.">
+
+  <title>MosquitoNet — Acoustic Mosquito Surveillance</title>
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23030b14'/><text y='.9em' font-size='78' x='10'>🦟</text></svg>">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -107,12 +122,18 @@ body::after {
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
+  /* Safe-area padding so notched/punch-hole phones don't clip the top bar */
+  padding-top:    env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left:   env(safe-area-inset-left);
+  padding-right:  env(safe-area-inset-right);
 }
 
 /* ─────────── HEADER ─────────── */
 #header {
   flex-shrink: 0;
   height: var(--header-h);
+  min-height: var(--header-h);
   display: flex; align-items: center; gap: 12px;
   padding: 0 16px;
   background: rgba(3,11,20,0.95);
@@ -165,6 +186,24 @@ body::after {
 .srv-dot.connected    { background: #10b981; box-shadow: 0 0 7px #10b981; }
 .srv-dot.disconnected { background: var(--red); }
 .srv-dot.connecting   { background: var(--amber); animation: pulse-dot 1s infinite; }
+
+#btn-share {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  background: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  color: var(--text2);
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+#btn-share:hover, #btn-share:active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-g);
+}
 
 #btn-listen {
   display: flex; align-items: center; gap: 7px;
@@ -1228,6 +1267,12 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
   <header id="header">
     <div class="logo-mark">Mosquito<span>Net</span></div>
     <div class="spacer"></div>
+    <button id="btn-share" aria-label="Share MosquitoNet" title="Share MosquitoNet">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+      </svg>
+    </button>
     <button id="btn-listen">
       <div class="btn-mic-dot"></div>
       <span id="btn-listen-label">START</span>
@@ -4058,6 +4103,24 @@ class App {
     const allowBtn = document.getElementById('btn-allow');
     if (allowBtn) allowBtn.addEventListener('click', () => this.requestMic());
 
+    // ── Share button: Web Share API (native share sheet on phones) ──
+    const shareBtn = document.getElementById('btn-share');
+    if (shareBtn) shareBtn.addEventListener('click', async () => {
+      const shareData = {
+        title: 'MosquitoNet — Detect Mosquitoes With Your Phone',
+        text: 'Free citizen-science app that turns your phone into a mosquito detector. Help map disease vectors worldwide.',
+        url: location.href,
+      };
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+        } else {
+          await navigator.clipboard.writeText(shareData.url);
+          this.showToast('🔗 Link copied — share it anywhere');
+        }
+      } catch(e) { /* user cancelled share — no-op */ }
+    });
+
     // ── 4. Tab system ─────────────────────────────────────────────────────
     this.mapInited = false;
     document.querySelectorAll('.tab').forEach(tab => {
@@ -4378,6 +4441,66 @@ self.addEventListener('fetch', e => {
 
       this.showToast('🎙 Acoustic monitoring active — best results outdoors at night');
 
+      // ── Keep-alive mechanisms (mobile browsers aggressively suspend) ──
+      // 1. Wake Lock: prevent screen from sleeping while listening
+      try {
+        if ('wakeLock' in navigator) {
+          this._wakeLock = await navigator.wakeLock.request('screen');
+          this._wakeLock.addEventListener('release', () => { this._wakeLock = null; });
+        }
+      } catch(e) { /* user may have denied; listen anyway */ }
+
+      // 2. AudioContext watchdog: poll every 2s, resume if suspended
+      //    Catches iOS/Android auto-suspend which happens independently of user gesture
+      this._audioWatchdog = setInterval(async () => {
+        if (!this.running) return;
+        try {
+          if (this.engine && this.engine.ctx && this.engine.ctx.state === 'suspended') {
+            await this.engine.ctx.resume();
+          }
+          // MediaStreamTrack may also die silently — check readyState
+          if (this.engine && this.engine.stream) {
+            const tracks = this.engine.stream.getAudioTracks();
+            if (tracks.length && tracks[0].readyState === 'ended') {
+              console.warn('[MosquitoNet] audio track ended — restarting');
+              this.stopListening();
+              setTimeout(() => this.startListening(), 300);
+            }
+          }
+        } catch(e) {}
+      }, 2000);
+
+      // 3. Visibility change: when tab returns, re-acquire wake lock + resume ctx
+      this._visHandler = async () => {
+        if (document.visibilityState === 'visible' && this.running) {
+          try {
+            if ('wakeLock' in navigator && !this._wakeLock) {
+              this._wakeLock = await navigator.wakeLock.request('screen');
+            }
+            if (this.engine && this.engine.ctx && this.engine.ctx.state === 'suspended') {
+              await this.engine.ctx.resume();
+            }
+            // Restart rAF loop if it got throttled to death
+            if (!this.rafId) this.analysisLoop();
+          } catch(e) {}
+        }
+      };
+      document.addEventListener('visibilitychange', this._visHandler);
+
+      // 4. Track-ended listener: browser killed the mic → auto-restart once
+      if (this.engine && this.engine.stream) {
+        const tracks = this.engine.stream.getAudioTracks();
+        if (tracks.length) {
+          tracks[0].addEventListener('ended', () => {
+            if (this.running) {
+              console.warn('[MosquitoNet] mic track ended — restarting');
+              this.stopListening();
+              setTimeout(() => this.startListening(), 300);
+            }
+          });
+        }
+      }
+
       this.analysisLoop();
     } catch (err) {
       console.error(err);
@@ -4389,6 +4512,10 @@ self.addEventListener('fetch', e => {
   stopListening() {
     this.running = false;
     if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    if (this._audioWatchdog) { clearInterval(this._audioWatchdog); this._audioWatchdog = null; }
+    if (this._visHandler)    { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
+    if (this._wakeLock)      { try { this._wakeLock.release(); } catch(e){} this._wakeLock = null; }
     if (this.engine) this.engine.stop();
 
     // Update cells to OFF state immediately
