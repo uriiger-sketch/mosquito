@@ -518,7 +518,6 @@ body::after {
   box-shadow: none;
   opacity: 0.85;
 }
-.detect-cell.asymptomatic /* Native/local species: gold accent border */
 .detect-cell.native {
   border-color: rgba(250,204,21,0.45);
   box-shadow: inset 0 0 0 1px rgba(250,204,21,0.15);
@@ -1378,6 +1377,7 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
           cursor:pointer;margin-bottom:6px;
         ">📍 Find My Location</button>
 
+        <div class="map-legend-row" id="map-legend-row"></div>
 
       </div>
 
@@ -3748,6 +3748,178 @@ class MapController {
 }
 
 /* ════════════════════════════════════════════════════════════
+   CLASS: SpectrogramRenderer
+   Scrolling time-frequency display (80–1200 Hz).
+   Y-axis = frequency (low at bottom), X-axis = time (newest at right).
+   Uses an off-screen canvas as a ring buffer: each frame shifts the
+   image 1px left and draws a new column on the right edge.
+════════════════════════════════════════════════════════════ */
+
+class SpectrogramRenderer {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx    = canvas.getContext('2d');
+
+    // Noise calibration: track per-row max dB over first N frames as
+    // a proxy for the ambient noise floor in each frequency band.
+    this.NOISE_CALIB_FRAMES = 40;
+    this.noiseFrameCount    = 0;
+    this._noiseBuf          = null;  // Float32Array[H] — per-row noise estimate
+
+    // Frequency range shown on Y axis (matches panel label)
+    this.FREQ_MIN = 80;
+    this.FREQ_MAX = 1200;
+
+    // Off-screen scroll buffer
+    this._buf    = null;
+    this._bufCtx = null;
+    this._W      = 0;
+    this._H      = 0;
+    this._initBuf();
+  }
+
+  _initBuf() {
+    const W = Math.max(1, this.canvas.offsetWidth  || this.canvas.width  || 300);
+    const H = Math.max(1, this.canvas.offsetHeight || this.canvas.height || 100);
+    this.canvas.width  = W;
+    this.canvas.height = H;
+    this._buf           = document.createElement('canvas');
+    this._buf.width     = W;
+    this._buf.height    = H;
+    this._bufCtx        = this._buf.getContext('2d');
+    this._bufCtx.fillStyle = '#000';
+    this._bufCtx.fillRect(0, 0, W, H);
+    this._W = W;
+    this._H = H;
+  }
+
+  resetNoise() {
+    this.noiseFrameCount = 0;
+    this._noiseBuf       = null;
+  }
+
+  resize() {
+    const W = Math.max(1, this.canvas.offsetWidth  || 300);
+    const H = Math.max(1, this.canvas.offsetHeight || 100);
+    if (this._W === W && this._H === H) return;
+    const old = this._buf;
+    this._buf           = document.createElement('canvas');
+    this._buf.width     = W;
+    this._buf.height    = H;
+    this._bufCtx        = this._buf.getContext('2d');
+    this._bufCtx.fillStyle = '#000';
+    this._bufCtx.fillRect(0, 0, W, H);
+    if (old) this._bufCtx.drawImage(old, 0, 0, W, H);
+    this.canvas.width  = W;
+    this.canvas.height = H;
+    this._W = W;
+    this._H = H;
+    this._noiseBuf = null;  // reset noise on resize (bin mapping changed)
+  }
+
+  pushColumn(freqData, engine) {
+    const W = Math.max(1, this.canvas.offsetWidth  || this._W || 300);
+    const H = Math.max(1, this.canvas.offsetHeight || this._H || 100);
+    if (W !== this._W || H !== this._H) this.resize();
+
+    const bc   = this._bufCtx;
+    const loBin = engine.freqToBin(this.FREQ_MIN);
+    const hiBin = engine.freqToBin(this.FREQ_MAX);
+    const nBins = Math.max(1, hiBin - loBin);
+
+    // Noise calibration: build per-row noise estimate from first N frames.
+    // We track the running average (not min) to get a stable baseline.
+    if (this.noiseFrameCount < this.NOISE_CALIB_FRAMES) {
+      if (!this._noiseBuf) this._noiseBuf = new Float32Array(H).fill(-100);
+      for (let py = 0; py < H; py++) {
+        const bin = loBin + Math.round((1 - (py + 0.5) / H) * nBins);
+        const dB  = isFinite(freqData[Math.min(bin, freqData.length - 1)])
+                    ? freqData[Math.min(bin, freqData.length - 1)] : -100;
+        // EMA toward current value
+        this._noiseBuf[py] = 0.85 * this._noiseBuf[py] + 0.15 * dB;
+      }
+      this.noiseFrameCount++;
+    }
+
+    // Shift off-screen buffer 1px left
+    const row = bc.getImageData(1, 0, W - 1, H);
+    bc.putImageData(row, 0, 0);
+
+    // Draw new rightmost column
+    const col = bc.createImageData(1, H);
+    const d   = col.data;
+    for (let py = 0; py < H; py++) {
+      const bin = loBin + Math.round((1 - (py + 0.5) / H) * nBins);
+      const dB  = isFinite(freqData[Math.min(bin, freqData.length - 1)])
+                  ? freqData[Math.min(bin, freqData.length - 1)] : -100;
+      // SNR above calibrated noise floor (or raw dB before calibration is done)
+      const noise = this._noiseBuf ? this._noiseBuf[py] : -80;
+      const snr   = dB - noise;
+      // Map 0..25 dB SNR → 0..1 intensity
+      const t = Math.max(0, Math.min(1, snr / 25));
+      const [r, g, b] = this._palette(t);
+      const i4 = py * 4;
+      d[i4] = r; d[i4+1] = g; d[i4+2] = b; d[i4+3] = 255;
+    }
+    bc.putImageData(col, W - 1, 0);
+
+    // Blit to visible canvas
+    this.ctx.drawImage(this._buf, 0, 0);
+  }
+
+  // Bioluminescent cyan palette matching the app's accent colour:
+  //   0.0 → black
+  //   0.4 → deep teal
+  //   0.7 → #00e8c0 (--accent)
+  //   1.0 → white
+  _palette(t) {
+    if (t < 0.4) {
+      const s = t / 0.4;
+      return [0, Math.round(s * 80), Math.round(s * 60)];
+    } else if (t < 0.7) {
+      const s = (t - 0.4) / 0.3;
+      return [0, Math.round(80 + s * 152), Math.round(60 + s * 132)];
+    } else {
+      const s = (t - 0.7) / 0.3;
+      return [Math.round(s * 255), Math.round(232 + s * 23), Math.round(192 + s * 63)];
+    }
+  }
+
+  drawMarkers(detections) {
+    if (!detections || !detections.length) return;
+    const W       = this.canvas.width;
+    const H       = this.canvas.height;
+    const ctx     = this.ctx;
+    const hzRange = this.FREQ_MAX - this.FREQ_MIN;
+
+    ctx.save();
+    for (const det of detections) {
+      const freq = det.frequency || det.species.freq;
+      const py   = H * (1 - (freq - this.FREQ_MIN) / hzRange);
+      if (py < 0 || py > H) continue;
+
+      ctx.strokeStyle  = det.species.color || '#00e8c0';
+      ctx.globalAlpha  = 0.70;
+      ctx.lineWidth    = 1.5;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath();
+      ctx.moveTo(0, py);
+      ctx.lineTo(W, py);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+      ctx.fillStyle    = det.species.color || '#00e8c0';
+      ctx.globalAlpha  = 0.9;
+      ctx.font         = '9px "Syne Mono", monospace';
+      ctx.textAlign    = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(`${freq.toFixed(0)} Hz`, W - 2, py - 1);
+    }
+    ctx.restore();
+  }
+}
+
+/* ════════════════════════════════════════════════════════════
    CLASS: App  — Main orchestrator
 ════════════════════════════════════════════════════════════ */
 
@@ -3802,17 +3974,17 @@ class App {
     // ── 3. Button wiring ──────────────────────────────────────────────────
     // ── Sensitivity pips ─────────────────────────────────────────────
     const SENS_HINTS = ['', 'maximum', 'high', 'balanced', 'strict', 'very strict'];
-    let currentSensLevel = 3;
+    this._sensLevel = 3;
     document.querySelectorAll('.sens-pip').forEach(pip => {
       pip.addEventListener('click', () => {
-        currentSensLevel = parseInt(pip.dataset.level);
+        this._sensLevel = parseInt(pip.dataset.level);
         document.querySelectorAll('.sens-pip').forEach(p => p.classList.remove('active'));
         pip.classList.add('active');
         const hint = document.getElementById('sens-hint');
-        if (hint) hint.textContent = SENS_HINTS[currentSensLevel] || '';
+        if (hint) hint.textContent = SENS_HINTS[this._sensLevel] || '';
         // Apply to classifier if running
-        if (this.classifier) this.classifier.setSensitivity(currentSensLevel);
-        console.log('[Sensitivity] level:', currentSensLevel);
+        if (this.classifier) this.classifier.setSensitivity(this._sensLevel);
+        console.log('[Sensitivity] level:', this._sensLevel);
       });
     });
 
@@ -4126,9 +4298,7 @@ self.addEventListener('fetch', e => {
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
       // Apply current sensitivity setting
-      if (typeof currentSensLevel !== 'undefined') {
-        this.classifier.setSensitivity(currentSensLevel);
-      }
+      this.classifier.setSensitivity(this._sensLevel || 3);
 
       // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
       try {
@@ -4463,7 +4633,7 @@ self.addEventListener('fetch', e => {
         const overlay = document.createElement('div');
         overlay.className = 'dc-disabled-overlay';
         overlay.id = `dc-overlay-${sp.id}`;
-        overlay.innerHTML = `<span class="dc-disabled-label">non-local · tap to ${(window._app && window._app._disabledSpecies && window._app._disabledSpecies.has(sp.id)) ? 'enable' : 'enable'}</span>`;
+        overlay.innerHTML = `<span class="dc-disabled-label">non-local · tap to ${(window._app && window._app._disabledSpecies && window._app._disabledSpecies.has(sp.id)) ? 'enable' : 'disable'}</span>`;
         cell.appendChild(overlay);
       }
 
