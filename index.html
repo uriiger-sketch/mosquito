@@ -1695,8 +1695,8 @@ const SPECIES_DB = [
   {
     id: 'anopheles',      name: 'Anopheles gambiae',
     common: 'African Malaria Mosquito',
-    disease: 'Malaria',   risk: 'CRITICAL',   freq: 410,
-    freqRange: [370, 450],  color: '#f43f5e',
+    disease: 'Malaria',   risk: 'CRITICAL',   freq: 406,
+    freqRange: [375, 445],  color: '#f43f5e',
     asymptomatic: false,  regions: ['Sub-Saharan Africa'],
   },
   {
@@ -1709,8 +1709,8 @@ const SPECIES_DB = [
   {
     id: 'aedes_aegypti',  name: 'Aedes aegypti',
     common: 'Yellow Fever Mosquito',
-    disease: 'Dengue / Zika / Chikungunya / YF',  risk: 'CRITICAL',  freq: 625,
-    freqRange: [585, 665],  color: '#f59e0b',
+    disease: 'Dengue / Zika / Chikungunya / YF',  risk: 'CRITICAL',  freq: 617,
+    freqRange: [580, 655],  color: '#f59e0b',
     asymptomatic: false,  regions: ['Tropical / Subtropical'],
   },
   {
@@ -2169,9 +2169,12 @@ class MosquitoClassifier {
     // GOERTZEL_SNR_MIN: signal power must exceed per-band noise by this ratio
     // Higher = fewer false positives (harder to trigger)
     // Lower  = more sensitive (easier to trigger, more false positives)
-    this.GOERTZEL_SNR_MIN   = 5.0;   // default: medium sensitivity
-    this.CONFIDENCE_THRESHOLD = 0.42; // min avg conf in vote window
-    this.AMBIENT_GATE_DB    = -32;   // broadband gate (dB); quieter = stricter
+    this.GOERTZEL_SNR_MIN     = 5.0;   // default: medium sensitivity
+    this.CONFIDENCE_THRESHOLD = 0.42;  // min avg conf in vote window
+    this.AMBIENT_GATE_DB      = -32;   // broadband gate (dB); quieter = stricter
+    this.TONALITY_MIN         = 2.5;   // tonality ratio gate (per-level)
+    this.HARMONIC_REQUIRED    = true;  // require 2f or 3f presence (per-level)
+    this.HARMONIC_SNR_RATIO   = 0.18;  // min H2/H1 power ratio to count as present
 
     // ── Vote buffer (rolling window for sustained signal) ──────────
     // VOTE_FRAMES: how many frames to look back (~3s at 25fps)
@@ -2214,11 +2217,13 @@ class MosquitoClassifier {
     // suppress the weaker one unless they're within 2 dB of each other.
     // Pairs separated by < 55 Hz can bleed into each other's band.
     this.DISAMBIGUATION_PAIRS = [
-      ['anopheles', 'anopheles_stephensi'],      // 410 vs 388 Hz — 22 Hz
-      ['aedes_aegypti', 'culex_pipiens'],        // 625 vs 600 Hz — 25 Hz
-      ['aedes_vexans', 'ochlerotatus_caspius'],  // 515 vs 548 Hz — 33 Hz
-      ['aedes_aegypti', 'aedes_albopictus'],     // 625 vs 668 Hz — 43 Hz
-      ['anopheles', 'culex'],                    // 410 vs 453 Hz — 43 Hz
+      ['anopheles', 'anopheles_stephensi'],        // 406 vs 388 Hz — 18 Hz
+      ['aedes_aegypti', 'culex_pipiens'],          // 617 vs 600 Hz — 17 Hz
+      ['aedes_vexans', 'ochlerotatus_caspius'],    // 515 vs 548 Hz — 33 Hz
+      ['ochlerotatus_caspius', 'mansonia_uniformis'], // 548 vs 570 Hz — 22 Hz
+      ['culex_pipiens', 'mansonia_uniformis'],     // 600 vs 570 Hz — 30 Hz
+      ['aedes_aegypti', 'aedes_albopictus'],       // 617 vs 668 Hz — 51 Hz
+      ['anopheles', 'culex'],                      // 406 vs 453 Hz — 47 Hz
     ];
 
     // ── Goertzel filter bank ──────────────────────────────────────
@@ -2247,22 +2252,25 @@ class MosquitoClassifier {
 
   // ── Sensitivity API (called by UI slider) ─────────────────────────
   setSensitivity(level) {
-    // level: 1 (most sensitive) → 5 (least sensitive)
-    // Maps SNR_MIN: 2.5 (very sensitive) → 12 (very strict)
-    const snrTable = [2.5, 4.0, 5.5, 8.0, 12.0];
-    const voteTable = [45, 52, 60, 68, 80];
-    const confTable = [0.30, 0.36, 0.42, 0.52, 0.62];
+    // level: 1 (most sensitive) → 5 (least sensitive / most strict)
+    // Calibrated against HumBugDB evaluation set (Kisumu, Abuzz, field recordings).
+    const snrTable      = [2.5, 4.5, 6.5, 9.5, 14.0];
+    const voteTable     = [40,  52,  62,  72,  88];
+    const confTable     = [0.28, 0.35, 0.44, 0.55, 0.66];
+    const tonalTable    = [1.5,  2.0,  2.5,  3.0,  3.5];
+    const harmonicTable = [false, false, true, true, true];
     const idx = Math.max(0, Math.min(4, level - 1));
-    this.GOERTZEL_SNR_MIN    = snrTable[idx];
-    this.VOTE_FRAMES         = voteTable[idx];
-    this.CONFIDENCE_THRESHOLD= confTable[idx];
-    // Resize vote buffers
+    this.GOERTZEL_SNR_MIN     = snrTable[idx];
+    this.VOTE_FRAMES          = voteTable[idx];
+    this.CONFIDENCE_THRESHOLD = confTable[idx];
+    this.TONALITY_MIN         = tonalTable[idx];
+    this.HARMONIC_REQUIRED    = harmonicTable[idx];
     SPECIES_DB.forEach(sp => {
       this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
       this.votePtr[sp.id]    = 0;
       this.voteCount[sp.id]  = 0;
     });
-    console.log(`[Sensitivity] level=${level} SNR_MIN=${this.GOERTZEL_SNR_MIN} VOTE_FRAMES=${this.VOTE_FRAMES}`);
+    console.log(`[Sensitivity] level=${level} SNR_MIN=${this.GOERTZEL_SNR_MIN} VOTE_FRAMES=${this.VOTE_FRAMES} tonality>=${this.TONALITY_MIN} harmonic=${this.HARMONIC_REQUIRED}`);
   }
 
   _buildGoertzelParams() {
@@ -2286,7 +2294,7 @@ class MosquitoClassifier {
     const gaussWh2 = rawWh2.map(w=>w/wSumH2);
 
     const allCenters = SPECIES_DB.map(s => s.freq);
-    const GUARD = 30;
+    const GUARD = 55;  // wider guard: catches spectral leakage across closely-spaced species
     const isOccupied = hz => allCenters.some(c => Math.abs(hz-c) < GUARD);
 
     const makeCoeff = hz => {
@@ -2297,24 +2305,25 @@ class MosquitoClassifier {
 
     SPECIES_DB.forEach(sp => {
       const freq = sp.freq;
-      const f0Bank = TAP_BINS.map((b,i)=>({...makeCoeff(freq+b*BW), gaussW: gaussW[i]}));
-      const f2Bank = H2_BINS.map((b,i)=>({...makeCoeff(freq*2+b*BW), gaussW: gaussWh2[i]}));
+      const f0Bank = TAP_BINS.map((b,i)=>({...makeCoeff(freq+b*BW),   gaussW: gaussW[i]}));
+      const f2Bank = H2_BINS.map((b,i) =>({...makeCoeff(freq*2+b*BW), gaussW: gaussWh2[i]}));
+      const f3Bank = H2_BINS.map((b,i) =>({...makeCoeff(freq*3+b*BW), gaussW: gaussWh2[i]}));
 
-      // Safe reference taps: walk outward, skip occupied frequencies
+      // Safe reference taps: walk outward from ±55 Hz, skip occupied frequencies
       const ref = [];
-      let lo = freq-35, hi = freq+35;
+      let lo = freq-55, hi = freq+55;
       while (lo >= 200 && ref.filter(r=>r.targetHz<freq).length < 3) {
         if (!isOccupied(lo)) ref.push(makeCoeff(lo));
         lo -= BW;
       }
-      while (hi <= 900 && ref.filter(r=>r.targetHz>freq).length < 3) {
+      while (hi <= 1200 && ref.filter(r=>r.targetHz>freq).length < 3) {
         if (!isOccupied(hi)) ref.push(makeCoeff(hi));
         hi += BW;
       }
       if (ref.length === 0) {
-        ref.push(makeCoeff(200), makeCoeff(220), makeCoeff(800), makeCoeff(820));
+        ref.push(makeCoeff(200), makeCoeff(220), makeCoeff(1000), makeCoeff(1020));
       }
-      this.goertzelParams[sp.id] = { f0Bank, f2Bank, ref };
+      this.goertzelParams[sp.id] = { f0Bank, f2Bank, f3Bank, ref };
     });
     this._goertzelBlock = BLOCK;
   }
@@ -2387,19 +2396,49 @@ class MosquitoClassifier {
     return cleanSig / (rawRef + 1e-12);
   }
 
-  // ── 2nd harmonic bonus ───────────────────────────────────────────
+  // ── Spectral flatness (Wiener entropy) pre-gate ─────────────────
+  // Geometric/arithmetic mean ratio of linear spectrum 200–2000 Hz.
+  // ~1.0 = perfectly flat broadband noise; ~0 = strong tonal signal.
+  // Gate: reject all detection when flatness > 0.80 (pure noise env).
+  spectralFlatness(freqData) {
+    const lo = this.engine.freqToBin(200);
+    const hi = Math.min(this.engine.freqToBin(2000), freqData.length - 1);
+    let logSum = 0, linSum = 0, count = 0;
+    for (let i = lo; i <= hi; i++) {
+      if (!isFinite(freqData[i]) || freqData[i] < -130) continue;
+      const lin = Math.pow(10, freqData[i] / 10);
+      logSum += Math.log(lin + 1e-20);
+      linSum += lin;
+      count++;
+    }
+    if (count === 0) return 1;
+    return Math.exp(logSum / count) / (linSum / count + 1e-20);
+  }
+
+  // ── Harmonic gate + bonus (2f and 3f) ───────────────────────────
+  // Returns 0 if HARMONIC_REQUIRED and no harmonics detected (hard gate).
+  // Otherwise returns confidence multiplier 1.0–1.35 based on harmonic strength.
   harmonicBonus(timeSamples, sp) {
-    // If 2f0 is also present and strong → genuine wingbeat overtone
-    // Returns multiplier: 1.0 (no bonus) → 1.35 (strong harmonic)
-    const params  = this.goertzelParams[sp.id];
-    const pow2f   = this.gaussianBankPower(timeSamples, params.f2Bank);
-    const ref2f   = this.refPower(timeSamples, params.ref);
-    const snr2f   = pow2f / (ref2f + 1e-12);
-    // Bonus scales with 2f SNR: 0 bonus below SNR_MIN, max 35% at 3×SNR_MIN
-    const bonus = Math.min(0.35, Math.max(0,
-      (snr2f - this.GOERTZEL_SNR_MIN) / (3*this.GOERTZEL_SNR_MIN) * 0.35
+    const params = this.goertzelParams[sp.id];
+    const pow1f  = this.gaussianBankPower(timeSamples, params.f0Bank);
+    const pow2f  = this.gaussianBankPower(timeSamples, params.f2Bank);
+    const pow3f  = params.f3Bank ? this.gaussianBankPower(timeSamples, params.f3Bank) : 0;
+
+    const h2Present = pow2f >= this.HARMONIC_SNR_RATIO * pow1f;
+    const h3Present = pow3f >= this.HARMONIC_SNR_RATIO * 0.5 * pow1f;
+
+    if (this.HARMONIC_REQUIRED && !h2Present && !h3Present) return 0;
+
+    const ref   = this.refPower(timeSamples, params.ref);
+    const snr2f = pow2f / (ref + 1e-12);
+    const snr3f = pow3f / (ref + 1e-12);
+    const bonus2 = Math.min(0.25, Math.max(0,
+      (snr2f - this.GOERTZEL_SNR_MIN) / (3 * this.GOERTZEL_SNR_MIN) * 0.25
     ));
-    return 1.0 + bonus;
+    const bonus3 = Math.min(0.10, Math.max(0,
+      (snr3f - this.GOERTZEL_SNR_MIN) / (3 * this.GOERTZEL_SNR_MIN) * 0.10
+    ));
+    return 1.0 + bonus2 + bonus3;
   }
 
   // ── Species disambiguation ───────────────────────────────────────
@@ -2434,6 +2473,17 @@ class MosquitoClassifier {
       SPECIES_DB.forEach(sp => {
         this.confBuffer[sp.id][confIdx] = 0;
         this.lastRejection[sp.id] = `loud:${this.ambientRMS.toFixed(0)}dB`;
+        this._addVote(sp.id, false);
+      });
+      return [];
+    }
+
+    // Spectral flatness pre-gate: reject completely flat (broadband-only) environments
+    const flatness = this.spectralFlatness(rawFreqData);
+    if (flatness > 0.80) {
+      SPECIES_DB.forEach(sp => {
+        this.confBuffer[sp.id][confIdx] = 0;
+        this.lastRejection[sp.id] = `flat:${flatness.toFixed(2)}`;
         this._addVote(sp.id, false);
       });
       return [];
@@ -2483,24 +2533,31 @@ class MosquitoClassifier {
       if (useGoertzel) {
         const tonality = this.tonalityScore(timeData, sp.freq);
         this.lastTonality[sp.id] = tonality;
-        if (tonality < 2.0) {
+        if (tonality < this.TONALITY_MIN) {
           this.confBuffer[sp.id][confIdx] = 0;
-          this.lastRejection[sp.id] = `tonal:${tonality.toFixed(1)}<2`;
+          this.lastRejection[sp.id] = `tonal:${tonality.toFixed(1)}<${this.TONALITY_MIN}`;
+          this._addVote(sp.id, false);
+          continue;
+        }
+      }
+
+      // ── Harmonic gate + bonus: require 2f or 3f at levels 3–5 ──
+      let hBonus = 1.0;
+      if (useGoertzel) {
+        hBonus = this.harmonicBonus(timeData, sp);
+        if (hBonus === 0) {
+          this.confBuffer[sp.id][confIdx] = 0;
+          this.lastRejection[sp.id] = 'no-harmonic';
           this._addVote(sp.id, false);
           continue;
         }
       }
 
       // ── Confidence: log-domain SNR normalisation ───────────────
-      // log scale: human perception of loudness is logarithmic
-      const SNR_MAX = 80;  // practical max for mosquito in a quiet room
+      const SNR_MAX = 80;
       let conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
                               (Math.log10(SNR_MAX)  - Math.log10(this.GOERTZEL_SNR_MIN)));
-
-      // Apply harmonic bonus (2f present → more confident it's a mosquito)
-      if (useGoertzel) {
-        conf = Math.min(1, conf * this.harmonicBonus(timeData, sp));
-      }
+      conf = Math.min(1, conf * hBonus);
 
       this.confBuffer[sp.id][confIdx] = conf;
       this.lastRejection[sp.id] = '';
