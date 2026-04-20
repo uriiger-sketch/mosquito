@@ -1879,15 +1879,15 @@ const SPECIES_DB = [
   {
     id: 'culex_pipiens',  name: 'Culex pipiens',
     common: 'Northern House Mosquito',
-    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 600,
-    freqRange: [580, 622],  color: '#64748b',
+    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 594,
+    freqRange: [578, 615],  color: '#64748b',
     asymptomatic: true,   regions: ['Cosmopolitan temperate'],
   },
   {
     id: 'culiseta_annulata', name: 'Culiseta annulata',
     common: 'Banded Mosquito',
-    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 350,
-    freqRange: [330, 370],  color: '#94a3b8',
+    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 344,
+    freqRange: [325, 368],  color: '#94a3b8',
     asymptomatic: true,   regions: ['Europe / N.Africa / W.Asia'],
   },
   {
@@ -2292,12 +2292,13 @@ class MosquitoClassifier {
     // GOERTZEL_SNR_MIN: signal power must exceed per-band noise by this ratio
     // Higher = fewer false positives (harder to trigger)
     // Lower  = more sensitive (easier to trigger, more false positives)
-    this.GOERTZEL_SNR_MIN     = 5.0;   // default: medium sensitivity
-    this.CONFIDENCE_THRESHOLD = 0.42;  // min avg conf in vote window
-    this.AMBIENT_GATE_DB      = -32;   // broadband gate (dB); quieter = stricter
-    this.TONALITY_MIN         = 2.5;   // tonality ratio gate (per-level)
-    this.HARMONIC_REQUIRED    = true;  // require 2f or 3f presence (per-level)
-    this.HARMONIC_SNR_RATIO   = 0.18;  // min H2/H1 power ratio to count as present
+    this.GOERTZEL_SNR_MIN     = 3.5;   // default: medium sensitivity (lowered from 5.0 — typical rooms need this)
+    this.CONFIDENCE_THRESHOLD = 0.38;  // min avg conf in vote window
+    this.AMBIENT_GATE_DB      = -15;   // broadband gate (was -32 — too strict, blocked 95% of rooms)
+    this.TONALITY_MIN         = 1.8;   // tonality ratio gate (lowered — real rooms rarely exceed 2.5)
+    this.HARMONIC_REQUIRED    = false; // hard gate for 2f/3f presence (only enforced at levels 4–5)
+    this.HARMONIC_SNR_RATIO   = 0.08;  // min H2/H1 power ratio (real mosquitoes: 5–15%, was 18%)
+    this.FLATNESS_GATE        = 0.92;  // reject only near-pure-noise spectra (was 0.80 — too strict)
 
     // ── Vote buffer (rolling window for sustained signal) ──────────
     // VOTE_FRAMES: how many frames to look back (~3s at 25fps)
@@ -2341,10 +2342,10 @@ class MosquitoClassifier {
     // Pairs separated by < 55 Hz can bleed into each other's band.
     this.DISAMBIGUATION_PAIRS = [
       ['anopheles', 'anopheles_stephensi'],        // 406 vs 388 Hz — 18 Hz
-      ['aedes_aegypti', 'culex_pipiens'],          // 617 vs 600 Hz — 17 Hz
+      ['aedes_aegypti', 'culex_pipiens'],          // 617 vs 594 Hz — 23 Hz
       ['aedes_vexans', 'ochlerotatus_caspius'],    // 515 vs 548 Hz — 33 Hz
       ['ochlerotatus_caspius', 'mansonia_uniformis'], // 548 vs 570 Hz — 22 Hz
-      ['culex_pipiens', 'mansonia_uniformis'],     // 600 vs 570 Hz — 30 Hz
+      ['culex_pipiens', 'mansonia_uniformis'],     // 594 vs 570 Hz — 24 Hz
       ['aedes_aegypti', 'aedes_albopictus'],       // 617 vs 668 Hz — 51 Hz
       ['anopheles', 'culex'],                      // 406 vs 453 Hz — 47 Hz
     ];
@@ -2376,18 +2377,23 @@ class MosquitoClassifier {
   // ── Sensitivity API (called by UI slider) ─────────────────────────
   setSensitivity(level) {
     // level: 1 (most sensitive) → 5 (least sensitive / most strict)
-    // Calibrated against HumBugDB evaluation set (Kisumu, Abuzz, field recordings).
-    const snrTable      = [2.5, 4.5, 6.5, 9.5, 14.0];
-    const voteTable     = [40,  52,  62,  72,  88];
-    const confTable     = [0.28, 0.35, 0.44, 0.55, 0.66];
-    const tonalTable    = [1.5,  2.0,  2.5,  3.0,  3.5];
-    const harmonicTable = [false, false, true, true, true];
+    // Rebalanced for real-world environments: level 3 default must detect
+    // a real mosquito at ~1–2 m in a typical room with HVAC background.
+    const snrTable      = [1.5,  2.5,  3.5,  6.0,  10.0];
+    const voteTable     = [28,   38,   50,   64,   80];
+    const confTable     = [0.20, 0.28, 0.38, 0.50, 0.62];
+    const tonalTable    = [1.0,  1.4,  1.8,  2.4,  3.0];
+    const harmonicTable = [false, false, false, true, true];
+    const ambientTable  = [-8,   -12,  -15,  -22,  -28];   // dB — higher = more permissive
+    const flatnessTable = [0.98, 0.95, 0.92, 0.88, 0.84];
     const idx = Math.max(0, Math.min(4, level - 1));
     this.GOERTZEL_SNR_MIN     = snrTable[idx];
     this.VOTE_FRAMES          = voteTable[idx];
     this.CONFIDENCE_THRESHOLD = confTable[idx];
     this.TONALITY_MIN         = tonalTable[idx];
     this.HARMONIC_REQUIRED    = harmonicTable[idx];
+    this.AMBIENT_GATE_DB      = ambientTable[idx];
+    this.FLATNESS_GATE        = flatnessTable[idx];
     SPECIES_DB.forEach(sp => {
       this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
       this.votePtr[sp.id]    = 0;
@@ -2603,7 +2609,7 @@ class MosquitoClassifier {
 
     // Spectral flatness pre-gate: reject completely flat (broadband-only) environments
     const flatness = this.spectralFlatness(rawFreqData);
-    if (flatness > 0.80) {
+    if (flatness > this.FLATNESS_GATE) {
       SPECIES_DB.forEach(sp => {
         this.confBuffer[sp.id][confIdx] = 0;
         this.lastRejection[sp.id] = `flat:${flatness.toFixed(2)}`;
@@ -4571,23 +4577,18 @@ self.addEventListener('fetch', e => {
         }
       } catch(e) { /* user may have denied; listen anyway */ }
 
-      // 2. AudioContext watchdog: poll every 2s, resume if suspended
-      //    Catches iOS/Android auto-suspend which happens independently of user gesture
+      // 2. AudioContext watchdog: poll every 2s, resume if suspended.
+      //    Also re-kick the rAF loop if it has been throttled to death.
+      //    Track-ended restart is handled by the 'ended' event listener below (step 4)
+      //    so we don't race with it here.
       this._audioWatchdog = setInterval(async () => {
         if (!this.running) return;
         try {
           if (this.engine && this.engine.ctx && this.engine.ctx.state === 'suspended') {
             await this.engine.ctx.resume();
           }
-          // MediaStreamTrack may also die silently — check readyState
-          if (this.engine && this.engine.stream) {
-            const tracks = this.engine.stream.getAudioTracks();
-            if (tracks.length && tracks[0].readyState === 'ended') {
-              console.warn('[MosquitoNet] audio track ended — restarting');
-              this.stopListening();
-              setTimeout(() => this.startListening(), 300);
-            }
-          }
+          // If the rAF loop has stopped for any reason, restart it
+          if (!this.rafId) this.analysisLoop();
         } catch(e) {}
       }, 2000);
 
@@ -4667,7 +4668,16 @@ self.addEventListener('fetch', e => {
   // ── Main analysis loop (runs at display framerate) ──
   analysisLoop() {
     if (!this.running) return;
+    try { this._analysisLoopBody(); }
+    catch (err) {
+      // Never let a single-frame error kill the whole loop
+      console.warn('[MosquitoNet] analysis frame error (loop continues):', err);
+    }
+    // ALWAYS schedule the next frame, even if this one threw
+    this.rafId = requestAnimationFrame(() => this.analysisLoop());
+  }
 
+  _analysisLoopBody() {
     // Lazy-init spectrogram if it wasn't ready at startup (iOS timing issue)
     if (!this.spectrogram) {
       try {
@@ -4822,8 +4832,7 @@ self.addEventListener('fetch', e => {
 
     // 8. Draw waveform
     if (timeData) this.drawWaveform(timeData);
-
-    this.rafId = requestAnimationFrame(() => this.analysisLoop());
+    // (rAF scheduled by analysisLoop() wrapper — runs even if this body throws)
   }
 
   drawWaveform(timeData) {
