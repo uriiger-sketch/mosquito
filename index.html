@@ -681,7 +681,7 @@ body::after {
     color-mix(in srgb, var(--cell-color, #00e8c0) 60%, transparent),
     var(--cell-color, #00e8c0));
   border-radius: 5px;
-  transition: width 0.12s linear;
+  transition: width 0.18s ease-out;
   min-width: 0%;
 }
 /* Shimmer on the fill */
@@ -1273,6 +1273,47 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
   -webkit-tap-highlight-color: transparent;
 }
 
+/* ─────────── TIME MODE STRIP ─────────── */
+.time-mode-strip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 13px; border-radius: 10px; margin-bottom: 8px;
+  border: 1px solid var(--border); background: var(--s1);
+  flex-shrink: 0;
+  transition: background 0.6s ease, border-color 0.6s ease;
+}
+.time-mode-strip.night { background: rgba(6,4,40,0.55); border-color: rgba(99,102,241,0.28); }
+.time-mode-strip.dusk  { background: rgba(30,12,0,0.50); border-color: rgba(245,158,11,0.28); }
+.time-mode-strip.day   { background: rgba(0,22,12,0.50); border-color: rgba(16,185,129,0.22); }
+.tms-icon { font-size: 1.25rem; line-height:1; flex-shrink:0; }
+.tms-body { flex:1; min-width:0; }
+.tms-label {
+  font-family: 'Syne Mono', monospace; font-size: 0.57rem;
+  letter-spacing: 0.1em; font-weight: 700; color: var(--text2);
+}
+.time-mode-strip.night .tms-label { color: #818cf8; }
+.time-mode-strip.dusk  .tms-label { color: var(--amber); }
+.time-mode-strip.day   .tms-label { color: var(--green); }
+.tms-sub   { font-size: 0.55rem; color: var(--text3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tms-clock { font-family: 'Syne Mono', monospace; font-size: 0.62rem; color: var(--text3); flex-shrink:0; }
+
+/* Activity icon badge on each detection cell */
+.dc-activity { font-size: 0.65rem; line-height:1; flex-shrink:0; opacity:0.25; transition: opacity 0.6s; }
+.dc-activity.on { opacity: 0.85; }
+
+/* HOT glow: breathing pulse when species is locked */
+@keyframes hot-breathe {
+  0%,100% { box-shadow: 0 0 0 1px color-mix(in srgb,var(--cell-color,var(--accent)) 30%,transparent),
+                         0 0 16px color-mix(in srgb,var(--cell-color,var(--accent)) 12%,transparent); }
+  50%      { box-shadow: 0 0 0 1px color-mix(in srgb,var(--cell-color,var(--accent)) 50%,transparent),
+                         0 0 28px color-mix(in srgb,var(--cell-color,var(--accent)) 22%,transparent); }
+}
+.detect-cell.hot {
+  border-color: var(--cell-color, var(--accent));
+  background: color-mix(in srgb, var(--cell-color, var(--accent)) 7%, var(--s1));
+  animation: hot-breathe 2.4s ease-in-out infinite;
+}
+.detect-cell.asymptomatic.hot { animation: none; box-shadow: none; opacity: 0.85; }
+
 /* ─────────── FOOTER ─────────── */
 #footer {
   flex-shrink: 0;
@@ -1429,6 +1470,16 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
       <div class="listen-bottom">
 
         <!-- ── Sensitivity control ────────────────────────────── -->
+        <!-- Time of day / activity mode indicator -->
+        <div class="time-mode-strip night" id="time-mode-strip">
+          <div class="tms-icon" id="tms-icon">🌙</div>
+          <div class="tms-body">
+            <div class="tms-label" id="tms-label">NIGHT MODE</div>
+            <div class="tms-sub" id="tms-sub">Detecting nocturnal species</div>
+          </div>
+          <div class="tms-clock" id="tms-clock">--:--</div>
+        </div>
+
         <div class="sensitivity-row">
           <span class="sens-lbl">🎚 SENSITIVITY</span>
           <div class="sens-pips" id="sens-pips">
@@ -1808,6 +1859,39 @@ function fetchWithTimeout(url, opts, ms) {
   return Promise.race([fetch(url, opts || {}), t]);
 }
 
+// ── Astronomical time-of-day system ──────────────────────────────────────────
+// Uses Spencer equation for solar declination + solar noon from longitude.
+// Accuracy: ±10 min (sufficient for activity periods).
+function solarTimes(latDeg, lngDeg) {
+  const now  = new Date();
+  const D    = (now - new Date(now.getFullYear(), 0, 0)) / 86400000; // day-of-year
+  const B    = (2 * Math.PI / 365) * (D - 81);
+  const eqT  = 9.87*Math.sin(2*B) - 7.53*Math.cos(B) - 1.5*Math.sin(B); // minutes
+  const decl = 23.45 * Math.sin(B) * Math.PI / 180;                       // radians
+  const lat  = latDeg * Math.PI / 180;
+  const cosHA = -Math.tan(lat) * Math.tan(decl);
+  if (cosHA <= -1) return { sunrise: 0,  sunset: 24 };  // midnight-sun
+  if (cosHA >=  1) return { sunrise: 12, sunset: 12 };  // polar-night
+  const HA   = Math.acos(cosHA) * 180 / Math.PI / 15;   // hours from solar noon
+  const tzOff = -now.getTimezoneOffset() / 60;
+  const noon  = 12 - (lngDeg / 15 - tzOff) - eqT / 60;
+  return { sunrise: noon - HA, sunset: noon + HA };
+}
+
+// Returns 'night' | 'dusk' | 'day' for the current moment at the given location.
+// Falls back to a fixed clock-based heuristic when no GPS is available.
+function timeOfDayCategory(lat, lng) {
+  const now = new Date();
+  const h   = now.getHours() + now.getMinutes() / 60;
+  const { sunrise, sunset } = (lat != null && lng != null)
+    ? solarTimes(lat, lng)
+    : { sunrise: 6.5, sunset: 19.5 };
+  if (h >= sunrise - 0.5 && h < sunrise + 1.0) return 'dusk';
+  if (h >= sunset  - 1.0 && h < sunset  + 0.5) return 'dusk';
+  if (h >= sunrise + 1.0 && h < sunset  - 1.0) return 'day';
+  return 'night';
+}
+
 const SPECIES_DB = [
   // ═══════════════════════════════════════════════════════════════
   // SYMPTOMATIC — Disease vectors. Risk levels per WHO/CDC 2024.
@@ -1820,56 +1904,56 @@ const SPECIES_DB = [
     common: 'African Malaria Mosquito',
     disease: 'Malaria',   risk: 'CRITICAL',   freq: 406,
     freqRange: [375, 445],  color: '#f43f5e',
-    asymptomatic: false,  regions: ['Sub-Saharan Africa'],
+    asymptomatic: false,  activity: 'night',  regions: ['Sub-Saharan Africa'],
   },
   {
     id: 'anopheles_stephensi', name: 'Anopheles stephensi',
     common: 'Asian Urban Malaria Mosquito',
     disease: 'Malaria (urban)',  risk: 'CRITICAL',  freq: 388,
     freqRange: [360, 412],  color: '#e11d48',
-    asymptomatic: false,  regions: ['Middle East / S.Asia / invasive Africa'],
+    asymptomatic: false,  activity: 'night',  regions: ['Middle East / S.Asia / invasive Africa'],
   },
   {
     id: 'aedes_aegypti',  name: 'Aedes aegypti',
     common: 'Yellow Fever Mosquito',
     disease: 'Dengue / Zika / Chikungunya / YF',  risk: 'CRITICAL',  freq: 617,
     freqRange: [580, 655],  color: '#f59e0b',
-    asymptomatic: false,  regions: ['Tropical / Subtropical'],
+    asymptomatic: false,  activity: 'day',    regions: ['Tropical / Subtropical'],
   },
   {
     id: 'aedes_albopictus', name: 'Aedes albopictus',
     common: 'Asian Tiger Mosquito',
     disease: 'Dengue / Chikungunya',  risk: 'HIGH',  freq: 668,
     freqRange: [640, 705],  color: '#eab308',
-    asymptomatic: false,  regions: ['Asia / Invasive Europe & Americas'],
+    asymptomatic: false,  activity: 'day',    regions: ['Asia / Invasive Europe & Americas'],
   },
   {
     id: 'culex',          name: 'Culex quinquefasciatus',
     common: 'Southern House Mosquito',
     disease: 'West Nile / Filariasis / JE',  risk: 'HIGH',  freq: 453,
     freqRange: [428, 482],  color: '#3b82f6',
-    asymptomatic: false,  regions: ['Cosmopolitan tropics'],
+    asymptomatic: false,  activity: 'night',  regions: ['Cosmopolitan tropics'],
   },
   {
     id: 'aedes_japonicus', name: 'Aedes japonicus',
     common: 'Asian Bush Mosquito',
     disease: 'West Nile / Usutu',  risk: 'MEDIUM',  freq: 730,
     freqRange: [705, 760],  color: '#7c3aed',
-    asymptomatic: false,  regions: ['Invasive Europe / N.America'],
+    asymptomatic: false,  activity: 'day',    regions: ['Invasive Europe / N.America'],
   },
   {
     id: 'aedes_vexans',   name: 'Aedes vexans',
     common: 'Inland Floodwater Mosquito',
     disease: 'Rift Valley Fever / Tularemia',  risk: 'MEDIUM',  freq: 515,
     freqRange: [490, 540],  color: '#10b981',
-    asymptomatic: false,  regions: ['N.America / Europe / Asia'],
+    asymptomatic: false,  activity: 'dusk',   regions: ['N.America / Europe / Asia'],
   },
   {
     id: 'mansonia_uniformis', name: 'Mansonia uniformis',
     common: 'Rice Field Mosquito',
     disease: 'Brugian filariasis / Rift Valley Fever',  risk: 'MEDIUM',  freq: 570,
     freqRange: [548, 596],  color: '#f97316',
-    asymptomatic: false,  regions: ['SE Asia / Africa / Pacific'],
+    asymptomatic: false,  activity: 'night',  regions: ['SE Asia / Africa / Pacific'],
   },
 
   // ═══════════════════════════════════════════════════════════════
@@ -1881,28 +1965,28 @@ const SPECIES_DB = [
     common: 'Northern House Mosquito',
     disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 594,
     freqRange: [578, 615],  color: '#64748b',
-    asymptomatic: true,   regions: ['Cosmopolitan temperate'],
+    asymptomatic: true,   activity: 'night',  regions: ['Cosmopolitan temperate'],
   },
   {
     id: 'culiseta_annulata', name: 'Culiseta annulata',
     common: 'Banded Mosquito',
     disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 344,
     freqRange: [325, 368],  color: '#94a3b8',
-    asymptomatic: true,   regions: ['Europe / N.Africa / W.Asia'],
+    asymptomatic: true,   activity: 'dusk',   regions: ['Europe / N.Africa / W.Asia'],
   },
   {
     id: 'ochlerotatus_caspius', name: 'Aedes (Ochlerotatus) caspius',
     common: 'Caspian Saltmarsh Mosquito',
     disease: 'Non-vector (mass nuisance)',  risk: 'LOW',  freq: 548,
     freqRange: [525, 570],  color: '#475569',
-    asymptomatic: true,   regions: ['Mediterranean / Middle East / C.Asia'],
+    asymptomatic: true,   activity: 'dusk',   regions: ['Mediterranean / Middle East / C.Asia'],
   },
   {
     id: 'toxorhynchites', name: 'Toxorhynchites brevipalpis',
     common: 'Elephant Mosquito',
     disease: 'Non-vector (larvae eat other mosquitoes)',  risk: 'NONE',  freq: 290,
     freqRange: [270, 310],  color: '#22d3ee',
-    asymptomatic: true,   regions: ['Africa / SE Asia / Pacific'],
+    asymptomatic: true,   activity: 'day',    regions: ['Africa / SE Asia / Pacific'],
   },
 ];
 
@@ -2350,6 +2434,10 @@ class MosquitoClassifier {
       ['anopheles', 'culex'],                      // 406 vs 453 Hz — 47 Hz
     ];
 
+    // ── GPS for activity-period calculations ─────────────────────
+    this._lat = null;
+    this._lng = null;
+
     // ── Goertzel filter bank ──────────────────────────────────────
     this.goertzelParams = {};
     this._buildGoertzelParams();
@@ -2525,6 +2613,20 @@ class MosquitoClassifier {
     return cleanSig / (rawRef + 1e-12);
   }
 
+  // ── Activity-period sensitivity boost ───────────────────────────
+  // Returns SNR threshold multiplier: < 1 means easier to detect (more sensitive).
+  // Active species at their peak time: 0.80 × threshold (20% easier to trigger).
+  // All other times: 1.0 (no change — we never penalise, only reward).
+  getActivityFactor(sp) {
+    const period = timeOfDayCategory(this._lat, this._lng);
+    const isActive = sp.activity === 'day'   && period === 'day'   ||
+                     sp.activity === 'night' && period === 'night' ||
+                     sp.activity === 'dusk'  && period === 'dusk'  ||
+                     // Night species also boosted at dusk (starting to emerge)
+                     sp.activity === 'night' && period === 'dusk';
+    return isActive ? 0.80 : 1.0;
+  }
+
   // ── Spectral flatness (Wiener entropy) pre-gate ─────────────────
   // Geometric/arithmetic mean ratio of linear spectrum 200–2000 Hz.
   // ~1.0 = perfectly flat broadband noise; ~0 = strong tonal signal.
@@ -2651,9 +2753,10 @@ class MosquitoClassifier {
         snrLinear = Math.pow(10, (peak - this.lastNoiseFloor) / 10);
       }
 
-      if (snrLinear < this.GOERTZEL_SNR_MIN) {
+      const effectiveSNR = this.GOERTZEL_SNR_MIN * this.getActivityFactor(sp);
+      if (snrLinear < effectiveSNR) {
         this.confBuffer[sp.id][confIdx] = 0;
-        this.lastRejection[sp.id] = `snr×${snrLinear.toFixed(1)}<${this.GOERTZEL_SNR_MIN}`;
+        this.lastRejection[sp.id] = `snr×${snrLinear.toFixed(1)}<${effectiveSNR.toFixed(1)}`;
         this._addVote(sp.id, false);
         continue;
       }
@@ -4281,8 +4384,10 @@ class App {
       if (this.spectrogram) try { this.spectrogram.resize(); } catch(e){}
     });
 
-    // ── 6. Session timer ──────────────────────────────────────────────────────
+    // ── 6. Session timer + time-mode strip ───────────────────────────────────
     setInterval(() => this.updateFooter(), 1000);
+    this.updateTimeModeStrip();
+    setInterval(() => this.updateTimeModeStrip(), 60000);
 
     // ── 7. Server connection — fires IMMEDIATELY on app open ──────────────────
     // This updates the green/red dot, live-now counter, and all stats.
@@ -4544,7 +4649,8 @@ self.addEventListener('fetch', e => {
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
       this.classifier = new MosquitoClassifier(this.engine);
-      // Apply current sensitivity setting
+      this.classifier._lat = this.deviceLat;
+      this.classifier._lng = this.deviceLng;
       this.classifier.setSensitivity(this._sensLevel || 3);
 
       // Init spectrogram NOW — Listen tab is visible, canvas has real dimensions
@@ -4936,11 +5042,13 @@ self.addEventListener('fetch', e => {
         ? (getLocalDisease(sp.id, window._app.deviceLat, window._app.deviceLng) || sp.disease)
         : sp.disease;
 
+      const actIcon = sp.activity === 'night' ? '🌙' : sp.activity === 'dusk' ? '🌅' : '☀️';
       cell.innerHTML = `
         <div class="dc-header">
           <div class="dc-dot"></div>
           <div class="dc-name-row">
             <span class="dc-species">${displayName}</span>${nativeBadge}${asymBadge}
+            <span class="dc-activity" id="dc-act-${sp.id}" title="${sp.activity} active">${actIcon}</span>
           </div>
           <div class="dc-disease">${localDis}</div>
         </div>
@@ -5131,6 +5239,54 @@ self.addEventListener('fetch', e => {
         dbgLast.textContent = new Date(s.lastUpload).toLocaleTimeString();
       }
     } catch(e) { /* silent */ }
+  }
+
+  updateTimeModeStrip() {
+    const strip   = document.getElementById('time-mode-strip');
+    const iconEl  = document.getElementById('tms-icon');
+    const labelEl = document.getElementById('tms-label');
+    const subEl   = document.getElementById('tms-sub');
+    const clockEl = document.getElementById('tms-clock');
+    if (!strip) return;
+
+    const lat    = this.deviceLat;
+    const lng    = this.deviceLng;
+    const period = timeOfDayCategory(lat, lng);
+    const now    = new Date();
+    const clock  = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+
+    const cfg = {
+      night: { icon:'🌙', label:'NIGHT MODE',  cls:'night' },
+      dusk:  { icon:'🌅', label:'DUSK · DAWN', cls:'dusk'  },
+      day:   { icon:'☀️',  label:'DAY MODE',   cls:'day'   },
+    }[period];
+
+    const activeSpecies = SPECIES_DB.filter(sp =>
+      sp.activity === period ||
+      (sp.activity === 'night' && period === 'dusk')
+    );
+    const sub = `${activeSpecies.length} species at peak activity now`;
+
+    strip.className  = `time-mode-strip ${cfg.cls}`;
+    iconEl.textContent  = cfg.icon;
+    labelEl.textContent = cfg.label;
+    subEl.textContent   = sub;
+    clockEl.textContent = clock;
+
+    // Sync activity icons on each detection cell
+    SPECIES_DB.forEach(sp => {
+      const el = document.getElementById(`dc-act-${sp.id}`);
+      if (!el) return;
+      const isActive = sp.activity === period ||
+                       (sp.activity === 'night' && period === 'dusk');
+      el.classList.toggle('on', isActive);
+    });
+
+    // Sync lat/lng into classifier for activity-based SNR adjustment
+    if (this.classifier) {
+      this.classifier._lat = lat;
+      this.classifier._lng = lng;
+    }
   }
 
   updateFooter() {
