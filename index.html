@@ -4818,7 +4818,30 @@ self.addEventListener('fetch', e => {
       };
       document.addEventListener('visibilitychange', this._visHandler);
 
-      // 4. Track-ended listener: browser killed the mic → auto-restart once
+      // 5. Orientation change: rotating device suspends AudioContext on iOS/Android.
+      //    visibilitychange does NOT fire reliably for rotation — need a separate handler.
+      //    Use both APIs for widest compatibility: legacy window event + modern screen.orientation.
+      this._orientHandler = async () => {
+        if (!this.running) return;
+        setTimeout(async () => {
+          try {
+            if (this.engine && this.engine.ctx && this.engine.ctx.state === 'suspended') {
+              await this.engine.ctx.resume();
+            }
+            if ('wakeLock' in navigator && !this._wakeLock) {
+              this._wakeLock = await navigator.wakeLock.request('screen');
+            }
+            if (!this.rafId) this.analysisLoop();
+            if (this.spectrogram) try { this.spectrogram.resize(); } catch(e) {}
+          } catch(e) {}
+        }, 250);
+      };
+      window.addEventListener('orientationchange', this._orientHandler);
+      if (typeof screen !== 'undefined' && screen.orientation) {
+        screen.orientation.addEventListener('change', this._orientHandler);
+      }
+
+      // 6. Track-ended listener: browser killed the mic → auto-restart once
       if (this.engine && this.engine.stream) {
         const tracks = this.engine.stream.getAudioTracks();
         if (tracks.length) {
@@ -4846,6 +4869,13 @@ self.addEventListener('fetch', e => {
     this.rafId = null;
     if (this._audioWatchdog) { clearInterval(this._audioWatchdog); this._audioWatchdog = null; }
     if (this._visHandler)    { document.removeEventListener('visibilitychange', this._visHandler); this._visHandler = null; }
+    if (this._orientHandler) {
+      window.removeEventListener('orientationchange', this._orientHandler);
+      if (typeof screen !== 'undefined' && screen.orientation) {
+        screen.orientation.removeEventListener('change', this._orientHandler);
+      }
+      this._orientHandler = null;
+    }
     if (this._wakeLock)      { try { this._wakeLock.release(); } catch(e){} this._wakeLock = null; }
     if (this.engine) this.engine.stop();
 
