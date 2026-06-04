@@ -2598,9 +2598,12 @@ class MosquitoClassifier {
   }
 
   refPower(timeSamples, refTaps) {
-    let p = 0;
-    for (const r of refTaps) p += this.goertzelPower(timeSamples, r);
-    return p / (refTaps.length || 1);
+    if (!refTaps.length) return 0;
+    // Median rather than mean — one hot reference tap can't skew the background estimate
+    const powers = refTaps.map(r => this.goertzelPower(timeSamples, r));
+    powers.sort((a, b) => a - b);
+    const m = powers.length;
+    return m & 1 ? powers[m >> 1] : (powers[m / 2 - 1] + powers[m / 2]) * 0.5;
   }
 
   // ── Autocorrelation periodicity (Mukundarajan et al. STM 2017) ───
@@ -2625,23 +2628,52 @@ class MosquitoClassifier {
   // show signal above threshold. Real mosquito (sustained): 3–4/4.
   // Transients (taps, brief tones, coughs): 0–1/4.
   subframeConsistency(timeSamples, freq) {
+    // Split 8192-sample block into 4×2048 sub-frames.
+    // Two requirements: (1) signal present in ≥3 sub-frames; (2) peak frequency
+    // centroid stays within ±2 bins (~40 Hz) across sub-frames — kills swept tones,
+    // voice, and other frequency-drifting interference.
     const SR = 44100, SUB = 2048;
+    const BW_SUB    = SR / SUB;                         // ~21.5 Hz/bin
+    const WIN_BINS  = Math.round(75 / BW_SUB);          // ±75 Hz search window
     const threshold = this.GOERTZEL_SNR_MIN * 0.5;
-    const kSub  = Math.round(SUB * freq / SR);
-    const cSig  = 2 * Math.cos(2 * Math.PI * kSub / SUB);
-    const kRef1 = Math.round(SUB * (freq + 120) / SR);
-    const kRef2 = Math.round(SUB * (freq - 120) / SR);
-    const cR1   = 2 * Math.cos(2 * Math.PI * kRef1 / SUB);
-    const cR2   = 2 * Math.cos(2 * Math.PI * kRef2 / SUB);
+    const kCenter   = Math.round(SUB * freq / SR);
+    const kRef1     = Math.round(SUB * (freq + 130) / SR);
+    const kRef2     = Math.round(SUB * (freq - 130) / SR);
+    const cR1       = 2 * Math.cos(2 * Math.PI * kRef1 / SUB);
+    const cR2       = 2 * Math.cos(2 * Math.PI * kRef2 / SUB);
+
     let passing = 0;
+    const peakBins = [];
+
     for (let i = 0; i < 4; i++) {
-      const sub  = timeSamples.subarray ? timeSamples.subarray(i * SUB, (i + 1) * SUB)
-                                        : timeSamples.slice(i * SUB, (i + 1) * SUB);
-      const sigP = this.goertzelPower(sub, { coeff: cSig, block: SUB, k: kSub });
+      const sub = timeSamples.subarray ? timeSamples.subarray(i * SUB, (i + 1) * SUB)
+                                       : timeSamples.slice(i * SUB, (i + 1) * SUB);
+
+      // Find highest-power bin within ±75 Hz of target (frequency centroid)
+      let bestPow = 0, bestBin = kCenter;
+      for (let dk = -WIN_BINS; dk <= WIN_BINS; dk++) {
+        const k = kCenter + dk;
+        if (k < 1 || k >= SUB / 2) continue;
+        const c = 2 * Math.cos(2 * Math.PI * k / SUB);
+        const p = this.goertzelPower(sub, { coeff: c, block: SUB, k });
+        if (p > bestPow) { bestPow = p; bestBin = k; }
+      }
+
       const refP = (this.goertzelPower(sub, { coeff: cR1, block: SUB, k: kRef1 }) +
                     this.goertzelPower(sub, { coeff: cR2, block: SUB, k: kRef2 })) * 0.5;
-      if (sigP / (refP + 1e-12) >= threshold) passing++;
+
+      if (bestPow / (refP + 1e-12) >= threshold) {
+        passing++;
+        peakBins.push(bestBin);
+      }
     }
+
+    // Centroid stability: passing sub-frames must agree on frequency within ±2 bins
+    if (peakBins.length >= 2) {
+      const spread = Math.max(...peakBins) - Math.min(...peakBins);
+      if (spread > 2) return Math.max(0, passing - 2); // heavy penalty for frequency drift
+    }
+
     return passing;
   }
 
@@ -2651,20 +2683,23 @@ class MosquitoClassifier {
   // Method: ratio of peak Goertzel power to mean Goertzel power across
   // a ±100Hz window. Values > 3 indicate a tonal signal.
   tonalityScore(timeSamples, freq) {
+    // Ratio of peak bin power to local background estimated over 8 bins
+    // spanning ±40…±150 Hz. More background samples → more robust estimate.
+    // Skip the ±20 Hz bins to avoid contaminating background with peak sidelobes.
     const SR=44100, BLOCK=8192;
+    const k0 = Math.round(BLOCK * freq / SR);
     const peakPow = this.goertzelPower(timeSamples, {
-      coeff: 2*Math.cos(2*Math.PI*Math.round(BLOCK*freq/SR)/BLOCK),
-      block: BLOCK, k: Math.round(BLOCK*freq/SR)
+      coeff: 2*Math.cos(2*Math.PI*k0/BLOCK), block: BLOCK, k: k0
     });
-    const freqs = [freq-80, freq-40, freq+40, freq+80];
-    let bgPow = 0;
-    for (const f of freqs) {
-      const k = Math.round(BLOCK*f/SR);
-      bgPow += this.goertzelPower(timeSamples, {
-        coeff: 2*Math.cos(2*Math.PI*k/BLOCK), block: BLOCK, k
-      });
+    const offsets = [freq-150, freq-100, freq-60, freq-40, freq+40, freq+60, freq+100, freq+150];
+    let bgPow = 0, bgCount = 0;
+    for (const f of offsets) {
+      if (f < 80 || f > SR / 2 - 80) continue;
+      const k = Math.round(BLOCK * f / SR);
+      bgPow += this.goertzelPower(timeSamples, { coeff: 2*Math.cos(2*Math.PI*k/BLOCK), block: BLOCK, k });
+      bgCount++;
     }
-    return peakPow / (bgPow/freqs.length + 1e-12);
+    return peakPow / (bgPow / (bgCount || 1) + 1e-12);
   }
 
   // ── Adaptive spectral subtraction SNR ────────────────────────────
@@ -2674,17 +2709,21 @@ class MosquitoClassifier {
     const params = this.goertzelParams[sp.id];
     const sigPow = this.gaussianBankPower(timeSamples, params.f0Bank);
     const rawRef = this.refPower(timeSamples, params.ref);
-
-    // Update per-species adaptive noise during quiet frames
-    // (when signal power ≈ ref power → signal likely absent)
     const rawSNR = sigPow / (rawRef + 1e-12);
-    if (rawSNR < this.GOERTZEL_SNR_MIN * 0.7) {
-      // Noise-only frame: slowly update noise estimate upward
+
+    // Noise freeze: when signal is strong, hold the noise estimate for N frames
+    // so we never "learn" the mosquito itself as the noise floor (Hirsch & Ehrlicher 1995).
+    if (!this._noiseFreeze) this._noiseFreeze = {};
+    if (rawSNR >= this.GOERTZEL_SNR_MIN * 2.0) {
+      this._noiseFreeze[sp.id] = 12;           // freeze for ~480ms at 25fps
+    } else if ((this._noiseFreeze[sp.id] || 0) > 0) {
+      this._noiseFreeze[sp.id]--;
+    } else if (rawSNR < this.GOERTZEL_SNR_MIN * 0.7) {
+      // True noise-only frame with no recent signal: update noise estimate
       this.adaptiveNoise[sp.id] = this.NOISE_EMA_ALPHA * this.adaptiveNoise[sp.id]
-                                  + (1-this.NOISE_EMA_ALPHA) * sigPow;
+                                  + (1 - this.NOISE_EMA_ALPHA) * sigPow;
     }
 
-    // Subtract noise estimate (Boll spectral subtraction)
     const noisePow = this.adaptiveNoise[sp.id];
     const cleanSig = Math.max(0, sigPow - this.OVERSUBTRACTION * noisePow);
     return cleanSig / (rawRef + 1e-12);

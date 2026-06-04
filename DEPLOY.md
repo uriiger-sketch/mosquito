@@ -3,18 +3,78 @@
 ## What goes where
 
 ```
-mosquito/                     ← your GitHub repo
-├── index.html                ← the PWA app  (served by GitHub Pages)
-├── federated_server.py       ← the Python server (deployed to Railway)
-├── requirements.txt          ← Python dependencies (used by Railway)
-├── Procfile                  ← tells Railway how to start the server
-├── runtime.txt               ← Python version
-├── serve.py                  ← local HTTPS testing only (not deployed)
+mosquito/
+├── index.html                ← PWA app (GitHub Pages / gh-pages branch)
+├── federated_server.py       ← Python backend (Railway / Render / Docker)
+├── requirements.txt          ← Python deps
+├── Procfile                  ← Railway/Heroku start command
+├── Dockerfile                ← Docker deployment (VPS / fly.io / GCP)
+├── runtime.txt               ← Python 3.12
 └── README.md
 ```
 
-`index.html` is self-contained and runs entirely without the server.
-The server is optional — it enables the federated learning network.
+`index.html` is fully self-contained — works with no server.
+The server adds: global detection map, federated model, live device count.
+
+---
+
+## Diagnosing "Server Down" (403 / 502 / timeout)
+
+### Check 1: Is gunicorn running?
+```bash
+ps aux | grep gunicorn
+# If nothing → the process crashed. Restart it (see below).
+```
+
+### Check 2: Is the port bound?
+```bash
+ss -tlnp | grep 8080
+# Or: netstat -tlnp | grep 8080
+```
+
+### Check 3: Does Flask itself respond?
+```bash
+curl http://localhost:8080/health
+# Should return {"status":"ok","service":"MosquitoNet v10",...}
+# If this works but the public URL fails → nginx/Caddy proxy is broken
+```
+
+### Check 4: nginx / Caddy proxy
+```bash
+# For nginx — check the proxy_pass line:
+grep -r proxy_pass /etc/nginx/
+# Should say: proxy_pass http://127.0.0.1:8080;
+
+# Restart nginx:
+sudo systemctl restart nginx
+
+# For Caddy:
+sudo systemctl restart caddy
+```
+
+### Restart the server (any environment)
+
+**Docker (recommended — isolated, auto-restarts):**
+```bash
+docker build -t mosquitonet .
+docker run -d --name mosquitonet --restart=always \
+  -p 8080:8080 -v mosquitonet_data:/data \
+  mosquitonet
+```
+
+**Without Docker (Railway/Render will do this automatically):**
+```bash
+pip install -r requirements.txt
+gunicorn federated_server:app \
+  --bind 0.0.0.0:${PORT:-8080} \
+  --workers 1 --threads 4 --timeout 120
+```
+
+**Railway:** Go to your Railway project → your service → **Deployments** → click **Redeploy**.
+
+**Render:** Go to your Render service → click **Manual Deploy** → **Deploy latest commit**.
+
+---
 
 ---
 

@@ -401,8 +401,17 @@ def get_stats():
     with write_lock: return jsonify(full_stats())
 
 @app.route('/health', methods=['GET'])
-def health(): return jsonify({'status':'ok','service':'MosquitoNet v9',
-                               'data_dir':DATA_DIR,'log_file':LOG_FILE,**full_stats()})
+def health():
+    import sys
+    return jsonify({
+        'status':       'ok',
+        'service':      'MosquitoNet v10',
+        'data_dir':     DATA_DIR,
+        'log_file':     LOG_FILE,
+        'python':       sys.version,
+        'writable':     os.access(DATA_DIR, os.W_OK),
+        **full_stats(),
+    })
 
 @app.route('/', methods=['GET'])
 def index():
@@ -415,5 +424,6 @@ load_all()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    print(f'\nMosquitoNet v9 — DATA_DIR={DATA_DIR}  port={port}\n')
+    print(f'\nMosquitoNet v10 — DATA_DIR={DATA_DIR}  port={port}\n')
+    print(f'  /health  /detection  /hotspots  /federated/upload  /log.txt\n')
     app.run(host='0.0.0.0', port=port, debug=False)
