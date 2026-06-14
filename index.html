@@ -786,11 +786,13 @@ body::after {
 .dc-freq {
   font-family: 'Syne Mono', monospace;
   font-size: 0.6rem; color: var(--text2);
+  transition: color 0.3s, opacity 0.3s;
 }
 .detect-cell.hot .dc-freq { color: var(--text1); }
 .dc-snr {
   font-family: 'Syne Mono', monospace;
   font-size: 0.6rem; color: var(--text2);
+  transition: color 0.3s, opacity 0.3s;
 }
 .detect-cell.hot .dc-snr { color: var(--text1); }
 .dc-reason {
@@ -798,6 +800,7 @@ body::after {
   font-family: 'Syne Mono', monospace;
   flex: 1; text-align: right;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: opacity 0.4s;
 }
 
 
@@ -5060,8 +5063,8 @@ self.addEventListener('fetch', e => {
 
       // 3. Update detection panel:
       //    - charge bar width: every frame (smooth animation)
-      //    - text labels: every ~12 frames (≈0.5s, stops flashing)
-      const updateText = (this.sampleCount % 12 === 0);
+      //    - text labels: every ~30 frames (≈500ms) — prevents flickering
+      const updateText = (this.sampleCount % 30 === 0);
       this.updateDetectionPanel(detections, updateText);
 
       // 4-7. Detection events — one cooldown governs ALL counts/reports/map
@@ -5388,21 +5391,28 @@ self.addEventListener('fetch', e => {
       } else if (rawAvg > 0.05) {
         const votes  = this.classifier ? this.classifier.voteCount[sp.id] : 0;
         const vTotal = this.classifier ? this.classifier.VOTE_FRAMES : 75;
-        const gSNR   = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
         if (confEl)   { confEl.textContent = barPct + '%'; confEl.style.opacity = '0.85'; }
-        if (statusEl) statusEl.textContent = `${votes}/${vTotal} votes`;
-        if (freqEl)   freqEl.textContent   = gSNR > 1 ? `×${gSNR.toFixed(1)}` : sp.freq + ' Hz';
+        if (statusEl) statusEl.textContent = `~${sp.freq} Hz`;
+        if (freqEl)   freqEl.textContent   = `${votes} / ${vTotal} votes`;
         if (snrEl)    snrEl.textContent    = '—';
         if (reasonEl) reasonEl.textContent = 'building…';
 
       } else {
+        // Debounce rejection reason: only show it once it has been stable for 2 updates
+        // (prevents rapidly cycling snr/tonal/acorr labels from flickering)
+        if (!this._pendingReason) this._pendingReason = {};
         const reason = rejection[sp.id] || '';
-        const gSNR   = this.classifier ? (this.classifier.lastGoertzelSNR[sp.id] || 0) : 0;
+        if (reason !== this._pendingReason[sp.id]) {
+          this._pendingReason[sp.id] = reason;  // seen a new value — hold one cycle
+        } else {
+          // stable for this cycle — safe to display
+          const display = reason.length > 22 ? reason.slice(0, 21) + '…' : reason;
+          if (reasonEl) reasonEl.textContent = display;
+        }
         if (confEl)   { confEl.textContent = '—'; confEl.style.opacity = '0.4'; }
         if (statusEl) statusEl.textContent = `~${sp.freq} Hz`;
-        if (freqEl)   freqEl.textContent   = gSNR > 1 ? `×${gSNR.toFixed(1)}` : '—';
+        if (freqEl)   freqEl.textContent   = '—';
         if (snrEl)    snrEl.textContent    = '—';
-        if (reasonEl) reasonEl.textContent = reason.length > 22 ? reason.slice(0,21)+'…' : reason;
       }
     });
   }
