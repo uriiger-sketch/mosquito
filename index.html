@@ -2337,7 +2337,7 @@ class MosquitoAudioEngine {
     // ── Raw analyser (no smoothing — for classifier) ──
     this.rawAnalyser = this.ctx.createAnalyser();
     this.rawAnalyser.fftSize               = this.FFT_SIZE;
-    this.rawAnalyser.smoothingTimeConstant = 0.35;  // Light smoothing — reduces noise spikes while keeping accuracy
+    this.rawAnalyser.smoothingTimeConstant = 0;  // Zero smoothing — classifier needs raw unsmoothed frames
     this.rawAnalyser.minDecibels           = -100;
     this.rawAnalyser.maxDecibels           = -10;
 
@@ -2350,6 +2350,7 @@ class MosquitoAudioEngine {
     this.freqBuffer    = new Float32Array(bufLen);
     this.rawFreqBuf    = new Float32Array(bufLen);
     this.timeBuffer    = new Float32Array(this.FFT_SIZE);
+    this.rawTimeBuffer = new Float32Array(this.FFT_SIZE);
 
     // Bin resolution: sampleRate / FFT_SIZE ≈ 5.4 Hz/bin
     this.binHz = this.ctx.sampleRate / this.FFT_SIZE;
@@ -2360,7 +2361,7 @@ class MosquitoAudioEngine {
 
   getFrequencyData()    { if (this.analyser)    { this.analyser.getFloatFrequencyData(this.freqBuffer);       return this.freqBuffer; }    return null; }
   getRawFrequencyData() { if (this.rawAnalyser) { this.rawAnalyser.getFloatFrequencyData(this.rawFreqBuf);    return this.rawFreqBuf; }    return null; }
-  getTimeDomainData()   { if (this.analyser)    { this.analyser.getFloatTimeDomainData(this.timeBuffer);      return this.timeBuffer; }    return null; }
+  getTimeDomainData()   { if (this.rawAnalyser) { this.rawAnalyser.getFloatTimeDomainData(this.rawTimeBuffer); return this.rawTimeBuffer; } return null; }
 
   freqToBin(hz)  { return Math.min(Math.round(hz / this.binHz), this.freqBuffer ? this.freqBuffer.length - 1 : 4095); }
   binToHz(bin)   { return bin * this.binHz; }
@@ -2421,7 +2422,7 @@ class MosquitoClassifier {
     // VOTE_FRAMES: how many frames to look back (~3s at 25fps)
     // Increase → more robust, slower to lock
     // Decrease → faster to lock, more false positives
-    this.VOTE_FRAMES    = 64;    // 2.6s at 25fps (was 60)
+    this.VOTE_FRAMES    = 22;    // ~2s at 10.75 analyses/s (decimated, was 64 at 60fps)
     this.VOTE_THRESHOLD = 0.62;  // 62% of frames must pass all gates (was 0.55)
 
     this.voteBuffer  = {};
@@ -2501,7 +2502,7 @@ class MosquitoClassifier {
     // Rebalanced for real-world environments: level 3 default must detect
     // a real mosquito at ~1–2 m in a typical room with HVAC background.
     const snrTable      = [2.5,  4.0,  5.0,  8.0,  14.0];
-    const voteTable     = [32,   48,   64,   84,   110];
+    const voteTable     = [10,   15,   22,   32,   48];   // recalibrated for ~10.75 analyses/s
     const confTable     = [0.25, 0.35, 0.45, 0.58, 0.72];
     const tonalTable    = [1.2,  1.7,  2.2,  3.0,  4.0];
     const harmonicTable = [false, false, false, true, true];
@@ -2546,7 +2547,7 @@ class MosquitoClassifier {
     const gaussWh2 = rawWh2.map(w=>w/wSumH2);
 
     const allCenters = SPECIES_DB.map(s => s.freq);
-    const GUARD = 55;  // wider guard: catches spectral leakage across closely-spaced species
+    const GUARD = 65;  // wider guard: cleaner per-species background for pairs < 70 Hz apart
     const isOccupied = hz => allCenters.some(c => Math.abs(hz-c) < GUARD);
 
     const makeCoeff = hz => {
@@ -2595,6 +2596,17 @@ class MosquitoClassifier {
     let pow = 0;
     for (const tap of bank) pow += tap.gaussW * this.goertzelPower(timeSamples, tap);
     return pow;
+  }
+
+  // ── Pre-emphasis filter (first-order high-pass) ──────────────────
+  // x[n] - α·x[n-1] → boosts 300-1000 Hz (mosquito range) ~4-6× relative to
+  // 50 Hz HVAC/wind noise. α=0.97 is standard in speech/bio-acoustic processing.
+  preEmphasis(samples, alpha = 0.97) {
+    const N   = samples.length;
+    const out = new Float32Array(N);
+    out[0] = samples[0];
+    for (let i = 1; i < N; i++) out[i] = samples[i] - alpha * samples[i - 1];
+    return out;
   }
 
   refPower(timeSamples, refTaps) {
@@ -2719,9 +2731,10 @@ class MosquitoClassifier {
     } else if ((this._noiseFreeze[sp.id] || 0) > 0) {
       this._noiseFreeze[sp.id]--;
     } else if (rawSNR < this.GOERTZEL_SNR_MIN * 0.7) {
-      // True noise-only frame with no recent signal: update noise estimate
-      this.adaptiveNoise[sp.id] = this.NOISE_EMA_ALPHA * this.adaptiveNoise[sp.id]
-                                  + (1 - this.NOISE_EMA_ALPHA) * sigPow;
+      // True noise-only frame: update noise estimate.
+      // During startup calibration use α=0.5 (converges in ~3 frames vs ~30s normally).
+      const ema = this._fastCalib ? 0.50 : this.NOISE_EMA_ALPHA;
+      this.adaptiveNoise[sp.id] = ema * this.adaptiveNoise[sp.id] + (1 - ema) * sigPow;
     }
 
     const noisePow = this.adaptiveNoise[sp.id];
@@ -2779,6 +2792,10 @@ class MosquitoClassifier {
     // Harmonic decay check (HumBugDB 2020): mosquito series decays — P(f₀) ≥ P(2f₀).
     // If 2nd harmonic exceeds fundamental by >20%, it's likely mechanical interference.
     if (pow2f > pow1f * 1.2) return 0;
+
+    // Cache harmonic powers for HPS confidence shaping in analyze()
+    if (!this._harms) this._harms = {};
+    this._harms[sp.id] = { p1f: pow1f, p2f: pow2f, p3f: pow3f };
 
     const ref   = this.refPower(timeSamples, params.ref);
     const snr2f = pow2f / (ref + 1e-12);
@@ -2841,6 +2858,8 @@ class MosquitoClassifier {
     }
 
     const useGoertzel = timeData && timeData.length >= this._goertzelBlock;
+    // Pre-emphasis computed once per analysis frame — boosts mosquito freq range vs low-freq noise
+    const td = useGoertzel ? this.preEmphasis(timeData) : null;
     const candidates  = [];
 
     for (const sp of SPECIES_DB) {
@@ -2860,7 +2879,7 @@ class MosquitoClassifier {
       let snrLinear;
       if (useGoertzel) {
         // ── Goertzel path with adaptive noise subtraction ──────────
-        snrLinear = this.adaptiveSNR(timeData, sp);
+        snrLinear = this.adaptiveSNR(td, sp);
         this.lastGoertzelSNR[sp.id] = snrLinear;
       } else {
         // ── FFT fallback ──────────────────────────────────────────
@@ -2883,7 +2902,7 @@ class MosquitoClassifier {
 
       // ── Tonality gate: reject broadband noise ──────────────────
       if (useGoertzel) {
-        const tonality = this.tonalityScore(timeData, sp.freq);
+        const tonality = this.tonalityScore(td, sp.freq);
         this.lastTonality[sp.id] = tonality;
         if (tonality < this.TONALITY_MIN) {
           this.confBuffer[sp.id][confIdx] = 0;
@@ -2895,7 +2914,7 @@ class MosquitoClassifier {
 
       // ── Autocorrelation periodicity gate (Mukundarajan STM 2017) ──
       if (useGoertzel) {
-        const acorr = this.autocorrPeriodicity(timeData, sp.freq);
+        const acorr = this.autocorrPeriodicity(td, sp.freq);
         if (acorr < this.AUTOCORR_MIN) {
           this.confBuffer[sp.id][confIdx] = 0;
           this.lastRejection[sp.id] = `acorr:${acorr.toFixed(3)}<${this.AUTOCORR_MIN}`;
@@ -2906,7 +2925,7 @@ class MosquitoClassifier {
 
       // ── Sub-frame temporal consistency: rejects transients ────────
       if (useGoertzel) {
-        const frames = this.subframeConsistency(timeData, sp.freq);
+        const frames = this.subframeConsistency(td, sp.freq);
         if (frames < 3) {
           this.confBuffer[sp.id][confIdx] = 0;
           this.lastRejection[sp.id] = `transient:${frames}/4`;
@@ -2918,7 +2937,7 @@ class MosquitoClassifier {
       // ── Harmonic gate + bonus: require 2f or 3f at levels 4–5 ────
       let hBonus = 1.0;
       if (useGoertzel) {
-        hBonus = this.harmonicBonus(timeData, sp);
+        hBonus = this.harmonicBonus(td, sp);
         if (hBonus === 0) {
           this.confBuffer[sp.id][confIdx] = 0;
           this.lastRejection[sp.id] = 'no-harmonic';
@@ -2932,6 +2951,20 @@ class MosquitoClassifier {
       let conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
                               (Math.log10(SNR_MAX)  - Math.log10(this.GOERTZEL_SNR_MIN)));
       conf = Math.min(1, conf * hBonus);
+
+      // HPS harmonic structure check: penalise signals whose H2/H1 or H3/H1 ratios
+      // fall outside the mosquito biological range (HumBugDB 2020: H2 = 10-75% of H1).
+      // Non-mosquito interference often has flat or rising harmonic series.
+      if (useGoertzel) {
+        const hp = this._harms?.[sp.id];
+        if (hp && hp.p1f > 1e-20) {
+          const h2r = hp.p2f / hp.p1f;
+          const h3r = hp.p3f / hp.p1f;
+          const h2ok = h2r >= 0.05 && h2r <= 0.80;
+          const h3ok = h3r <= 0.60;
+          if (!h2ok || !h3ok) conf *= 0.70;
+        }
+      }
 
       this.confBuffer[sp.id][confIdx] = conf;
       this.lastRejection[sp.id] = '';
@@ -4807,14 +4840,31 @@ self.addEventListener('fetch', e => {
 
       this.sessionStart = Date.now();
       this.running = true;
-      this.setStatus('active', 'LISTENING');
+
+      // 2-second startup calibration: fast EMA (α=0.5) seeds the per-species noise floor
+      // immediately so spectral subtraction works from frame 1 instead of after ~30s.
+      // Vote buffers are cleared afterwards so calibration-era correlated votes don't persist.
+      this.classifier._fastCalib = true;
+      this.setStatus('active', 'CALIBRATING…');
+      setTimeout(() => {
+        if (this.classifier) {
+          this.classifier._fastCalib = false;
+          SPECIES_DB.forEach(sp => {
+            this.classifier.voteBuffer[sp.id].fill(0);
+            this.classifier.votePtr[sp.id]   = 0;
+            this.classifier.voteCount[sp.id] = 0;
+          });
+        }
+        this.setStatus('active', 'LISTENING');
+        this.showToast('Calibrated — acoustic monitoring active');
+      }, 2000);
 
       const btn = document.getElementById('btn-listen');
       if(btn){btn.classList.add('active')};
       const lblEl = document.getElementById('btn-listen-label');
       if (lblEl) lblEl.textContent = 'STOP';
 
-      this.showToast('🎙 Acoustic monitoring active — best results outdoors at night');
+      this.showToast('Calibrating… hold still for 2 seconds');
 
       // ── Keep-alive mechanisms (mobile browsers aggressively suspend) ──
       // 1. Wake Lock: prevent screen from sleeping while listening
@@ -4974,10 +5024,17 @@ self.addEventListener('fetch', e => {
         try { this.spectrogram.pushColumn(freqData, this.engine); } catch(e) {}
       }
 
-      // 2. Classifier: Goertzel path uses time-domain; FFT data for ambient gate
-      const detections = this.classifier
+      // 2. Classifier: gate analysis to ~10.75 independent frames/s (≥4096 new samples = 50% overlap)
+      // rAF fires at 60fps but only 735 new samples arrive per frame (91% overlap) — without this
+      // gate, every 60 votes represent only ~1 real second of data and are 91% correlated.
+      const ctxNow = this.engine?.ctx?.currentTime ?? 0;
+      const newSamples = Math.round((ctxNow - (this._lastAnalysisTime ?? 0)) * 44100);
+      const runAnalysis = !this._lastAnalysisTime || newSamples >= 4096;
+      if (runAnalysis) this._lastAnalysisTime = ctxNow;
+      const detections = (this.classifier && runAnalysis)
         ? this.classifier.analyze(rawFreqData, timeData)
-        : [];
+        : (this._lastDetections || []);
+      if (runAnalysis) this._lastDetections = detections;
       if (this.spectrogram) {
         try { this.spectrogram.drawMarkers(detections); } catch(e) {}
       }
