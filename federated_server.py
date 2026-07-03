@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MosquitoNet Federated Server v9
+MosquitoNet Federated Server v11
 ================================
 Log format (human-readable at /log.txt):
 
@@ -65,6 +65,7 @@ def _save_state():
             'next_id':         next_detection_id[0],
             'detection_cells': detection_cells,
             'hotspot_cells':   hotspot_cells,
+            'seen_events':     seen_events,
         }
         tmp = STATE_FILE + '.tmp'
         with open(tmp, 'w') as f:
@@ -76,7 +77,7 @@ def _save_state():
         print(f'[state] {e}')
 
 def load_all():
-    global detection_log, detection_cells, hotspot_cells, stats
+    global detection_log, detection_cells, hotspot_cells, stats, seen_events
     try:
         with open(STATE_FILE) as f:
             d = json.load(f)
@@ -86,7 +87,8 @@ def load_all():
         next_detection_id[0] = d.get('next_id', 1)
         detection_cells = d.get('detection_cells', {})
         hotspot_cells   = d.get('hotspot_cells',   {})
-        print(f'[State] loaded, total={stats["total_detections"]}')
+        seen_events     = d.get('seen_events',     {})
+        print(f'[State] loaded, total={stats["total_detections"]}, seen_events={len(seen_events)}')
     except FileNotFoundError:
         print('[State] fresh start')
     except Exception as e:
@@ -129,6 +131,19 @@ hotspot_cells     = {}
 next_detection_id = [1]
 recent_log        = {}     # rkey → {det_id, ts, conf}
 RECENT_WINDOW     = 60     # seconds: conf update allowed (exactly 1 minute)
+seen_events       = {}     # clientEventId → det_id (idempotency: retries never double-count)
+SEEN_EVENTS_MAX   = 5000   # cap the idempotency map; evict oldest beyond this
+
+# ── Detection validation (defence in depth; the client also gates at 0.70) ──────
+MIN_CONF     = 0.5         # reject anything below this — well under the client's 0.70 gate,
+                          # so no real client find is affected, but blocks conf=0 / spoofed junk
+FREQ_MIN     = 50.0        # Hz — below any mosquito wingbeat fundamental
+FREQ_MAX     = 2000.0      # Hz — above the 3rd harmonic of the highest species
+KNOWN_SPECIES = {
+    'anopheles', 'anopheles_stephensi', 'aedes_aegypti', 'aedes_albopictus',
+    'culex', 'aedes_japonicus', 'aedes_vexans', 'mansonia_uniformis',
+    'culex_pipiens', 'culiseta_annulata', 'ochlerotatus_caspius', 'toxorhynchites',
+}
 
 stats = {
     'total_detections': 0,
@@ -155,6 +170,14 @@ def touch(h):
 
 def cell_key(lat, lng, sp):
     return f'{round(float(lat)/0.05)*0.05:.3f},{round(float(lng)/0.05)*0.05:.3f},{sp}'
+
+def _remember_event(event_id, det_id):
+    """Record an eventId→det_id mapping for idempotency. Called under write_lock.
+    Evicts the oldest entries (dicts preserve insertion order) once the cap is hit."""
+    seen_events[event_id] = det_id
+    if len(seen_events) > SEEN_EVENTS_MAX:
+        for k in list(seen_events)[:len(seen_events) - SEEN_EVENTS_MAX]:
+            seen_events.pop(k, None)
 
 def full_stats():
     return {
@@ -215,15 +238,50 @@ def heartbeat():
     return jsonify(full_stats())
 
 
+def _reject(reason, code=400):
+    """Reject a malformed / invalid detection with a logged 4xx (never a 500)."""
+    print(f'[Det REJECT {code}] {reason}')
+    return jsonify({'received': False, 'reason': reason}), code
+
 @app.route('/detection', methods=['POST'])
 def detection():
-    d       = request.get_json(force=True, silent=True) or {}
-    raw_id  = d.get('deviceId', 'anon')
-    species = str(d.get('species', ''))
-    lat     = d.get('lat')
-    lng     = d.get('lng')
-    conf    = round(float(d.get('confidence', 0)), 3)
-    freq    = round(float(d.get('frequency', 0)), 1)
+    d       = request.get_json(force=True, silent=True)
+    if not isinstance(d, dict):
+        return _reject('body is not a JSON object')
+
+    raw_id   = d.get('deviceId', 'anon')
+    species  = str(d.get('species', ''))
+    event_id = d.get('eventId')
+
+    # ── Numeric parsing — guarded so bad input is a clean 400, not an unhandled 500 ──
+    try:
+        conf = round(float(d.get('confidence', 0)), 3)
+        freq = round(float(d.get('frequency', 0)), 1)
+    except (TypeError, ValueError):
+        return _reject('confidence/frequency not numeric')
+
+    lat = d.get('lat')
+    lng = d.get('lng')
+    try:
+        lat = float(lat) if lat is not None else None
+        lng = float(lng) if lng is not None else None
+    except (TypeError, ValueError):
+        return _reject('lat/lng not numeric')
+
+    # ── Schema / plausibility validation ──────────────────────────────────────
+    if species not in KNOWN_SPECIES:
+        return _reject(f'unknown species: {species!r}')
+    if not (0.0 <= conf <= 1.0):
+        return _reject(f'confidence out of range: {conf}')
+    if conf < MIN_CONF:
+        return _reject(f'confidence below floor: {conf} < {MIN_CONF}')
+    if not (FREQ_MIN <= freq <= FREQ_MAX):
+        return _reject(f'frequency out of range: {freq}')
+    if lat is not None and not (-90.0 <= lat <= 90.0):
+        return _reject(f'latitude out of range: {lat}')
+    if lng is not None and not (-180.0 <= lng <= 180.0):
+        return _reject(f'longitude out of range: {lng}')
+
     risk    = d.get('risk', 'UNKNOWN')
     sp_name = d.get('speciesName', species)
     disease = d.get('disease', '')
@@ -235,6 +293,13 @@ def detection():
 
     with write_lock:
         touch(h)
+
+        # ── Idempotency: a retried upload carries the same eventId. Acknowledge
+        #    it without creating a duplicate row or bumping the counter. ────────
+        if event_id is not None and event_id in seen_events:
+            snap = dict(full_stats())
+            return jsonify({'received': True, 'duplicate': True,
+                            'detection_id': seen_events[event_id], **snap})
 
         # ── Conf update for recent detection? ─────────────────────────────────
         rec = recent_log.get(rkey)
@@ -250,6 +315,9 @@ def detection():
                         _rewrite_log()   # rewrite under same lock — no race
                         _save_state()
                         break
+            if event_id is not None:
+                _remember_event(event_id, rec['det_id'])
+                _save_state()
             snap = dict(full_stats())
             return jsonify({'received': True, 'updated': True,
                             'detection_id': rec['det_id'], **snap})
@@ -275,6 +343,8 @@ def detection():
         }
         detection_log.append(entry)
         recent_log[rkey] = {'det_id': det_id, 'ts': now, 'conf': conf}
+        if event_id is not None:
+            _remember_event(event_id, det_id)
 
         # Hotspot
         if entry['lat'] is not None:
@@ -405,25 +475,31 @@ def health():
     import sys
     return jsonify({
         'status':       'ok',
-        'service':      'MosquitoNet v10',
+        'service':      'MosquitoNet v11',
         'data_dir':     DATA_DIR,
         'log_file':     LOG_FILE,
         'python':       sys.version,
         'writable':     os.access(DATA_DIR, os.W_OK),
+        'ephemeral':    os.path.abspath(DATA_DIR).startswith('/tmp'),
+        'min_conf':     MIN_CONF,
+        'seen_events':  len(seen_events),
         **full_stats(),
     })
 
 @app.route('/', methods=['GET'])
 def index():
-    return jsonify({'service':'MosquitoNet v9','data_dir':DATA_DIR,
+    return jsonify({'service':'MosquitoNet v11','data_dir':DATA_DIR,
                     'endpoints':['GET /heartbeat','POST /detection',
                                  'GET /log','GET /log.txt','GET /hotspots',
                                  'GET /federated/stats','GET /health']})
 
 load_all()
+if os.path.abspath(DATA_DIR).startswith('/tmp'):
+    print(f'[WARN] DATA_DIR={DATA_DIR} is under /tmp — data is EPHEMERAL and will be '
+          f'lost on restart. Set DATA_DIR to a persistent volume for production.')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
-    print(f'\nMosquitoNet v10 — DATA_DIR={DATA_DIR}  port={port}\n')
+    print(f'\nMosquitoNet v11 — DATA_DIR={DATA_DIR}  port={port}\n')
     print(f'  /health  /detection  /hotspots  /federated/upload  /log.txt\n')
     app.run(host='0.0.0.0', port=port, debug=False)

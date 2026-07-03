@@ -2438,7 +2438,10 @@ class MosquitoClassifier {
     });
 
     // ── Confidence accumulator (for live charge-bar display) ───────
-    this.CONF_FRAMES = 25;
+    // CONF_FRAMES MUST equal VOTE_FRAMES so avgConf averages exactly the
+    // same window the vote gate evaluates — otherwise the two windows wrap
+    // at different points and the acceptance decision is inconsistent.
+    this.CONF_FRAMES = this.VOTE_FRAMES;
     this.confBuffer  = {};
     SPECIES_DB.forEach(sp => {
       this.confBuffer[sp.id] = new Float32Array(this.CONF_FRAMES);
@@ -2521,10 +2524,14 @@ class MosquitoClassifier {
     this.AMBIENT_GATE_DB      = ambientTable[idx];
     this.FLATNESS_GATE        = flatnessTable[idx];
     this.AUTOCORR_MIN         = autocorrTable[idx];
+    // Keep the confidence window aligned to the (new) vote window length.
+    this.CONF_FRAMES = this.VOTE_FRAMES;
+    this.confIdx     = 0;
     SPECIES_DB.forEach(sp => {
       this.voteBuffer[sp.id] = new Uint8Array(this.VOTE_FRAMES);
       this.votePtr[sp.id]    = 0;
       this.voteCount[sp.id]  = 0;
+      this.confBuffer[sp.id] = new Float32Array(this.CONF_FRAMES);
     });
     console.log(`[Sensitivity] level=${level} SNR_MIN=${this.GOERTZEL_SNR_MIN} VOTE_FRAMES=${this.VOTE_FRAMES} tonality>=${this.TONALITY_MIN} harmonic=${this.HARMONIC_REQUIRED}`);
   }
@@ -3269,20 +3276,21 @@ class FederatedLearningClient {
   }
 
   // ── Report a confirmed detection ──────────────────────────────────────────
-  // Sends species, confidence, frequency, and DP-jittered location.
-  // Server enforces 60s per-device per-species cooldown server-side too.
+  // A confirmed "true find" is durable: it is written to a persistent, ordered,
+  // idempotent upload queue in localStorage, then a flush is attempted. If the
+  // network is down or the request fails, the find survives — across page
+  // reloads and app restarts — and is retried until the server acknowledges it.
+  // Each find carries a client-generated eventId so retries can never double-count.
   reportDetection(det) {
-    if (!window.SERVER_URL) return;
     const app = window._app;
     let lat = null, lng = null;
-    if (app && app.deviceLat !== null) {
-      const jitter = 0.025;
+    if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
+      const jitter = 0.025;   // ±~2.8 km differential-privacy jitter
       lat = app.deviceLat + (Math.random() - 0.5) * jitter;
       lng = app.deviceLng + (Math.random() - 0.5) * jitter;
     }
-    // Use XHR — bypasses service worker, avoids CORS preflight on iOS PWA
-    // fetch() POST with Content-Type: application/json triggers preflight = fails
-    const payload = JSON.stringify({
+    const payload = {
+      eventId:      this._makeEventId(),
       deviceId:     this.getAnonymousId(),
       species:      det.species.id,
       speciesName:  det.species.name,
@@ -3293,40 +3301,124 @@ class FederatedLearningClient {
       asymptomatic: !!det.species.asymptomatic,
       ts:           new Date().toISOString(),
       lat, lng,
-    });
+    };
+    this._enqueueDetection(payload);
+    this.flushDetectionQueue();
+  }
+
+  _makeEventId() {
+    try {
+      if (crypto && crypto.randomUUID) return crypto.randomUUID();
+    } catch(e) {}
+    const rnd = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+                     .map(b => b.toString(16).padStart(2, '0')).join('');
+    return `${Date.now().toString(36)}-${rnd}`;
+  }
+
+  _loadQueue() {
+    try { return JSON.parse(localStorage.getItem('mosquitonet_pending_dets')) || []; }
+    catch(e) { return []; }
+  }
+
+  _saveQueue(q) {
+    try { localStorage.setItem('mosquitonet_pending_dets', JSON.stringify(q)); }
+    catch(e) { /* storage full / disabled — queue lives in memory this session */ }
+  }
+
+  _enqueueDetection(payload) {
+    const q = this._loadQueue();
+    q.push(payload);
+    // Cap the queue so a long offline stretch can't exhaust localStorage.
+    // Keep the most RECENT finds (drop oldest) — those matter most for a live map.
+    const MAX_QUEUE = 200;
+    if (q.length > MAX_QUEUE) q.splice(0, q.length - MAX_QUEUE);
+    this._saveQueue(q);
+  }
+
+  // Send queued finds one at a time, in order. Stops on the first failure and
+  // schedules a backoff retry. Safe to call as often as you like — re-entrancy
+  // guarded, and idempotent server-side via eventId.
+  flushDetectionQueue() {
+    if (!window.SERVER_URL) return;
+    if (this._flushing) return;
+    const q = this._loadQueue();
+    if (!q.length) { this._flushBackoff = 0; return; }
+    this._flushing = true;
+
+    const payload = q[0];
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${window.SERVER_URL}/detection`, true);
-    // text/plain = "simple" CORS request = NO preflight = works on iOS PWA
-    // Flask's get_json(force=True) parses body regardless of Content-Type
+    // text/plain = "simple" CORS request = NO preflight = works on iOS PWA.
+    // Flask's get_json(force=True) parses the body regardless of Content-Type.
     xhr.setRequestHeader('Content-Type', 'text/plain');
-    xhr.timeout = 10000;
-    xhr.onload = () => {
-      try {
-        const data = JSON.parse(xhr.responseText);
-        if (data.received) {
-          const everEl = document.getElementById('nb-ever');
-          if (everEl && data.total_detections) {
-            const newVal = Number(data.total_detections);
-            const curVal = parseInt(everEl.dataset.raw || '0', 10);
-            if (newVal > curVal) {   // nb-ever only ever goes UP
-              everEl.dataset.raw = newVal;
-              everEl.textContent = newVal.toLocaleString();
-              everEl.style.color = 'var(--green)';
-              setTimeout(() => { everEl.style.color = ''; }, 1200);
-            }
-          }
-          if (app && app.mapCtrl) {
-            app.mapCtrl.totalDetections = data.total_detections || 0;
-          }
-          console.log(`[Det→Server] ${det.species.id} stored. Total ever: ${data.total_detections}`);
-        } else {
-          console.warn('[Det→Server] rejected:', data.reason);
-        }
-      } catch(e) { console.warn('[Det→Server] parse error', e); }
+    xhr.timeout = 12000;
+
+    const onFail = (why) => {
+      this._flushing = false;
+      console.warn(`[Det→Server] ${why} — ${q.length} find(s) queued, will retry`);
+      // Exponential backoff: 5s → 10s → … → 5min cap.
+      this._flushBackoff = Math.min((this._flushBackoff || 2500) * 2, 300000);
+      clearTimeout(this._flushTimer);
+      this._flushTimer = setTimeout(() => this.flushDetectionQueue(), this._flushBackoff);
     };
-    xhr.onerror   = () => console.warn('[Det→Server] network error');
-    xhr.ontimeout = () => console.warn('[Det→Server] timeout');
-    xhr.send(payload);
+
+    xhr.onload = () => {
+      let data = null;
+      try { data = JSON.parse(xhr.responseText); } catch(e) {}
+      // 2xx with a parseable ack (received OR duplicate) = server has it → drop from queue.
+      if (xhr.status >= 200 && xhr.status < 300 && data && (data.received || data.duplicate)) {
+        const rest = this._loadQueue();
+        // Remove exactly this eventId (queue may have shifted if another flush ran).
+        const idx = rest.findIndex(p => p.eventId === payload.eventId);
+        if (idx >= 0) rest.splice(idx, 1);
+        this._saveQueue(rest);
+        this._applyServerCounters(data);
+        console.log(`[Det→Server] ${payload.species} ${data.duplicate ? 'already stored' : 'stored'}. ` +
+                    `Total ever: ${data.total_detections}. Queue: ${rest.length}`);
+        this._flushBackoff = 0;
+        this._flushing = false;
+        if (rest.length) this.flushDetectionQueue();   // drain the rest immediately
+        return;
+      }
+      // 4xx = server rejected this payload as invalid → it will NEVER succeed on
+      // retry, so drop it rather than block the whole queue behind a poison item.
+      if (xhr.status >= 400 && xhr.status < 500) {
+        const rest = this._loadQueue();
+        const idx = rest.findIndex(p => p.eventId === payload.eventId);
+        if (idx >= 0) rest.splice(idx, 1);
+        this._saveQueue(rest);
+        console.warn(`[Det→Server] rejected (${xhr.status}) ${data ? JSON.stringify(data) : ''} — dropped`);
+        this._flushBackoff = 0;
+        this._flushing = false;
+        if (rest.length) this.flushDetectionQueue();
+        return;
+      }
+      // 5xx or unparseable → transient, keep and back off.
+      onFail(`server ${xhr.status || '?'}`);
+    };
+    xhr.onerror   = () => onFail('network error');
+    xhr.ontimeout = () => onFail('timeout');
+    try { xhr.send(JSON.stringify(payload)); }
+    catch(e) { onFail('send threw'); }
+  }
+
+  _applyServerCounters(data) {
+    if (!data) return;
+    const app = window._app;
+    const everEl = document.getElementById('nb-ever');
+    if (everEl && data.total_detections) {
+      const newVal = Number(data.total_detections);
+      const curVal = parseInt(everEl.dataset.raw || '0', 10);
+      if (newVal > curVal) {   // nb-ever only ever goes UP
+        everEl.dataset.raw = newVal;
+        everEl.textContent = newVal.toLocaleString();
+        everEl.style.color = 'var(--green)';
+        setTimeout(() => { everEl.style.color = ''; }, 1200);
+      }
+    }
+    if (app && app.mapCtrl && data.total_detections) {
+      app.mapCtrl.totalDetections = data.total_detections || 0;
+    }
   }
 
   saveLocal() {
@@ -4634,6 +4726,8 @@ class App {
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try { applyStats(JSON.parse(xhr.responseText)); } catch(e) {}
+          // Connectivity confirmed — good moment to drain any queued true finds.
+          try { this.fedClient.flushDetectionQueue(); } catch(e) {}
         } else {
           setServerConnected(false);
         }
@@ -4656,9 +4750,18 @@ class App {
     sendHeartbeat();
     fetchStats();
 
+    // Drain any true finds left queued from a previous (offline) session, and
+    // re-drain whenever the browser regains connectivity.
+    try { this.fedClient.flushDetectionQueue(); } catch(e) {}
+    window.addEventListener('online', () => {
+      try { this.fedClient.flushDetectionQueue(); } catch(e) {}
+    });
+
     // Then repeat on schedule
     setInterval(sendHeartbeat, 10000);  // heartbeat every 10s — real-time online count
     setInterval(fetchStats,    15000);  // full stats every 15s
+    // Safety-net drain in case every other trigger is missed (e.g. flaky network).
+    setInterval(() => { try { this.fedClient.flushDetectionQueue(); } catch(e) {} }, 30000);
 
     // ── 7. Build persistent detection grid (ONCE) ─────────────────────────
     try { this.buildDetectionGrid(); } catch(e) { console.warn('det grid:', e); }
@@ -5610,6 +5713,35 @@ const manifestLink = document.createElement('link');
 manifestLink.rel  = 'manifest';
 manifestLink.href = manifestURL;
 document.head.appendChild(manifestLink);
+
+/* ════════════════════════════════════════════════════════════
+   GLOBAL ERROR SAFETY NET
+   Surfaces uncaught errors and unhandled promise rejections to the
+   console (and a throttled non-blocking toast) instead of failing
+   silently. The rAF loop has its own try/catch, so this is a backstop
+   for everything outside it — event handlers, async keep-alive, etc.
+════════════════════════════════════════════════════════════ */
+(function installGlobalErrorHandlers() {
+  let lastToast = 0;
+  const softNotify = (label) => {
+    try {
+      const now = Date.now();
+      if (now - lastToast < 15000) return;   // at most one toast / 15s
+      lastToast = now;
+      if (window._app && typeof window._app.showToast === 'function') {
+        window._app.showToast(`⚠️ ${label} — monitoring continues`);
+      }
+    } catch(e) {}
+  };
+  window.addEventListener('error', (ev) => {
+    console.error('[GlobalError]', ev.message, ev.filename + ':' + ev.lineno, ev.error);
+    softNotify('Recovered from an error');
+  });
+  window.addEventListener('unhandledrejection', (ev) => {
+    console.error('[UnhandledRejection]', ev.reason);
+    softNotify('Recovered from a background error');
+  });
+})();
 
 /* ════════════════════════════════════════════════════════════
    BOOT
