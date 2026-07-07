@@ -3068,42 +3068,60 @@ class FederatedLearningClient {
     //     Smartphone recordings, 20 species, lab + wild
     //   Kiskin et al. 2020 (2hr labelled subset, Oxford)
     //
-    // Features: [freq_norm (0=100Hz,1=1500Hz), snr_norm, harmonic_score, q_score]
-    // Classes:  [Anopheles, Ae.aegypti, Ae.albopictus, Culex]
-    //
-    // Weights derived by fitting logistic regression on species-specific
-    // frequency centroids from the above datasets:
-    //   Anopheles gambiae:     406 Hz mean (HumBugDB Tanzania wild)
-    //   Aedes aegypti:         617 Hz mean (HumBugDB + Abuzz)
-    //   Aedes albopictus:      672 Hz mean (Kiskin 2020)
-    //   Culex quinquefasciatus: 453 Hz mean (HumBugDB + Abuzz)
+    // Features: [freq_norm (freq/1200Hz), snr_norm (snr/40dB), confidence, voteFraction]
+    //   All four are guaranteed present on a confirmed detection and clamped to
+    //   finite [0,1] in toFeatures() — the pipeline can never see NaN.
+    // Classes (genus-level, cover ALL 12 species via FED_CLASS below):
+    //   0 = Anopheles   1 = Aedes   2 = Culex/Culiseta   3 = Other
+    // Weights are a reasonable prior; federated training adapts them online.
     this.W = [
-      // Anopheles: peaks ~406 Hz (normalized ~0.22), strong 2nd harmonic
-      [ 2.8, 0.9, 1.2, 0.8],
-      // Ae. aegypti: peaks ~617 Hz (normalized ~0.38), moderate harmonics
-      [-0.6, 0.7, 1.0, 0.7],
-      // Ae. albopictus: peaks ~672 Hz (normalized ~0.41), moderate harmonics
-      [-1.1, 0.7, 1.0, 0.6],
-      // Culex: peaks ~453 Hz (normalized ~0.25), strong harmonics
-      [ 1.8, 0.8, 1.3, 0.9],
+      [ 2.8, 0.9, 1.2, 0.8],   // Anopheles      (~388-406 Hz, low freq_norm)
+      [-1.0, 0.7, 1.0, 0.7],   // Aedes          (~515-730 Hz, high freq_norm)
+      [ 1.8, 0.8, 1.3, 0.9],   // Culex/Culiseta (~344-594 Hz)
+      [ 0.2, 0.7, 1.0, 0.7],   // Other          (mixed)
     ];
-    this.b = [-0.4, -0.3, -0.3, -0.4];  // slight negative bias — prefer silence over FP
+    this.b = [-0.4, -0.3, -0.4, -0.3];  // slight negative bias — prefer silence over FP
 
     this.LR = 0.01;        // learning rate
     this.DP_SIGMA = 0.012; // noise σ for Gaussian mechanism (ε≈1.0, δ=1e-5)
     this.CLIP_NORM = 1.0;  // gradient clipping for DP
 
-    this.localSteps = 0;
-    this.UPLOAD_EVERY = 20;   // upload every 20 steps (was 100 — too rare)
+    // Bumping MODEL_VERSION invalidates weights persisted by any earlier (buggy)
+    // build, so devices carrying NaN-poisoned weights self-heal to this seed.
+    this.MODEL_VERSION = 2;
 
-    this.pendingGradients = [];
+    this.localSteps = 0;
+    this.stepsSinceUpload = 0;
+    this.UPLOAD_EVERY = 20;   // upload every 20 training steps
+
     this.roundNumber = 0;
     this.lastUpload = null;
     this.uploadSuccess = 0;
     this.uploadFailed = 0;
+    this._uploading = false;
 
-    // Load persisted weights if available
+    // Load persisted weights if available (validated — see loadLocal)
     this.loadLocal();
+  }
+
+  // Map any of the 12 species ids to one of the 4 model classes.
+  static FED_CLASS = {
+    anopheles: 0, anopheles_stephensi: 0,
+    aedes_aegypti: 1, aedes_albopictus: 1, aedes_japonicus: 1, aedes_vexans: 1,
+    culex: 2, culex_pipiens: 2, culiseta_annulata: 2,
+    mansonia_uniformis: 3, ochlerotatus_caspius: 3, toxorhynchites: 3,
+  };
+  classIndex(speciesId) {
+    const c = FederatedLearningClient.FED_CLASS[speciesId];
+    return (c === undefined) ? -1 : c;
+  }
+
+  _allFinite(arr) {
+    return arr.every(x => Array.isArray(x) ? this._allFinite(x) : Number.isFinite(x));
+  }
+  _validShape(W, b) {
+    return Array.isArray(W) && W.length === 4 && W.every(r => Array.isArray(r) && r.length === 4) &&
+           Array.isArray(b) && b.length === 4 && this._allFinite(W) && this._allFinite(b);
   }
 
   initMatrix(rows, cols) {
@@ -3136,13 +3154,16 @@ class FederatedLearningClient {
   }
 
   // ── Extract feature vector from detection ──
+  // Every field is one that a confirmed detection actually carries, and each is
+  // clamped to a finite [0,1] so NaN/undefined can never enter the model.
   toFeatures(detection) {
     const MAX_FREQ = 1200, MAX_SNR = 40;
+    const clamp01 = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
     return [
-      detection.frequency / MAX_FREQ,          // normalized freq
-      Math.min(1, detection.snr / MAX_SNR),     // normalized SNR
-      detection.harmonicScore,                  // 0–1
-      detection.sharpness,                      // 0–1
+      clamp01(detection.frequency / MAX_FREQ),   // normalized frequency
+      clamp01(detection.snr / MAX_SNR),          // normalized SNR (dB)
+      clamp01(detection.confidence),             // classifier confidence 0–1
+      clamp01(detection.voteFraction),           // sustained-ness 0–1
     ];
   }
 
@@ -3158,7 +3179,11 @@ class FederatedLearningClient {
 
   // ── Local SGD step ──
   update(detection, labelIdx) {
-    const features = this.toFeatures(detection);
+    // Defensive: only train on a valid class index. Bad labels are dropped, never
+    // trained against a degenerate all-zero target.
+    if (!(labelIdx >= 0 && labelIdx < this.W.length)) return;
+
+    const features = this.toFeatures(detection);       // finite [0,1]^4 guaranteed
     const logits   = this.forward(features);
     const probs    = this.softmax(logits);
 
@@ -3169,56 +3194,51 @@ class FederatedLearningClient {
     });
     const gradB = this.W.map((_, c) => probs[c] - (c === labelIdx ? 1 : 0));
 
-    // Clip gradients (DP)
+    // Clip (DP) then add Gaussian DP noise
     const clippedW = this.clipGradient(gradW);
     const clippedB = this.clipGradient(gradB);
-
-    // Add Gaussian DP noise
     const noisyW = clippedW.map(row => row.map(g => g + this.gaussian(0, this.DP_SIGMA)));
     const noisyB = clippedB.map(g => g + this.gaussian(0, this.DP_SIGMA));
 
-    // Apply gradient descent
-    this.W = this.W.map((row, c) => row.map((w, f) => w - this.LR * noisyW[c][f]));
-    this.b = this.b.map((bv, c) => bv - this.LR * noisyB[c]);
+    // Compute the step off to the side; only commit if it stays finite/valid.
+    const newW = this.W.map((row, c) => row.map((w, f) => w - this.LR * noisyW[c][f]));
+    const newB = this.b.map((bv, c) => bv - this.LR * noisyB[c]);
+    if (!this._validShape(newW, newB)) return;   // keep current W/b, skip this step
+    this.W = newW; this.b = newB;
 
     this.localSteps++;
-    this.pendingGradients.push({ gradW: noisyW, gradB: noisyB });
-
-    if (this.localSteps % this.UPLOAD_EVERY === 0) {
+    this.stepsSinceUpload++;
+    if (this.stepsSinceUpload >= this.UPLOAD_EVERY) {
       this.aggregateAndUpload();
     }
-
     this.saveLocal();
   }
 
-  // ── Aggregate local gradients + upload (fire-and-forget) ──
+  // ── Upload local MODEL WEIGHTS for FedAvg, then merge the returned global ──
+  // Proper Federated Averaging: each device sends the weights it has trained
+  // locally (already DP-noised via the clipped+noised SGD steps). The server
+  // step-weights and averages client models and returns the global model.
+  // Uploading weights (not gradients) is what keeps aggregation stable — the old
+  // code sent gradients labelled "weights", which decayed the global model to 0.
   async aggregateAndUpload() {
-    const n = this.pendingGradients.length;
-    if (n === 0) return;
+    if (this._uploading) return;                 // don't overlap uploads
+    if (!this._validShape(this.W, this.b)) { this.stepsSinceUpload = 0; return; }
 
-    // FedAvg: average all pending gradients
-    const avgW = this.W.map((row, c) =>
-      row.map((_, f) =>
-        this.pendingGradients.reduce((s, g) => s + g.gradW[c][f], 0) / n
-      )
-    );
-    const avgB = this.b.map((_, c) =>
-      this.pendingGradients.reduce((s, g) => s + g.gradB[c], 0) / n
-    );
+    const steps = this.stepsSinceUpload || this.UPLOAD_EVERY;
+    this.stepsSinceUpload = 0;                    // consume the window either way
 
-    this.pendingGradients = [];
-    this.roundNumber++;
-
+    // Deep-copy so an in-flight upload can't be mutated by concurrent training.
     const payload = {
-      round: this.roundNumber,
-      deviceId: this.getAnonymousId(),
-      weights: { W: avgW, b: avgB },
-      steps: n,
+      round:     this.roundNumber + 1,
+      deviceId:  this.getAnonymousId(),
+      version:   this.MODEL_VERSION,
+      weights:   { W: this.W.map(r => r.slice()), b: this.b.slice() },
+      steps,
       timestamp: Date.now(),
     };
 
-    // Upload — only if a server URL is configured
-    if (!window.SERVER_URL) { this.uploadFailed = 0; return; }
+    if (!window.SERVER_URL) return;
+    this._uploading = true;
     try {
       const resp = await fetchWithTimeout(`${window.SERVER_URL}/federated/upload`, {
         method: 'POST',
@@ -3227,19 +3247,26 @@ class FederatedLearningClient {
       }, 5000);
       if (resp.ok) {
         this.uploadSuccess++;
-        this.lastUpload = new Date();
-        // Download updated global model
+        this.lastUpload  = new Date();
+        this.roundNumber++;
         const global = await resp.json();
-        if (global.weights) {
-          // Merge global weights (simple average with local)
-          this.W = this.W.map((row, c) =>
-            row.map((w, f) => 0.5 * w + 0.5 * global.weights.W[c][f])
-          );
+        const gW = global && global.weights && global.weights.W;
+        const gB = global && global.weights && global.weights.b;
+        // Merge the global model 50/50 into the local one — BOTH W and b —
+        // only if the server returned a well-shaped, finite model.
+        if (this._validShape(gW, gB)) {
+          const mW = this.W.map((row, c) => row.map((w, f) => 0.5 * w + 0.5 * gW[c][f]));
+          const mB = this.b.map((bv, c) => 0.5 * bv + 0.5 * gB[c]);
+          if (this._validShape(mW, mB)) { this.W = mW; this.b = mB; }
         }
+        this.saveLocal();
+      } else {
+        this.uploadFailed++;   // local weights kept; retried on the next window
       }
     } catch {
-      this.uploadFailed++;
-      // Offline — gradients stored locally, will retry
+      this.uploadFailed++;     // offline — local weights kept and keep training
+    } finally {
+      this._uploading = false;
     }
   }
 
@@ -3423,18 +3450,24 @@ class FederatedLearningClient {
 
   saveLocal() {
     try {
+      if (!this._validShape(this.W, this.b)) return;   // never persist garbage
       localStorage.setItem('mosquitonet_weights',
-        JSON.stringify({ W: this.W, b: this.b, round: this.roundNumber }));
+        JSON.stringify({ v: this.MODEL_VERSION, W: this.W, b: this.b, round: this.roundNumber }));
     } catch {}
   }
 
   loadLocal() {
     try {
       const saved = JSON.parse(localStorage.getItem('mosquitonet_weights'));
-      if (saved) {
+      // Adopt persisted weights only if they match the current model version AND
+      // are well-shaped and finite. Otherwise keep the seed — this discards any
+      // NaN-poisoned or stale-schema weights left by an earlier build.
+      if (saved && saved.v === this.MODEL_VERSION && this._validShape(saved.W, saved.b)) {
         this.W = saved.W;
         this.b = saved.b;
-        this.roundNumber = saved.round || 0;
+        this.roundNumber = Number.isFinite(saved.round) ? saved.round : 0;
+      } else if (saved) {
+        localStorage.removeItem('mosquitonet_weights');   // clear the bad blob
       }
     } catch {}
   }
@@ -3447,8 +3480,8 @@ class FederatedLearningClient {
       uploadSuccess: this.uploadSuccess,
       uploadFailed: this.uploadFailed,
       lastUpload: this.lastUpload,
-      pendingCount: this.pendingGradients.length,
-      progress: this.localSteps % this.UPLOAD_EVERY,
+      pendingCount: this.stepsSinceUpload,
+      progress: this.stepsSinceUpload % this.UPLOAD_EVERY,
     };
   }
 }
@@ -5212,8 +5245,9 @@ self.addEventListener('fetch', e => {
           // UI counter +1
           this.sessionCounts[spId]++;
 
-          // Federated learning
-          const labelIdx = SPECIES_DB.findIndex(sp => sp.id === spId);
+          // Federated learning — map the species to its genus-level model class
+          // (0 Anopheles / 1 Aedes / 2 Culex / 3 Other); all 12 species map cleanly.
+          const labelIdx = this.fedClient.classIndex(spId);
           if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
 
           // Map marker

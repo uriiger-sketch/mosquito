@@ -66,6 +66,8 @@ def _save_state():
             'detection_cells': detection_cells,
             'hotspot_cells':   hotspot_cells,
             'seen_events':     seen_events,
+            'global_W':        global_W.tolist(),
+            'global_b':        global_b.tolist(),
         }
         tmp = STATE_FILE + '.tmp'
         with open(tmp, 'w') as f:
@@ -77,7 +79,7 @@ def _save_state():
         print(f'[state] {e}')
 
 def load_all():
-    global detection_log, detection_cells, hotspot_cells, stats, seen_events
+    global detection_log, detection_cells, hotspot_cells, stats, seen_events, global_W, global_b
     try:
         with open(STATE_FILE) as f:
             d = json.load(f)
@@ -88,7 +90,21 @@ def load_all():
         detection_cells = d.get('detection_cells', {})
         hotspot_cells   = d.get('hotspot_cells',   {})
         seen_events     = d.get('seen_events',     {})
-        print(f'[State] loaded, total={stats["total_detections"]}, seen_events={len(seen_events)}')
+        # Restore the trained global model — but only if it is well-shaped and
+        # finite; otherwise keep the seed rather than adopt a corrupt blob.
+        if 'global_W' in d and 'global_b' in d:
+            try:
+                W = np.array(d['global_W'], dtype=float)
+                b = np.array(d['global_b'], dtype=float)
+                if W.shape == global_W.shape and b.shape == global_b.shape \
+                   and np.all(np.isfinite(W)) and np.all(np.isfinite(b)):
+                    global_W, global_b = W, b
+                else:
+                    print('[State] persisted global model invalid — keeping seed')
+            except Exception as e:
+                print(f'[State] global model restore failed: {e} — keeping seed')
+        print(f'[State] loaded, total={stats["total_detections"]}, seen_events={len(seen_events)}, '
+              f'rounds={stats["total_rounds"]}')
     except FileNotFoundError:
         print('[State] fresh start')
     except Exception as e:
@@ -193,19 +209,40 @@ def full_stats():
         'uptime_seconds':   int(time.time() - start_time),
     }
 
+def _valid_weights(w):
+    """True iff w = {'W': 4x4, 'b': len-4}, all finite. Rejects the poison payloads
+    that would otherwise silently corrupt the global model."""
+    try:
+        W = np.array(w['W'], dtype=float)
+        b = np.array(w['b'], dtype=float)
+    except Exception:
+        return False
+    if W.shape != global_W.shape or b.shape != global_b.shape:
+        return False
+    return bool(np.all(np.isfinite(W)) and np.all(np.isfinite(b)))
+
 def fedavg(updates):
     global global_W, global_b
-    total = sum(u['steps'] for u in updates)
-    if not total: return
+    # Keep only structurally valid contributions; an invalid upload must NOT count
+    # its steps toward the weighted average (the old code let it bias the result).
+    valid = [u for u in updates if _valid_weights(u['weights'])]
+    total = sum(u['steps'] for u in valid)
+    if not total:
+        return
     nW = np.zeros_like(global_W); nb = np.zeros_like(global_b)
-    for u in updates:
+    for u in valid:
         w = u['steps'] / total
-        try:
-            nW += w * np.array(u['weights']['W'])
-            nb += w * np.array(u['weights']['b'])
-        except Exception: pass
-    global_W = 0.3*global_W + 0.7*nW
-    global_b = 0.3*global_b + 0.7*nb
+        nW += w * np.array(u['weights']['W'], dtype=float)
+        nb += w * np.array(u['weights']['b'], dtype=float)
+    # Federated averaging on client MODEL WEIGHTS: blend the step-weighted client
+    # mean into the global model. Conservative 0.3 global / 0.7 new keeps a single
+    # device from dominating a round while still converging.
+    cand_W = 0.3 * global_W + 0.7 * nW
+    cand_b = 0.3 * global_b + 0.7 * nb
+    if not (np.all(np.isfinite(cand_W)) and np.all(np.isfinite(cand_b))):
+        print('[FedAvg] non-finite result — keeping previous global model')
+        return
+    global_W, global_b = cand_W, cand_b
     stats['total_rounds'] += 1
     stats['last_aggregate'] = datetime.now(timezone.utc).isoformat()
 
@@ -452,15 +489,26 @@ def hotspots():
 
 @app.route('/federated/upload', methods=['POST'])
 def upload():
-    d = request.get_json(force=True, silent=True) or {}
-    if not all(k in d for k in ['deviceId','weights','steps']):
-        return jsonify({'error':'missing'}),400
+    d = request.get_json(force=True, silent=True)
+    if not isinstance(d, dict) or not all(k in d for k in ['deviceId','weights','steps']):
+        print('[Fed REJECT 400] missing deviceId/weights/steps')
+        return jsonify({'error':'missing required fields'}), 400
+    # Reject malformed / non-finite / wrong-shape model uploads up front so they
+    # never reach the aggregator. Returns 400 rather than silently dropping.
+    if not _valid_weights(d['weights']):
+        print('[Fed REJECT 400] weights not 4x4/len-4 finite')
+        return jsonify({'error':'weights must be 4x4 W and length-4 b, all finite'}), 400
+    try:
+        steps = min(max(int(d.get('steps', 1)), 1), 500)
+    except (TypeError, ValueError):
+        return jsonify({'error':'steps not an integer'}), 400
     h = dh(d['deviceId'])
     with write_lock:
-        touch(h); stats['total_uploads']+=1
-        pending_updates.append({'steps':min(int(d.get('steps',1)),500),'weights':d['weights']})
-        if len(pending_updates)>=MIN_UPLOADS:
+        touch(h); stats['total_uploads'] += 1
+        pending_updates.append({'steps': steps, 'weights': d['weights']})
+        if len(pending_updates) >= MIN_UPLOADS:
             fedavg(pending_updates.copy()); pending_updates.clear()
+            _save_state()   # persist the freshly-aggregated global model
     return jsonify({'status':'accepted','weights':{'W':global_W.tolist(),'b':global_b.tolist()},**full_stats()})
 
 @app.route('/federated/model',  methods=['GET'])
