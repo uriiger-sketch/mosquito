@@ -1,0 +1,19 @@
+{
+  "name": "MosquitoNet — Vector Surveillance",
+  "short_name": "MosquitoNet",
+  "description": "Free acoustic mosquito detector. Identifies disease-carrying species using your phone's microphone.",
+  "id": "/mosquito/",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#030b14",
+  "theme_color": "#030b14",
+  "orientation": "portrait-primary",
+  "categories": ["health", "utilities", "education"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

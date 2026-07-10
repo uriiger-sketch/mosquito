@@ -55,7 +55,11 @@
   </script>
 
   <title>MosquitoNet — Free Mosquito Detector App (Dengue, Malaria, West Nile)</title>
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23030b14'/><text y='.9em' font-size='78' x='10'>🦟</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syne+Mono&family=Syne:wght@700;800&display=swap" rel="stylesheet">
@@ -756,10 +760,11 @@ body::after {
   font-weight: 700;
 }
 
-/* Threshold tick mark at 55% */
+/* Threshold tick — aligned to the actual lock threshold (VOTE_THRESHOLD = 62%).
+   The charge bar shows the vote fraction; a species locks when it crosses this mark. */
 .dc-charge-tick {
   position: absolute;
-  left: 55%; top: 0; bottom: 0;
+  left: 62%; top: 0; bottom: 0;
   width: 1px;
   background: rgba(255,255,255,0.25);
   pointer-events: none;
@@ -1366,13 +1371,42 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
 .footer-dot { width: 1px; height: 10px; background: var(--border); flex-shrink: 0; }
 .footer-spacer { flex: 1; }
 .privacy-mark { color: var(--green); }
+
+/* ─────────── Accessibility ─────────── */
+/* Visible keyboard focus for all interactive controls (mouse/touch users are
+   unaffected — :focus-visible only shows for keyboard navigation). */
+#btn-listen:focus-visible,
+#btn-share:focus-visible,
+.tab:focus-visible,
+.sens-pip:focus-visible,
+.detect-cell:focus-visible,
+.perm-btn:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respect users who prefer reduced motion — stop the infinite loops (breathing
+   glow, shimmer, pulsing dots, splash) but keep instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .dc-charge-fill::after { display: none; }   /* charge shimmer */
+  .detect-cell.hot { animation: none; }
+}
 </style>
 </head>
 <body>
 
 <!-- SPLASH -->
 <div id="splash">
-  <div class="splash-logo-text">🦟 MosquitoNet</div>
+  <div class="splash-logo-text"><img src="icon.svg" alt="" width="36" height="36" style="vertical-align:-9px;margin-right:8px" onerror="this.replaceWith(document.createTextNode('🦟 '))">MosquitoNet</div>
   <div class="splash-sub">Vector Acoustic Surveillance</div>
   <div class="splash-ring"></div>
   <div class="splash-progress"><div class="splash-progress-fill"></div></div>
@@ -1427,8 +1461,8 @@ details.info-section[open] .ish-chevron { transform: rotate(90deg); }
         <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
       </svg>
     </button>
-    <button id="btn-listen">
-      <div class="btn-mic-dot"></div>
+    <button id="btn-listen" aria-pressed="false" aria-label="Start listening">
+      <div class="btn-mic-dot" aria-hidden="true"></div>
       <span id="btn-listen-label">START</span>
     </button>
   </header>
@@ -4984,7 +5018,7 @@ self.addEventListener('fetch', e => {
       // immediately so spectral subtraction works from frame 1 instead of after ~30s.
       // Vote buffers are cleared afterwards so calibration-era correlated votes don't persist.
       this.classifier._fastCalib = true;
-      this.setStatus('active', 'CALIBRATING…');
+      this.setStatus('calibrating', 'CALIBRATING…');
       setTimeout(() => {
         if (this.classifier) {
           this.classifier._fastCalib = false;
@@ -4999,7 +5033,7 @@ self.addEventListener('fetch', e => {
       }, 2000);
 
       const btn = document.getElementById('btn-listen');
-      if(btn){btn.classList.add('active')};
+      if(btn){ btn.classList.add('active'); btn.setAttribute('aria-pressed','true'); btn.setAttribute('aria-label','Stop listening'); }
       const lblEl = document.getElementById('btn-listen-label');
       if (lblEl) lblEl.textContent = 'STOP';
 
@@ -5118,9 +5152,9 @@ self.addEventListener('fetch', e => {
       });
     }
 
-    this.setStatus('', 'OFFLINE');
+    this.setStatus('', 'IDLE');
     const btn = document.getElementById('btn-listen');
-    if(btn){btn.classList.remove('active')};
+    if(btn){ btn.classList.remove('active'); btn.setAttribute('aria-pressed','false'); btn.setAttribute('aria-label','Start listening'); }
     const lblEl2 = document.getElementById('btn-listen-label');
     if (lblEl2) lblEl2.textContent = 'START';
 
@@ -5694,25 +5728,39 @@ self.addEventListener('fetch', e => {
     }
   }
 
+  // Drives the persistent recording indicator in the network bar. This is the
+  // single source of truth for "what is the app doing right now": IDLE, CALIBRATING,
+  // REC (listening), or ERROR. (The old code targeted a #status pill that no longer
+  // exists, and only lit REC for type==='live' — which was never passed — so the
+  // indicator was stuck on IDLE while actually recording.)
   setStatus(type, text) {
-    const dot = document.getElementById('status-dot');
-    const txt = document.getElementById('status-text');
-    if (dot) dot.className = `status-dot${type ? ' ' + type : ''}`;
-    if (txt) txt.textContent = text;
+    const dot   = document.getElementById('nb-rec-dot');
+    const label = document.getElementById('nb-rec-label');
+    if (!dot || !label) return;
+    const t = (text || '').toUpperCase();
+    const isCal  = type === 'calibrating' || t.indexOf('CALIBRAT') >= 0;
+    const isErr  = type === 'error';
+    const isLive = type === 'active' || type === 'live' || t === 'LISTENING';
 
-    // Update network bar recording indicator
-    const nbDot   = document.getElementById('nb-rec-dot');
-    const nbLabel = document.getElementById('nb-rec-label');
-    if (nbDot && nbLabel) {
-      if (type === 'live') {
-        nbDot.classList.add('live');
-        nbLabel.textContent = '🔴 REC';
-        nbLabel.style.color = 'var(--red)';
-      } else {
-        nbDot.classList.remove('live');
-        nbLabel.textContent = '🎙 IDLE';
-        nbLabel.style.color = 'var(--text3)';
-      }
+    dot.classList.remove('live');
+    dot.style.background = '';
+    dot.style.boxShadow  = '';
+    if (isErr) {
+      label.textContent = '⚠️ ' + (text || 'ERROR');
+      label.style.color = 'var(--red)';
+    } else if (isCal) {
+      dot.classList.add('live');
+      dot.style.background = 'var(--amber)';
+      dot.style.boxShadow  = '0 0 6px var(--amber)';
+      label.textContent = '🟡 CALIBRATING';
+      label.style.color = 'var(--amber)';
+    } else if (isLive) {
+      dot.classList.add('live');   // red pulsing (default .nb-dot.live)
+      label.textContent = '🔴 REC';
+      label.style.color = 'var(--red)';
+    } else {
+      label.textContent = '🎙 IDLE';
+      label.style.color = 'var(--text3)';
     }
   }
 
@@ -5721,32 +5769,34 @@ self.addEventListener('fetch', e => {
     if (!el) return;
     el.textContent = msg;
     el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), duration);
+    // Clear any in-flight hide timer so a new toast gets its full duration
+    // instead of being cut short by the previous message's timeout.
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => el.classList.remove('show'), duration);
   }
 }
 
 /* ════════════════════════════════════════════════════════════
-   PWA MANIFEST — injected dynamically (single-file deploy)
+   PWA MANIFEST — static file (manifest.webmanifest) with real PNG
+   icons is linked in <head>. When index.html is opened standalone
+   from file:// (no sibling files), fall back to an inline blob
+   manifest so the app still identifies itself.
 ════════════════════════════════════════════════════════════ */
-const manifest = {
-  name: 'MosquitoNet — Vector Surveillance',
-  short_name: 'MosquitoNet',
-  description: 'Crowd-sourced mosquito acoustic surveillance network',
-  start_url: '.',
-  display: 'standalone',
-  background_color: '#020912',
-  theme_color: '#020912',
-  orientation: 'portrait-primary',
-  icons: [
-    { src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23020912'/><text y='.9em' font-size='80'>🦟</text></svg>", sizes: '192x192', type: 'image/svg+xml' },
-  ],
-};
-const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
-const manifestURL  = URL.createObjectURL(manifestBlob);
-const manifestLink = document.createElement('link');
-manifestLink.rel  = 'manifest';
-manifestLink.href = manifestURL;
-document.head.appendChild(manifestLink);
+if (location.protocol === 'file:' && !document.querySelector('link[rel="manifest"][href$=".webmanifest"]')) {
+  const manifest = {
+    name: 'MosquitoNet — Vector Surveillance',
+    short_name: 'MosquitoNet',
+    description: 'Free acoustic mosquito detector.',
+    start_url: '.', display: 'standalone',
+    background_color: '#030b14', theme_color: '#030b14',
+    orientation: 'portrait-primary',
+    icons: [{ src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23030b14'/><text y='.9em' font-size='80'>🦟</text></svg>", sizes: '192x192', type: 'image/svg+xml' }],
+  };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' }));
+  const link = document.createElement('link');
+  link.rel = 'manifest'; link.href = url;
+  document.head.appendChild(link);
+}
 
 /* ════════════════════════════════════════════════════════════
    GLOBAL ERROR SAFETY NET

@@ -78,6 +78,31 @@ gunicorn federated_server:app \
 
 ---
 
+## Stable deploy URL (permanent address, every deploy)
+
+The app's public address is **https://uriiger-sketch.github.io/mosquito/** and it
+**never changes** between deployments — a GitHub Pages project URL is fixed by
+`<user>.github.io/<repo>/`. It only changes if the repo or account is renamed.
+
+A GitHub Actions workflow (`.github/workflows/deploy-pages.yml`) makes each deploy
+deterministic: every push to `main` republishes the whole site to that same URL.
+
+**One-time setup to activate it:**
+1. Repo **Settings → Pages**
+2. **Build and deployment → Source → "GitHub Actions"**
+3. Push to `main` (or run the workflow from the Actions tab). Done — future pushes
+   auto-deploy to the same address.
+
+Until you switch the Source to "GitHub Actions", the workflow run will fail
+harmlessly; any existing branch-based Pages deploy keeps serving the site.
+
+**Optional — a custom domain (e.g. app.mosquito.charity):** add a `CNAME` file
+containing the domain and point a DNS `CNAME` record at `uriiger-sketch.github.io`.
+Do this only once DNS is configured — an unresolvable domain in `CNAME` takes the
+site offline.
+
+---
+
 ## Part 1: GitHub Pages (the app)
 
 ### Push all files to your repo
