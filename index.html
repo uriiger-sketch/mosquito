@@ -3306,13 +3306,25 @@ class FederatedLearningClient {
 
   // ── Anonymous device ID ───────────────────────────────────────────────────
   getAnonymousId() {
-    let id = localStorage.getItem('mosquitonet_anon_id');
-    if (!id) {
-      id = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-               .map(b => b.toString(16).padStart(2, '0')).join('');
-      localStorage.setItem('mosquitonet_anon_id', id);
+    // localStorage throws (not just returns null) when site data is blocked —
+    // private mode, "block all cookies", some embedded webviews. This runs during
+    // init(), so an uncaught throw here used to abort startup entirely and the
+    // detection grid was never built. Fall back to an in-memory id for the session.
+    try {
+      let id = localStorage.getItem('mosquitonet_anon_id');
+      if (!id) {
+        id = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                 .map(b => b.toString(16).padStart(2, '0')).join('');
+        localStorage.setItem('mosquitonet_anon_id', id);
+      }
+      return id;
+    } catch (e) {
+      if (!this._memAnonId) {
+        this._memAnonId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                               .map(b => b.toString(16).padStart(2, '0')).join('');
+      }
+      return this._memAnonId;
     }
-    return id;
   }
 
   // ── Heartbeat: called every 30s to register presence ─────────────────────
@@ -4179,12 +4191,19 @@ class MapController {
   }
 
   addSimpleHeatmap(points, filterYear) {
-    // Remove old markers
-    if (this.markers.length) {
-      this.map.removeLayer(this._layerGroup);
+    // Always drop the previous layer group. The old guard was
+    // `if (this.markers.length)`, but rendering is chunked across animation
+    // frames, so on a second call (map init immediately followed by the year
+    // slider's first apply) `markers` was still empty — the first group was
+    // never removed and every marker was drawn TWICE. Dragging the year slider
+    // compounded it and mixed years together.
+    if (this._layerGroup) {
+      try { this.map.removeLayer(this._layerGroup); } catch(e) {}
     }
     this._layerGroup = L.layerGroup().addTo(this.map);
     this.markers = [];
+    // Generation token: any chunk chain from a previous call stops immediately.
+    const gen = (this._heatGen = (this._heatGen || 0) + 1);
 
     const filtered = filterYear !== null && filterYear !== undefined
       ? points.filter(p => p[4] === filterYear)
@@ -4203,6 +4222,7 @@ class MapController {
     const CHUNK = 150;
     let i = 0;
     const addChunk = () => {
+      if (gen !== this._heatGen) return;   // a newer render superseded this one
       const end = Math.min(i + CHUNK, filtered.length);
       for (; i < end; i++) {
         const [lat, lng, intensity, spIdx] = filtered[i];
@@ -4256,9 +4276,12 @@ class MapController {
     this.densityGrid[key] = count;
     this.totalDetections++;
 
-    // Update net bar counter
-    const nbDet = document.getElementById('nb-detections');
-    if (nbDet) nbDet.textContent = `${this.totalDetections} detection${this.totalDetections !== 1 ? 's' : ''}`;
+    // Map drawing is only possible once the Map tab has been opened (that is what
+    // creates this.map) and once Leaflet has actually loaded from its CDN. The
+    // density grid above is still recorded, so opening the map later shows it.
+    // Without this guard `.addTo(null)` threw on EVERY confirmed detection, which
+    // aborted the rest of the detection handler — the share card never appeared.
+    if (!this.map || typeof L === 'undefined') return;
 
     // ── Pulse marker: shows every confirmed detection ────────
     const pulse = L.circleMarker([lat, lng], {
@@ -4291,6 +4314,7 @@ class MapController {
   }
 
   drawDensitySquare(lat, lng, species, count) {
+    if (!this.map || typeof L === 'undefined') return;
     const clat = Math.floor(lat * 10) / 10;
     const clng = Math.floor(lng * 10) / 10;
     const key  = `sq_${clat.toFixed(1)},${clng.toFixed(1)},${species.id}`;
@@ -4440,7 +4464,10 @@ class SpectrogramRenderer {
     this.canvas.height = H;
     this._W = W;
     this._H = H;
-    this._noiseBuf = null;  // reset noise on resize (bin mapping changed)
+    // Full noise reset: clearing _noiseBuf alone left noiseFrameCount at its
+    // ceiling, so the calibration branch never ran again and the spectrogram
+    // used a flat -80 dB floor forever after the first rotation/resize.
+    this.resetNoise();
   }
 
   pushColumn(freqData, engine) {
@@ -4710,8 +4737,11 @@ class App {
             } catch(e) { console.warn('Map init:', e); }
           }, 80);
         } else if (name === 'map' && this.mapInited) {
-          // Map already inited — just ensure user location is shown
+          // Map already inited — refresh size (it was display:none) and location
           try { this.mapCtrl.applyPendingUserLocation(); } catch(e) {}
+          if (this.mapCtrl.map) {
+            setTimeout(() => { try { this.mapCtrl.map.invalidateSize(); } catch(e){} }, 60);
+          }
         }
       });
     });
@@ -4719,6 +4749,11 @@ class App {
     // ── 5. Resize handling ────────────────────────────────────────────────
     window.addEventListener('resize', () => {
       if (this.spectrogram) try { this.spectrogram.resize(); } catch(e){}
+      // Leaflet caches its container size; without this, rotating the phone or
+      // the mobile URL bar collapsing leaves grey tiles and offset taps.
+      if (this.mapCtrl && this.mapCtrl.map) {
+        try { this.mapCtrl.map.invalidateSize(); } catch(e){}
+      }
     });
 
     // ── 6. Session timer + time-mode strip ───────────────────────────────────
@@ -4813,9 +4848,11 @@ class App {
       } catch { /* heartbeat will handle error state */ }
     };
 
-    // Fire IMMEDIATELY on open — this is what shows you online
-    sendHeartbeat();
-    fetchStats();
+    // Fire IMMEDIATELY on open — this is what shows you online.
+    // Guarded: a network/storage failure here must never abort init() and leave
+    // the UI (detection grid, stat cards) unbuilt.
+    try { sendHeartbeat(); } catch(e) { console.warn('heartbeat:', e); }
+    try { fetchStats();    } catch(e) { console.warn('stats:', e); }
 
     // Drain any true finds left queued from a previous (offline) session, and
     // re-drain whenever the browser regains connectivity.
@@ -4899,6 +4936,7 @@ self.addEventListener('fetch', e => {
     const onPos = (pos) => {
       this.deviceLat = pos.coords.latitude;
       this.deviceLng = pos.coords.longitude;
+      this._gpsRetries = 0;               // a good fix clears the retry budget
       const acc = pos.coords.accuracy;
 
       const gpsEl = document.getElementById('wf-gps');
@@ -4911,7 +4949,10 @@ self.addEventListener('fetch', e => {
       // Store and show on map
       this.mapCtrl.setUserLocation(this.deviceLat, this.deviceLng);
 
-      // Rebuild grid; auto-disable non-native only on first GPS fix
+      // Auto-disable non-native species on the FIRST fix only. The grid is
+      // rebuilt only then too — watchPosition fires repeatedly while walking,
+      // and rebuilding on every callback destroyed the cards mid-animation,
+      // wiping `hot` states and in-flight charge bars.
       try {
         if (!this._nativeInitialized) {
           this._nativeInitialized = true;
@@ -4919,12 +4960,13 @@ self.addEventListener('fetch', e => {
           this._disabledSpecies = new Set(
             SPECIES_DB.filter(sp => !nsAcq.has(sp.id)).map(sp => sp.id)
           );
+          this._speciesSortOrder = null;   // re-sort now that "local" is known
+          this.buildDetectionGrid();
+          SPECIES_DB.forEach(sp => {
+            const c = document.getElementById('dc-' + sp.id);
+            if (c) c.classList.toggle('dc-disabled', this._disabledSpecies.has(sp.id));
+          });
         }
-        this.buildDetectionGrid();
-        SPECIES_DB.forEach(sp => {
-          const c = document.getElementById('dc-' + sp.id);
-          if (c) c.classList.toggle('dc-disabled', this._disabledSpecies.has(sp.id));
-        });
       } catch(e) { console.warn('[GPS native]', e); }
     };
 
@@ -4940,8 +4982,18 @@ self.addEventListener('fetch', e => {
         } else if (err.code === 3) {
           gpsEl.textContent = '📍 timeout';
           gpsEl.style.color = 'var(--amber)';
-          // Timeout is not a real error — just retry
-          setTimeout(() => this.acquireGeolocation && this.acquireGeolocation(), 5000);
+          // Timeout is not a real error — retry, but only a bounded number of
+          // times and only one retry in flight. A timing-out watchPosition keeps
+          // firing code-3 errors, and each one used to schedule another
+          // acquireGeolocation() → another watcher, multiplying watchers (and
+          // battery drain) without limit over a long session.
+          this._gpsRetries = (this._gpsRetries || 0) + 1;
+          if (this._gpsRetries <= 5 && !this._gpsRetryTimer) {
+            this._gpsRetryTimer = setTimeout(() => {
+              this._gpsRetryTimer = null;
+              if (this.acquireGeolocation) this.acquireGeolocation();
+            }, 5000);
+          }
         } else {
           gpsEl.textContent = '📍 error';
           gpsEl.style.color = 'var(--amber)';
@@ -4956,7 +5008,12 @@ self.addEventListener('fetch', e => {
       timeout: 10000,
       maximumAge: 120000,
     });
-    // Stage 2: watch for precise GPS fix (may take 20-30s outdoors)
+    // Stage 2: watch for precise GPS fix (may take 20-30s outdoors).
+    // Always clear the previous watch first — otherwise each call stacked a new
+    // one and nothing ever released them.
+    if (this._watchId != null) {
+      try { navigator.geolocation.clearWatch(this._watchId); } catch(e) {}
+    }
     this._watchId = navigator.geolocation.watchPosition(onPos, onErr, {
       enableHighAccuracy: true,
       timeout: 30000,
@@ -4993,6 +5050,12 @@ self.addEventListener('fetch', e => {
   }
 
   async startListening() {
+    // Re-entrancy guard. `this.running` is only set after `await engine.init()`,
+    // so two taps dispatched before that resolved both got through — creating two
+    // MediaStreams. stopListening() only ever stopped the second, leaving the
+    // first microphone stream live forever (OS mic indicator stuck on).
+    if (this._starting || this.running) return;
+    this._starting = true;
     try {
       this.engine = new MosquitoAudioEngine();
       await this.engine.init();
@@ -5019,7 +5082,11 @@ self.addEventListener('fetch', e => {
       // Vote buffers are cleared afterwards so calibration-era correlated votes don't persist.
       this.classifier._fastCalib = true;
       this.setStatus('calibrating', 'CALIBRATING…');
-      setTimeout(() => {
+      // Handle kept so stopListening() can cancel it — otherwise stopping within
+      // 2s still flipped the indicator to "REC" and toasted "Calibrated".
+      this._calibTimer = setTimeout(() => {
+        this._calibTimer = null;
+        if (!this.running) return;
         if (this.classifier) {
           this.classifier._fastCalib = false;
           SPECIES_DB.forEach(sp => {
@@ -5087,6 +5154,10 @@ self.addEventListener('fetch', e => {
         if (!this.running) return;
         setTimeout(async () => {
           try {
+            // Re-check inside the delay: the user may have pressed Stop during
+            // it, and re-acquiring the wake lock here left the screen awake with
+            // nothing listening and nothing left to release it.
+            if (!this.running) return;
             if (this.engine && this.engine.ctx && this.engine.ctx.state === 'suspended') {
               await this.engine.ctx.resume();
             }
@@ -5120,13 +5191,20 @@ self.addEventListener('fetch', e => {
       this.analysisLoop();
     } catch (err) {
       console.error(err);
+      // A failed start must not leave a half-open stream behind.
+      try { if (this.engine) this.engine.stop(); } catch(e) {}
+      this.engine  = null;
+      this.running = false;
       this.setStatus('error', 'MIC ERROR');
       this.showToast(`Microphone error: ${err.message}`);
+    } finally {
+      this._starting = false;
     }
   }
 
   stopListening() {
     this.running = false;
+    if (this._calibTimer) { clearTimeout(this._calibTimer); this._calibTimer = null; }
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
     if (this._audioWatchdog) { clearInterval(this._audioWatchdog); this._audioWatchdog = null; }
@@ -5284,12 +5362,15 @@ self.addEventListener('fetch', e => {
           const labelIdx = this.fedClient.classIndex(spId);
           if (labelIdx >= 0) this.fedClient.update(det, labelIdx);
 
-          // Map marker
+          // Map marker — never let optional map rendering abort the detection
+          // handler (the share card and counters below must always run).
           if (this.deviceLat !== null && this.deviceLng !== null) {
-            const jitter = 0.02;
-            const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
-            const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
-            this.mapCtrl.addLocalDetection(lat, lng, det.species);
+            try {
+              const jitter = 0.02;
+              const lat = this.deviceLat + (Math.random() - 0.5) * jitter;
+              const lng = this.deviceLng + (Math.random() - 0.5) * jitter;
+              this.mapCtrl.addLocalDetection(lat, lng, det.species);
+            } catch (e) { console.warn('[map] addLocalDetection:', e); }
           }
 
           // Detection share card
@@ -5353,7 +5434,9 @@ self.addEventListener('fetch', e => {
     const step = Math.max(1, Math.floor(timeData.length / W));
 
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = 'var(--s1, #061422)';
+    // Canvas fillStyle cannot resolve CSS custom properties — an unparseable
+    // value is ignored, so this silently painted with the previous style.
+    ctx.fillStyle = '#061422';
     ctx.fillRect(0, 0, W, H);
 
     // RMS
