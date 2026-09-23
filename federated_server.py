@@ -37,6 +37,13 @@ CORS(app, origins='*', supports_credentials=False,
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 DATA_DIR   = os.environ.get('DATA_DIR', '/tmp')
+# A freshly-mounted volume may not have the directory yet; create it rather than
+# failing every write for the life of the process.
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except Exception as _e:
+    print(f'[DATA_DIR] could not create {DATA_DIR}: {_e} — falling back to /tmp')
+    DATA_DIR = '/tmp'
 STATE_FILE = os.path.join(DATA_DIR, 'mosquitonet_state.json')
 LOG_FILE   = os.path.join(DATA_DIR, 'detections.jsonl')
 

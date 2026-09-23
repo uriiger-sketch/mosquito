@@ -4893,30 +4893,22 @@ class App {
   }
 
   registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-      // Inline service worker via blob URL
-      const swCode = `
-self.addEventListener('install', e => { self.skipWaiting(); });
-self.addEventListener('activate', e => { clients.claim(); });
-self.addEventListener('fetch', e => {
-  // Only intercept map tile requests — let all other fetches pass through untouched
-  if (e.request.url.includes('tile.openstreetmap.org')) {
-    e.respondWith(
-      caches.open('map-tiles').then(cache =>
-        cache.match(e.request).then(r => r || fetch(e.request).then(resp => {
-          cache.put(e.request, resp.clone()); return resp;
-        }))
-      )
-    );
-  }
-  // For mosquito.charity and everything else: return without calling respondWith
-  // so the browser handles the request natively (no SW interference)
-});
-      `;
-      const blob = new Blob([swCode], { type: 'application/javascript' });
-      const url  = URL.createObjectURL(blob);
-      navigator.serviceWorker.register(url).catch(() => {});
-    }
+    if (!('serviceWorker' in navigator)) return;
+    // Register the real ./sw.js. The previous version built the worker as a blob
+    // URL, which browsers ALWAYS reject (a SW script must be same-origin HTTP(S)),
+    // and the rejection was swallowed — so there was no offline support and
+    // Chrome never fired beforeinstallprompt, leaving the install banner dead.
+    // Only meaningful over http(s); skip on file:// to avoid a console error.
+    if (location.protocol === 'file:') return;
+    const doRegister = () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => { if (reg && reg.update) { try { reg.update(); } catch(e) {} } })
+        .catch(err => console.warn('[SW] registration failed:', err));
+    };
+    // The App is constructed from the window 'load' handler, so 'load' has
+    // usually already fired by now — adding another listener would never run.
+    if (document.readyState === 'complete') doRegister();
+    else window.addEventListener('load', doRegister, { once: true });
   }
 
   // ── Geolocation — called once at startup ──

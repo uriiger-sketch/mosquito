@@ -1,10 +1,52 @@
 # MosquitoNet — Complete Deployment Guide
 
+## ⚠️ READ FIRST: set DATA_DIR to a persistent volume
+
+`DATA_DIR` defaults to `/tmp`. On Railway, Render, Heroku and Fly, `/tmp` is
+**ephemeral** — it is wiped on every restart, redeploy and daily container
+recycle. If you go live without setting it you will **permanently lose every
+detection, all statistics and the trained federated model**, roughly daily, with
+no warning and no way to recover them.
+
+The server prints a loud banner at startup when it detects this, and
+`GET /health` reports `"ephemeral": true`.
+
+**Railway**
+1. Service → **Variables** → add `DATA_DIR = /data`
+2. Service → **Settings → Volumes** → **Add Volume**, mount path `/data`
+3. Redeploy. Confirm `curl https://YOUR-URL/health` shows `"ephemeral": false`
+   and `"writable": true`.
+
+**Render**
+1. Service → **Disks** → **Add Disk**, mount path `/data` (1 GB is plenty)
+2. Service → **Environment** → add `DATA_DIR = /data`
+3. Redeploy and check `/health` as above.
+
+**Docker / VPS / Fly** — already correct: the `Dockerfile` sets `DATA_DIR=/data`
+and declares `VOLUME /data`. Just make sure you actually mount it:
+`docker run -v mosquitonet_data:/data ...`
+
+**Verify persistence for real** — the only check that matters:
+```bash
+curl -s https://YOUR-URL/health | grep -o '"total_detections":[0-9]*'
+# restart/redeploy the service, then run it again — the number must NOT reset.
+```
+
+Capacity note: the server keeps the most recent `DETECTION_LOG_MAX` (default
+20000) detections in RAM for `/log`; the on-disk JSONL keeps the full history and
+is append-only. Raise it with the `DETECTION_LOG_MAX` env var if you have memory
+to spare, but it is the setting that keeps memory bounded — don't remove it.
+
+---
+
 ## What goes where
 
 ```
 mosquito/
-├── index.html                ← PWA app (GitHub Pages / gh-pages branch)
+├── index.html                ← PWA app (GitHub Pages)
+├── sw.js                     ← service worker (offline support)
+├── manifest.webmanifest      ← PWA manifest
+├── icon.svg / *.png          ← app icons
 ├── federated_server.py       ← Python backend (Railway / Render / Docker)
 ├── requirements.txt          ← Python deps
 ├── Procfile                  ← Railway/Heroku start command
@@ -13,7 +55,7 @@ mosquito/
 └── README.md
 ```
 
-`index.html` is fully self-contained — works with no server.
+`index.html` works with no server (detection is fully on-device).
 The server adds: global detection map, federated model, live device count.
 
 ---
