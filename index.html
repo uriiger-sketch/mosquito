@@ -3580,9 +3580,11 @@ class MapController {
       bounds: WORLD_BOUNDS,
     }).addTo(this.map);
 
-    // Generate and cache all points; year-filtering happens on slider change
-    this.allPoints = this.generateGlobalHotspots();
-    this.addSimpleHeatmap(this.allPoints, null);
+    // Load the validated occurrence records (async); year-filtering on slider change
+    this.loadMapData().then(recs => {
+      this.allPoints = recs;
+      this.addSimpleHeatmap(this.allPoints, this._yearFilter ?? null);
+    });
 
     this.addLegend();
 
@@ -3696,553 +3698,83 @@ class MapController {
   }
 
   filterByYear(yr) {
+    this._yearFilter = yr;        // remembered so the async data load applies it
     if (!this.allPoints || !this.allPoints.length) return;
     this.addSimpleHeatmap(this.allPoints, yr);
   }
 
-  generateGlobalHotspots() {
-    // ══════════════════════════════════════════════════════════════════════════
-    // DATA PROVENANCE — All entries sourced from the publications listed below.
-    // Coordinates verified against OpenStreetMap city centroids.
-    // Radii (r°) are pre-validated to stay on land: coastal/island cities use
-    // r ≤ 0.12°; large inland cities use r up to 0.6°.
-    //
-    // SOURCE A: WHO World Malaria Report 2025 (pub. Dec 2025)
-    //   282M cases, 610K deaths in 2024. Country burden %: Nigeria 31.9%,
-    //   DRC 11.7%, Niger 6.1%. 11 high-burden countries named explicitly.
-    //   URL: who.int/teams/global-malaria-programme/reports/world-malaria-report-2025
-    //
-    // SOURCE B: PAHO Dengue Outbreak Bulletin & Epidemiological Alerts 2024
-    //   14.4M cases in Americas alone in 2024 (record). Country breakdown:
-    //   Brazil 10M+, Argentina 582K, Mexico 559K, Colombia 321K, Paraguay 296K,
-    //   Peru 272K, Guatemala 189K, Honduras 177K.
-    //   URL: paho.org/en/topics/dengue/dengue-multi-country-grade-3-outbreak
-    //
-    // SOURCE C: WHO Weekly Epidemiological Record 2025 (WER 10052)
-    //   Global dengue 2024: 14.4M cases across 100+ countries. SE Asia +
-    //   Western Pacific: Bangladesh, India, Indonesia, Malaysia, Vietnam.
-    //   URL: who.int/publications/i/item/who-wer10052-665-678
-    //
-    // SOURCE D: ECDC Mosquito Maps — Aedes distribution (May 2024 update)
-    //   Ae. albopictus established in 13 EU countries; newly introduced 2024
-    //   in France (6 regions), Germany (1 region), Netherlands, Portugal, Slovenia.
-    //   Ae. aegypti introduced Gran Canaria, Spain (2024).
-    //   URL: ecdc.europa.eu/en/disease-vectors/surveillance-and-disease-data/mosquito-maps
-    //
-    // SOURCE E: CDC ArboNET West Nile Virus 2024 (data.gov / cdc.gov/west-nile)
-    //   1,466 US WNV cases in 2024. Highest cumulative incidence: South Dakota
-    //   (13% population seroprevalence), North Dakota, Nebraska, Kansas.
-    //   URL: cdc.gov/west-nile-virus/data-maps/current-year-data.html
-    //
-    // SOURCE F: ECDC West Nile Virus surveillance Europe 2024
-    //   1,200 WNV cases in Europe 2024. Italy leading (767 cases 2025 ytd),
-    //   Greece, Romania, Serbia. Northward expansion to Germany, Netherlands.
-    //   URL: ecdc.europa.eu/en/west-nile-fever/surveillance-and-disease-data
-    //
-    // SOURCE G: Kraemer et al. 2015 eLife — Global Aedes aegypti & albopictus
-    //   Most comprehensive peer-reviewed compendium of vector occurrence records.
-    //   Used for distribution of albopictus in Japan, South Korea, China, Turkey.
-    //   DOI: 10.7554/eLife.08347
-    //
-    // SOURCE H: WHO Fact Sheet Malaria 2025 (who.int/news-room/fact-sheets/malaria)
-    //   Regional burden, An. stephensi urban spread in Horn of Africa & India.
-    //
-    // yr field = year of primary surveillance data used (2000-2024)
-    // sp: 0=Anopheles gambiae (malaria), 1=Aedes aegypti (dengue/Zika),
-    //     2=Aedes albopictus (dengue/chik), 3=Culex pipiens/quinquefasciatus (WNV/JE)
-    // ══════════════════════════════════════════════════════════════════════════
-    const points = [];
-    const centers = [
-      // KEY:
-      // r=0.05 ISLAND city (tiny landmass — ~5km max scatter)
-      // r=0.12 COASTAL city (bay/estuary/peninsula — ~12km max scatter)
-      // r=0.35 INLAND city (~35km max scatter, safe from water)
-      // sp: 0=Anopheles(malaria) 1=Ae.aegypti(dengue) 2=Ae.albopictus(tiger) 3=Culex(WNV)
-      // Sources: WHO Malaria Report 2025, PAHO Dengue 2024, CDC ArboNET,
-      //          ECDC Mosquito Maps May 2024, Kraemer et al. eLife 2015
-      // yr = year of primary data record
-
-      // ════════ ANOPHELES — MALARIA ════════
-      // Nigeria (31.9% global malaria deaths 2024, WHO 2025)
-      { lat:  6.524, lng:  3.379, r: 0.12, n: 55, sp: 0, yr: 2024 }, // Lagos — coastal
-      { lat:  9.072, lng:  7.491, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Abuja — inland
-      { lat: 12.002, lng:  8.592, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Kano — inland
-      { lat:  7.376, lng:  3.947, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Ibadan — inland
-      { lat:  6.335, lng:  5.627, r: 0.35, n: 28, sp: 0, yr: 2024 }, // Benin City — inland
-      { lat:  4.815, lng:  7.049, r: 0.12, n: 25, sp: 0, yr: 2024 }, // Port Harcourt — delta
-      { lat:  8.492, lng:  4.541, r: 0.35, n: 20, sp: 0, yr: 2024 }, // Ilorin — inland
-      { lat: 10.298, lng: 13.283, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Maiduguri — inland
-
-      // DRC (11.7% global malaria deaths 2024, WHO 2025)
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 60, sp: 0, yr: 2024 }, // Kinshasa — inland river (Congo R, 50km from coast)
-      { lat: -1.679, lng: 29.222, r: 0.12, n: 30, sp: 0, yr: 2024 }, // Goma — Lake Kivu shore
-      { lat:  0.517, lng: 25.198, r: 0.35, n: 28, sp: 0, yr: 2023 }, // Kisangani — inland
-      { lat:-11.663, lng: 27.479, r: 0.35, n: 22, sp: 0, yr: 2023 }, // Lubumbashi — inland
-
-      // Niger (6.1% global malaria deaths)
-      { lat: 13.512, lng:  2.125, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Niamey — inland
-      { lat: 13.808, lng:  8.988, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Zinder — inland
-
-      // Uganda
-      { lat:  0.316, lng: 32.582, r: 0.35, n: 40, sp: 0, yr: 2024 }, // Kampala — inland (Victoria 30km S)
-      { lat:  0.451, lng: 33.200, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Jinja — Lake Victoria shore
-      { lat:  2.774, lng: 32.299, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Gulu — inland
-
-      // Tanzania (4.3% global malaria deaths)
-      { lat: -6.792, lng: 39.208, r: 0.12, n: 42, sp: 0, yr: 2024 }, // Dar es Salaam — coastal
-      { lat: -3.355, lng: 37.339, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Moshi — inland
-      { lat: -8.900, lng: 33.460, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Mbeya — inland
-
-      // Burkina Faso
-      { lat: 12.365, lng: -1.533, r: 0.35, n: 38, sp: 0, yr: 2024 }, // Ouagadougou — inland
-      { lat: 11.177, lng: -4.299, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Bobo-Dioulasso — inland
-
-      // Mali
-      { lat: 12.650, lng: -8.000, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Bamako — inland
-      { lat: 14.500, lng: -4.000, r: 0.12, n: 15, sp: 0, yr: 2022 }, // Mopti — Niger River delta
-
-      // Ghana
-      { lat:  5.559, lng: -0.197, r: 0.12, n: 35, sp: 0, yr: 2024 }, // Accra — coastal
-      { lat:  6.688, lng: -1.624, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Kumasi — inland
-
-      // Mozambique
-      { lat:-25.966, lng: 32.573, r: 0.12, n: 22, sp: 0, yr: 2024 }, // Maputo — bay
-      { lat:-19.843, lng: 34.838, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Beira — coastal delta
-      { lat:-15.116, lng: 39.267, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Nampula — inland
-
-      // Cameroon
-      { lat:  3.866, lng: 11.517, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Yaoundé — inland
-      { lat:  4.050, lng:  9.700, r: 0.12, n: 28, sp: 0, yr: 2023 }, // Douala — estuary
-
-      // Sudan
-      { lat: 15.552, lng: 32.532, r: 0.35, n: 35, sp: 0, yr: 2024 }, // Khartoum — inland
-      { lat: 13.628, lng: 25.349, r: 0.35, n: 15, sp: 0, yr: 2022 }, // El Fasher — inland
-
-      // Ethiopia
-      { lat:  9.032, lng: 38.740, r: 0.35, n: 25, sp: 0, yr: 2024 }, // Addis Ababa — inland
-      { lat:  7.666, lng: 36.834, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Jimma — inland
-      { lat:  7.060, lng: 38.477, r: 0.12, n: 15, sp: 0, yr: 2023 }, // Hawassa — Lake Hawassa shore
-
-      // Kenya
-      { lat: -1.292, lng: 36.822, r: 0.35, n: 20, sp: 0, yr: 2024 }, // Nairobi — inland
-      { lat: -4.043, lng: 39.668, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Mombasa — coastal island
-      { lat:  0.091, lng: 34.768, r: 0.12, n: 15, sp: 0, yr: 2023 }, // Kisumu — Lake Victoria shore
-
-      // Angola
-      { lat: -8.839, lng: 13.234, r: 0.12, n: 32, sp: 0, yr: 2024 }, // Luanda — coastal
-      { lat:-12.775, lng: 15.739, r: 0.35, n: 15, sp: 0, yr: 2023 }, // Huambo — inland
-
-      // Senegal — Dakar is on extreme tip of Cap-Vert peninsula
-      { lat: 14.716, lng:-17.467, r: 0.08, n: 22, sp: 0, yr: 2024 }, // Dakar — peninsula tip, r=0.08
-      { lat: 14.163, lng:-15.574, r: 0.35, n: 12, sp: 0, yr: 2022 }, // Kaolack — inland
-
-      // Madagascar
-      { lat:-18.910, lng: 47.536, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Antananarivo — inland plateau
-      { lat:-12.352, lng: 49.301, r: 0.12, n: 12, sp: 0, yr: 2022 }, // Antsiranana — coastal bay
-
-      // South Sudan / CAR
-      { lat:  4.859, lng: 31.571, r: 0.35, n: 30, sp: 0, yr: 2024 }, // Juba — inland
-      { lat:  4.361, lng: 18.555, r: 0.35, n: 25, sp: 0, yr: 2023 }, // Bangui — inland
-
-      // West Africa
-      { lat:  9.538, lng:-13.677, r: 0.08, n: 20, sp: 0, yr: 2023 }, // Conakry — peninsula, r=0.08
-      { lat:  5.354, lng: -4.008, r: 0.12, n: 25, sp: 0, yr: 2024 }, // Abidjan — coastal lagoon
-      { lat:  6.300, lng:-10.797, r: 0.12, n: 20, sp: 0, yr: 2023 }, // Monrovia — coastal
-      { lat:  8.484, lng:-13.228, r: 0.08, n: 18, sp: 0, yr: 2023 }, // Freetown — peninsula, r=0.08
-
-      // Zambia / Zimbabwe
-      { lat:-15.417, lng: 28.283, r: 0.35, n: 22, sp: 0, yr: 2023 }, // Lusaka — inland
-      { lat:-17.829, lng: 31.052, r: 0.35, n: 18, sp: 0, yr: 2023 }, // Harare — inland
-
-      // India (An. stephensi urban spread, WHO 2025)
-      { lat: 19.076, lng: 72.878, r: 0.08, n: 28, sp: 0, yr: 2024 }, // Mumbai — peninsula, r=0.08
-      { lat: 28.644, lng: 77.216, r: 0.35, n: 22, sp: 0, yr: 2024 }, // Delhi — inland
-      { lat: 15.358, lng: 75.135, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Hubli-Dharwad — inland
-
-      // Pakistan
-      { lat: 25.396, lng: 68.374, r: 0.35, n: 20, sp: 0, yr: 2022 }, // Hyderabad Sindh — inland
-      { lat: 30.183, lng: 66.998, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Quetta — inland
-
-      // PNG / Pacific
-      { lat: -9.443, lng:147.180, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Port Moresby — coastal
-      { lat: -6.315, lng:143.955, r: 0.35, n: 15, sp: 0, yr: 2022 }, // PNG Highlands — inland
-      { lat: -9.428, lng:160.033, r: 0.05, n: 12, sp: 0, yr: 2022 }, // Honiara — small island, r=0.05
-      { lat:-17.738, lng:168.321, r: 0.05, n: 10, sp: 0, yr: 2022 }, // Port Vila — island, r=0.05
-
-      // Myanmar
-      { lat: 16.871, lng: 96.152, r: 0.12, n: 22, sp: 0, yr: 2023 }, // Yangon — delta
-      { lat: 21.974, lng: 96.084, r: 0.35, n: 15, sp: 0, yr: 2022 }, // Mandalay — inland
-
-      // Amazon Basin (An. darlingi)
-      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 0, yr: 2024 }, // Manaus — inland
-      { lat: -1.455, lng:-48.503, r: 0.12, n: 18, sp: 0, yr: 2023 }, // Belém — estuary
-
-      // Historical malaria records
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 45, sp: 0, yr: 2020 },
-      { lat:  6.524, lng:  3.379, r: 0.12, n: 35, sp: 0, yr: 2020 },
-      { lat: 12.365, lng: -1.533, r: 0.35, n: 32, sp: 0, yr: 2018 },
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 35, sp: 0, yr: 2015 },
-      { lat: 13.512, lng:  2.125, r: 0.35, n: 30, sp: 0, yr: 2015 },
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 28, sp: 0, yr: 2010 },
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 22, sp: 0, yr: 2000 },
-
-      // ════════ AEDES AEGYPTI — DENGUE / ZIKA ════════
-      // Brazil 2024: 10M+ cases (PAHO / WHO WER-10052)
-      { lat:-15.793, lng:-47.882, r: 0.35, n: 65, sp: 1, yr: 2024 }, // Brasília — inland
-      { lat:-22.908, lng:-43.172, r: 0.12, n: 70, sp: 1, yr: 2024 }, // Rio — coastal bay
-      { lat:-23.550, lng:-46.633, r: 0.35, n: 65, sp: 1, yr: 2024 }, // São Paulo — inland
-      { lat:-19.917, lng:-43.934, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Belo Horizonte — inland
-      { lat: -8.054, lng:-34.881, r: 0.12, n: 40, sp: 1, yr: 2024 }, // Recife — coastal
-      { lat: -3.717, lng:-38.543, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Fortaleza — coastal
-      { lat:-12.971, lng:-38.501, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Salvador — coastal
-      { lat:-20.319, lng:-40.338, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Vitória — coastal
-      { lat:-25.428, lng:-49.271, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Curitiba — inland
-      { lat:-30.033, lng:-51.230, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Porto Alegre — Guaíba river shore
-      { lat: -3.100, lng:-60.025, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Manaus — inland
-      { lat: -1.455, lng:-48.503, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Belém — estuary
-      { lat: -5.793, lng:-35.209, r: 0.12, n: 20, sp: 1, yr: 2024 }, // Natal — coastal
-      { lat:-16.687, lng:-49.264, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Goiânia — inland
-      // Brazil historical
-      { lat:-22.908, lng:-43.172, r: 0.12, n: 50, sp: 1, yr: 2022 },
-      { lat:-23.550, lng:-46.633, r: 0.35, n: 45, sp: 1, yr: 2022 },
-      { lat:-22.908, lng:-43.172, r: 0.12, n: 35, sp: 1, yr: 2019 },
-      { lat: -8.054, lng:-34.881, r: 0.12, n: 28, sp: 1, yr: 2016 }, // Zika epicenter
-      { lat:-22.908, lng:-43.172, r: 0.12, n: 20, sp: 1, yr: 2010 },
-
-      // Argentina 2024: 582K cases (PAHO record)
-      { lat:-34.618, lng:-58.381, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Buenos Aires — inland (La Plata estuary 30km E)
-      { lat:-31.417, lng:-64.183, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Córdoba — inland
-      { lat:-32.889, lng:-68.845, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Mendoza — inland
-      { lat:-26.808, lng:-65.217, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Tucumán — inland
-      { lat:-27.450, lng:-58.990, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Resistencia — inland
-      { lat:-27.367, lng:-55.896, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Posadas — inland
-
-      // Mexico 2024: 559K cases (WHO WER-10052)
-      { lat: 19.432, lng:-99.133, r: 0.35, n: 40, sp: 1, yr: 2024 }, // Mexico City — inland
-      { lat: 20.967, lng:-89.623, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Mérida — inland
-      { lat: 17.073, lng:-96.723, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Oaxaca — inland
-      { lat: 16.752, lng:-93.116, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Tuxtla — inland
-      { lat: 25.686, lng:-100.316,r: 0.35, n: 18, sp: 1, yr: 2024 }, // Monterrey — inland
-      { lat: 20.654, lng:-105.227,r: 0.08, n: 15, sp: 1, yr: 2023 }, // Puerto Vallarta — coastal, r=0.08
-      { lat: 21.882, lng:-102.296,r: 0.35, n: 15, sp: 1, yr: 2023 }, // Aguascalientes — inland
-
-      // Colombia 2024: 321K cases
-      { lat:  6.244, lng:-75.574, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Medellín — inland valley
-      { lat:  3.871, lng:-76.522, r: 0.35, n: 30, sp: 1, yr: 2024 }, // Cali — inland valley
-      { lat: 10.964, lng:-74.796, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Barranquilla — coastal
-      { lat:  4.711, lng:-74.073, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Bogotá — inland
-      { lat:  7.119, lng:-73.123, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Bucaramanga — inland
-
-      // Paraguay 2024: 296K
-      { lat:-25.286, lng:-57.647, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Asunción — Paraguay River shore
-      { lat:-27.333, lng:-55.867, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Encarnación — inland
-
-      // Peru 2024: 272K
-      { lat:-12.046, lng:-77.043, r: 0.12, n: 35, sp: 1, yr: 2024 }, // Lima — coastal
-      { lat: -3.743, lng:-73.247, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Iquitos — inland Amazon
-      { lat:-16.409, lng:-71.537, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Arequipa — inland
-
-      // Guatemala 2024: 189K, Honduras 2024: 177K
-      { lat: 14.641, lng:-90.513, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Guatemala City — inland
-      { lat: 14.082, lng:-87.206, r: 0.35, n: 35, sp: 1, yr: 2024 }, // Tegucigalpa — inland
-      { lat: 15.504, lng:-88.025, r: 0.35, n: 18, sp: 1, yr: 2024 }, // San Pedro Sula — inland
-
-      // Venezuela, Ecuador, Bolivia
-      { lat: 10.489, lng:-66.879, r: 0.12, n: 30, sp: 1, yr: 2024 }, // Caracas — coastal valley
-      { lat: -2.170, lng:-79.922, r: 0.08, n: 28, sp: 1, yr: 2024 }, // Guayaquil — estuary, r=0.08
-      { lat:  4.711, lng:-74.073, r: 0.35, n: 18, sp: 1, yr: 2024 }, // Bogotá lower zones
-      { lat:-17.783, lng:-63.182, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Santa Cruz — inland
-
-      // Central America
-      { lat: 12.136, lng:-86.313, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Managua — inland
-      { lat: 13.692, lng:-89.218, r: 0.35, n: 20, sp: 1, yr: 2024 }, // San Salvador — inland
-      { lat:  9.930, lng:-84.088, r: 0.35, n: 18, sp: 1, yr: 2024 }, // San José CR — inland
-
-      // Caribbean — all islands, tight r
-      { lat: 18.543, lng:-72.338, r: 0.08, n: 28, sp: 1, yr: 2024 }, // Port-au-Prince — island, r=0.08
-      { lat: 18.486, lng:-69.931, r: 0.08, n: 22, sp: 1, yr: 2024 }, // Santo Domingo — island, r=0.08
-      { lat: 18.466, lng:-66.106, r: 0.05, n: 18, sp: 1, yr: 2024 }, // San Juan PR — island, r=0.05
-      { lat: 23.136, lng:-82.359, r: 0.08, n: 20, sp: 1, yr: 2023 }, // Havana — island, r=0.08
-      { lat: 17.997, lng:-76.790, r: 0.08, n: 18, sp: 1, yr: 2023 }, // Kingston — island, r=0.08
-      { lat: 10.652, lng:-61.519, r: 0.05, n: 12, sp: 1, yr: 2023 }, // Port of Spain — island, r=0.05
-
-      // USA local dengue (CDC 2024, south Florida only)
-      { lat: 25.774, lng:-80.193, r: 0.12, n: 18, sp: 1, yr: 2024 }, // Miami — coastal
-      { lat: 24.555, lng:-81.781, r: 0.05, n: 10, sp: 1, yr: 2024 }, // Key West — tiny island, r=0.05
-
-      // SE Asia dengue (WHO WER-10052 2025)
-      { lat: 13.754, lng:100.501, r: 0.35, n: 55, sp: 1, yr: 2024 }, // Bangkok — inland (Gulf 70km S)
-      { lat:  3.140, lng:101.687, r: 0.35, n: 50, sp: 1, yr: 2024 }, // Kuala Lumpur — inland
-      { lat: 10.823, lng:106.630, r: 0.12, n: 50, sp: 1, yr: 2024 }, // Ho Chi Minh City — Mekong delta
-      { lat: 21.028, lng:105.854, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Hanoi — inland
-      { lat: 14.599, lng:120.984, r: 0.08, n: 48, sp: 1, yr: 2024 }, // Manila — island, r=0.08
-      { lat:-6.211, lng:106.845, r: 0.12, n: 55, sp: 1, yr: 2024 }, // Jakarta — Java coast
-      { lat:-7.250, lng:112.750, r: 0.12, n: 35, sp: 1, yr: 2024 }, // Surabaya — Java coast
-      { lat:-8.650, lng:115.217, r: 0.12, n: 22, sp: 1, yr: 2023 }, // Denpasar — Bali island, push W
-      { lat:  1.352, lng:103.820, r: 0.05, n: 18, sp: 1, yr: 2024 }, // Singapore — city-island, r=0.05
-      { lat: 11.562, lng:104.928, r: 0.35, n: 25, sp: 1, yr: 2024 }, // Phnom Penh — inland
-      { lat: 17.967, lng:102.600, r: 0.35, n: 20, sp: 1, yr: 2023 }, // Vientiane — inland
-      { lat: 16.871, lng: 96.152, r: 0.12, n: 28, sp: 1, yr: 2024 }, // Yangon — delta
-      { lat:  5.414, lng:100.329, r: 0.05, n: 18, sp: 1, yr: 2023 }, // Penang — island, r=0.05
-      { lat:  1.540, lng:110.345, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Kuching — inland
-
-      // South Asia dengue
-      { lat: 23.810, lng: 90.412, r: 0.35, n: 48, sp: 1, yr: 2024 }, // Dhaka — inland
-      { lat: 22.356, lng: 91.783, r: 0.12, n: 20, sp: 1, yr: 2024 }, // Chittagong — coastal
-      { lat: 28.644, lng: 77.216, r: 0.35, n: 45, sp: 1, yr: 2024 }, // Delhi — inland
-      { lat: 19.076, lng: 72.878, r: 0.08, n: 40, sp: 1, yr: 2024 }, // Mumbai — peninsula, r=0.08
-      { lat: 13.082, lng: 80.270, r: 0.12, n: 38, sp: 1, yr: 2024 }, // Chennai — coastal
-      { lat: 12.977, lng: 77.591, r: 0.35, n: 30, sp: 1, yr: 2024 }, // Bengaluru — inland plateau
-      { lat: 22.572, lng: 88.363, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Kolkata — inland
-      { lat: 17.385, lng: 78.487, r: 0.35, n: 22, sp: 1, yr: 2024 }, // Hyderabad — inland
-      { lat: 26.850, lng: 80.950, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Lucknow — inland
-      { lat:  6.927, lng: 79.861, r: 0.12, n: 22, sp: 1, yr: 2024 }, // Colombo — coastal
-      { lat: 31.549, lng: 74.343, r: 0.35, n: 28, sp: 1, yr: 2024 }, // Lahore — inland
-      { lat: 33.720, lng: 73.043, r: 0.35, n: 20, sp: 1, yr: 2024 }, // Islamabad — inland
-
-      // Africa + Horn dengue
-      { lat: -1.292, lng: 36.822, r: 0.35, n: 15, sp: 1, yr: 2023 }, // Nairobi — inland
-      { lat: 11.589, lng: 43.145, r: 0.12, n: 12, sp: 1, yr: 2023 }, // Djibouti — coastal
-      { lat:  2.046, lng: 45.341, r: 0.12, n: 18, sp: 1, yr: 2023 }, // Mogadishu — coastal
-      { lat:-20.162, lng: 57.499, r: 0.05, n: 12, sp: 1, yr: 2023 }, // Port Louis — island, r=0.05
-      { lat:-21.115, lng: 55.536, r: 0.08, n: 12, sp: 1, yr: 2024 }, // St-Denis Réunion — island, r=0.08
-      { lat: 15.354, lng: 44.207, r: 0.35, n: 18, sp: 1, yr: 2023 }, // Sana'a — inland
-      { lat: 12.779, lng: 45.036, r: 0.12, n: 12, sp: 1, yr: 2022 }, // Aden — coastal
-
-      // Australia dengue (north QLD only, Ae. aegypti)
-      { lat:-16.920, lng:145.770, r: 0.12, n: 15, sp: 1, yr: 2023 }, // Cairns — coastal
-
-      // ════════ AEDES ALBOPICTUS — TIGER MOSQUITO ════════
-      // ECDC May 2024: established 13 EU countries; new 2024: FR(×6), DE, NL, PT, SI
-      // Italy — established
-      { lat: 41.902, lng: 12.496, r: 0.35, n: 30, sp: 2, yr: 2024 }, // Rome — inland
-      { lat: 45.464, lng:  9.190, r: 0.35, n: 28, sp: 2, yr: 2024 }, // Milan — inland
-      { lat: 40.851, lng: 14.268, r: 0.12, n: 22, sp: 2, yr: 2024 }, // Naples — coastal
-      { lat: 43.769, lng: 11.255, r: 0.35, n: 18, sp: 2, yr: 2024 }, // Florence — inland
-      { lat: 45.438, lng: 12.335, r: 0.05, n: 12, sp: 2, yr: 2024 }, // Venice — lagoon island, r=0.05 (mainland scatter)
-      { lat: 44.494, lng: 11.342, r: 0.35, n: 18, sp: 2, yr: 2023 }, // Bologna — inland
-      { lat: 45.065, lng:  7.685, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Turin — inland
-      // Spain — established
-      { lat: 41.385, lng:  2.173, r: 0.12, n: 28, sp: 2, yr: 2024 }, // Barcelona — coastal
-      { lat: 40.416, lng: -3.703, r: 0.35, n: 22, sp: 2, yr: 2024 }, // Madrid — inland
-      { lat: 39.470, lng: -0.376, r: 0.12, n: 20, sp: 2, yr: 2024 }, // Valencia — coastal
-      // France — established + new 2024
-      { lat: 43.296, lng:  5.370, r: 0.08, n: 20, sp: 2, yr: 2024 }, // Marseille — coastal peninsula, r=0.08
-      { lat: 43.605, lng:  1.444, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Toulouse — inland (new 2024)
-      { lat: 44.837, lng: -0.579, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Bordeaux — inland (new 2024)
-      { lat: 43.710, lng:  7.262, r: 0.08, n: 12, sp: 2, yr: 2023 }, // Nice — coastal, r=0.08
-      // Greece — established
-      { lat: 40.640, lng: 22.944, r: 0.35, n: 22, sp: 2, yr: 2024 }, // Thessaloniki — inland
-      { lat: 37.983, lng: 23.727, r: 0.12, n: 18, sp: 2, yr: 2024 }, // Athens — coastal
-      // Portugal (introduced 2024)
-      { lat: 38.717, lng: -9.143, r: 0.08, n: 15, sp: 2, yr: 2024 }, // Lisbon — estuary, r=0.08
-      { lat: 41.158, lng: -8.629, r: 0.12, n: 12, sp: 2, yr: 2024 }, // Porto — coastal
-      // Other EU established
-      { lat: 45.815, lng: 15.982, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Zagreb — inland
-      { lat: 43.508, lng: 16.440, r: 0.08, n: 12, sp: 2, yr: 2023 }, // Split — coastal, r=0.08
-      { lat: 46.046, lng: 14.506, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Ljubljana — inland (new 2024)
-      { lat: 47.809, lng: 13.055, r: 0.35, n: 10, sp: 2, yr: 2023 }, // Salzburg — inland
-      { lat: 47.497, lng: 19.040, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Budapest — inland
-      { lat: 44.439, lng: 26.097, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Bucharest — inland
-      { lat: 42.697, lng: 23.322, r: 0.35, n: 15, sp: 2, yr: 2024 }, // Sofia — inland
-      // Netherlands (introduced 2024)
-      { lat: 52.370, lng:  4.895, r: 0.12, n:  8, sp: 2, yr: 2024 }, // Amsterdam — canal city, r=0.12 (city centre is land)
-      // Germany (newly established 2024)
-      { lat: 48.137, lng: 11.576, r: 0.35, n: 10, sp: 2, yr: 2024 }, // Munich — inland
-      // Malta (tiny island)
-      { lat: 35.900, lng: 14.510, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Valletta — island, r=0.05
-      // Madeira / Canary Islands
-      { lat: 32.650, lng:-16.910, r: 0.05, n: 10, sp: 2, yr: 2024 }, // Funchal Madeira — island, r=0.05
-      { lat: 28.100, lng:-15.410, r: 0.08, n:  8, sp: 2, yr: 2024 }, // Las Palmas Gran Canaria — island, r=0.08
-      // Turkey
-      { lat: 41.015, lng: 28.979, r: 0.12, n: 15, sp: 2, yr: 2024 }, // Istanbul — strait, scatter N (European side)
-      { lat: 41.000, lng: 40.524, r: 0.12, n: 10, sp: 2, yr: 2023 }, // Trabzon — coastal
-      { lat: 41.694, lng: 44.833, r: 0.35, n: 10, sp: 2, yr: 2023 }, // Tbilisi — inland
-      // East Asia (Kraemer et al. 2015)
-      { lat: 35.690, lng:139.690, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Tokyo — inland (bay 15km E)
-      { lat: 34.693, lng:135.502, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Osaka — inland
-      { lat: 26.213, lng:127.681, r: 0.05, n: 12, sp: 2, yr: 2023 }, // Naha Okinawa — island, r=0.05
-      { lat: 37.566, lng:126.978, r: 0.35, n: 12, sp: 2, yr: 2023 }, // Seoul — inland
-      { lat: 23.129, lng:113.264, r: 0.35, n: 35, sp: 2, yr: 2024 }, // Guangzhou — inland
-      { lat: 22.543, lng:114.058, r: 0.12, n: 28, sp: 2, yr: 2024 }, // Shenzhen — coastal
-      { lat: 22.200, lng:113.543, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Macau — peninsula, r=0.05
-      { lat: 30.572, lng:104.066, r: 0.35, n: 18, sp: 2, yr: 2023 }, // Chengdu — inland
-      { lat: 22.998, lng:120.213, r: 0.12, n: 20, sp: 2, yr: 2024 }, // Tainan — coastal
-      { lat: 22.320, lng:114.170, r: 0.05, n: 10, sp: 2, yr: 2023 }, // Hong Kong — coastal, r=0.05
-      // Eastern USA
-      { lat: 33.749, lng:-84.388, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Atlanta — inland
-      { lat: 35.227, lng:-80.843, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Charlotte — inland
-      { lat: 36.166, lng:-86.781, r: 0.35, n: 15, sp: 2, yr: 2023 }, // Nashville — inland
-      { lat: 29.760, lng:-95.370, r: 0.35, n: 20, sp: 2, yr: 2024 }, // Houston — inland
-      // SE Australia
-      { lat:-27.470, lng:153.028, r: 0.12, n: 12, sp: 2, yr: 2023 }, // Brisbane — coastal
-      // Historical albopictus
-      { lat: 41.902, lng: 12.496, r: 0.35, n: 20, sp: 2, yr: 2020 },
-      { lat: 41.902, lng: 12.496, r: 0.35, n: 15, sp: 2, yr: 2015 },
-      { lat: 35.690, lng:139.690, r: 0.35, n: 15, sp: 2, yr: 2014 }, // Tokyo 2014 dengue
-
-      // ════════ CULEX — WEST NILE / JAPANESE ENCEPHALITIS ════════
-      // CDC ArboNET 2024: SD highest (13% seroprevalence), ND, NE, KS
-      { lat: 44.367, lng:-100.346,r: 0.35, n: 30, sp: 3, yr: 2024 }, // South Dakota — inland
-      { lat: 47.551, lng:-101.002,r: 0.35, n: 25, sp: 3, yr: 2024 }, // North Dakota — inland
-      { lat: 41.490, lng: -99.900,r: 0.35, n: 25, sp: 3, yr: 2024 }, // Nebraska — inland
-      { lat: 39.000, lng: -98.000,r: 0.35, n: 25, sp: 3, yr: 2024 }, // Kansas — inland
-      { lat: 46.870, lng:-110.360,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Montana — inland
-      { lat: 43.080, lng:-108.980,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Wyoming — inland
-      { lat: 34.052, lng:-118.243,r: 0.12, n: 18, sp: 3, yr: 2024 }, // Los Angeles — coastal
-      { lat: 32.726, lng: -97.321,r: 0.35, n: 18, sp: 3, yr: 2024 }, // Dallas — inland
-      { lat: 41.836, lng: -87.684,r: 0.35, n: 15, sp: 3, yr: 2024 }, // Chicago — inland (lake 3km E)
-      { lat: 29.951, lng: -90.071,r: 0.12, n: 18, sp: 3, yr: 2024 }, // New Orleans — delta
-      { lat: 33.448, lng:-112.074,r: 0.35, n: 15, sp: 3, yr: 2024 }, // Phoenix — inland
-      // Italy WNV 2024 (ECDC: 767 cases Italy 2025 ytd)
-      { lat: 45.464, lng:  9.190, r: 0.35, n: 30, sp: 3, yr: 2024 }, // Milan/Lombardy
-      { lat: 45.438, lng: 12.335, r: 0.05, n: 22, sp: 3, yr: 2024 }, // Venice/Veneto — island city, scatter on terraferma r=0.05
-      { lat: 44.494, lng: 11.342, r: 0.35, n: 22, sp: 3, yr: 2024 }, // Bologna — inland
-      { lat: 41.902, lng: 12.496, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Rome — inland
-      { lat: 40.851, lng: 14.268, r: 0.12, n: 15, sp: 3, yr: 2024 }, // Naples — coastal
-      { lat: 45.065, lng:  7.685, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Turin — inland
-      // Greece WNV (ECDC)
-      { lat: 40.640, lng: 22.944, r: 0.35, n: 22, sp: 3, yr: 2024 }, // Thessaloniki — inland
-      { lat: 37.983, lng: 23.727, r: 0.12, n: 15, sp: 3, yr: 2024 }, // Athens — coastal
-      // SE Europe WNV
-      { lat: 44.439, lng: 26.097, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Bucharest — inland
-      { lat: 44.812, lng: 20.461, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Belgrade — inland
-      { lat: 47.497, lng: 19.040, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Budapest — inland
-      // Russia historical WNV
-      { lat: 48.708, lng: 44.513, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Volgograd — inland
-      { lat: 47.227, lng: 39.720, r: 0.35, n: 15, sp: 3, yr: 2023 }, // Rostov-on-Don — inland
-      { lat: 48.708, lng: 44.513, r: 0.35, n: 12, sp: 3, yr: 1999 }, // Volgograd 1999 outbreak
-      // Germany / NL northward spread 2024
-      { lat: 52.520, lng: 13.405, r: 0.35, n: 10, sp: 3, yr: 2024 }, // Berlin — inland
-      { lat: 52.370, lng:  4.895, r: 0.12, n:  8, sp: 3, yr: 2024 }, // Amsterdam — r=0.12
-      // Middle East
-      { lat: 31.771, lng: 35.217, r: 0.35, n: 18, sp: 3, yr: 2024 }, // Jerusalem — inland
-      { lat: 32.085, lng: 34.781, r: 0.08, n: 15, sp: 3, yr: 2024 }, // Tel Aviv — coastal, r=0.08
-      { lat: 36.737, lng:  3.086, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Algiers — coastal
-      { lat: 36.819, lng: 10.165, r: 0.12, n: 12, sp: 3, yr: 2023 }, // Tunis — coastal
-      // Historical WNV
-      { lat: 44.439, lng: 26.097, r: 0.35, n: 10, sp: 3, yr: 1996 }, // Bucharest 1996 — first major EU WNV
-      { lat: 41.836, lng: -87.684,r: 0.35, n: 18, sp: 3, yr: 2002 }, // Chicago 2002 — largest US WNV
-      { lat: 44.367, lng:-100.346,r: 0.35, n: 25, sp: 3, yr: 2007 },
-      { lat: 40.640, lng: 22.944, r: 0.35, n: 18, sp: 3, yr: 2010 }, // Greece 2010 outbreak
-      { lat: 45.464, lng:  9.190, r: 0.35, n: 15, sp: 3, yr: 2015 },
-      // JE / Filariasis Asia
-      { lat: 35.690, lng:139.690, r: 0.35, n: 15, sp: 3, yr: 2024 }, // Tokyo
-      { lat: 13.754, lng:100.501, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Bangkok
-      { lat: 28.644, lng: 77.216, r: 0.35, n: 20, sp: 3, yr: 2024 }, // Delhi
-      { lat: 22.572, lng: 88.363, r: 0.35, n: 18, sp: 3, yr: 2023 }, // Kolkata
-      { lat: 23.810, lng: 90.412, r: 0.35, n: 18, sp: 3, yr: 2023 }, // Dhaka
-      // Australia Culex (Murray Valley Encephalitis)
-      { lat:-12.462, lng:130.841, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Darwin — coastal
-      { lat:-25.860, lng:130.000, r: 0.35, n: 15, sp: 3, yr: 2022 }, // NT interior — inland
-      // Africa filariasis (Culex)
-      { lat: -6.792, lng: 39.208, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Dar es Salaam — coastal
-      { lat:  6.524, lng:  3.379, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Lagos — coastal
-      { lat: -4.322, lng: 15.322, r: 0.35, n: 12, sp: 3, yr: 2023 }, // Kinshasa — inland
-      // S. America Culex
-      { lat:-22.908, lng:-43.172, r: 0.12, n: 15, sp: 3, yr: 2023 }, // Rio — coastal
-      { lat:-34.618, lng:-58.381, r: 0.35, n: 15, sp: 3, yr: 2023 }, // Buenos Aires — inland
-      { lat:-12.046, lng:-77.043, r: 0.12, n: 12, sp: 3, yr: 2022 }, // Lima — coastal
-    ];
-
-    // ── Ocean bounding boxes — scatter points falling here are rejected ──────────
-    // Rough open-ocean zones where no mosquito habitat exists.
-    // Source: Natural Earth ocean extents (simplified).
-    const OCEAN_BOXES = [
-      [-90, -62, -180, 180],   // Southern Ocean
-      [75,   90, -180, 180],   // Arctic Ocean
-      [-60,  60, -180, -115],  // E Pacific (clear of Americas)
-      [-60,  55,  130,  180],  // W Pacific (clear of Asia/Australia)
-      [-60,  55, -115,  -85],  // Central Pacific
-      [-55,  60,  -55,  -10],  // Open Atlantic (clear of Africa & Americas)
-      [-60,  20,   45,   95],  // Indian Ocean (clear of Africa/Asia coasts)
-    ];
-
-    function isLikelyLand(lat, lng) {
-      for (const [la0, la1, lo0, lo1] of OCEAN_BOXES) {
-        if (lat >= la0 && lat <= la1 && lng >= lo0 && lng <= lo1) return false;
-      }
-      return true;
+  // ── Vector-occurrence layer ─────────────────────────────────────────────
+  // Records come from map-data.json, produced by tools/build_map_data.py: each
+  // is ONE documented location, validated against a 1:10m land mask and
+  // de-duplicated. (This replaced ~500 lines that scattered random dots around
+  // city centres — which drew straight diagonal lines for 75 cities, put dots in
+  // the sea, and presented synthetic points as if they were observations.)
+  async loadMapData() {
+    if (this._mapData) return this._mapData;
+    try {
+      const res = await fetch('map-data.json', { cache: 'no-cache' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const d = await res.json();
+      const recs = Array.isArray(d.records) ? d.records : [];
+      // Defensive validation: never let a malformed record reach Leaflet.
+      this._mapData = recs.filter(r =>
+        r && Number.isFinite(r.lat) && Number.isFinite(r.lng) &&
+        Math.abs(r.lat) <= 90 && Math.abs(r.lng) <= 180 && typeof r.sp === 'string');
+      this._mapMeta = { generated: d.generated, sources: d.sources || {} };
+    } catch (e) {
+      console.warn('[map] map-data.json unavailable:', e);
+      this._mapData = [];
     }
-
-    for (const c of centers) {
-      const safeR = c.r;
-      let placed = 0;
-      let attempts = 0;
-      while (placed < c.n && attempts < c.n * 8) {
-        attempts++;
-        const angle  = Math.random() * 2 * Math.PI;
-        const radius = Math.sqrt(Math.random()) * safeR;
-        const lat = c.lat + radius * Math.cos(angle);
-        const lng = c.lng + radius * Math.sin(angle);
-        if (!isLikelyLand(lat, lng)) continue;  // skip if in open ocean
-        const intensity = 0.3 + Math.random() * 0.7;
-        points.push([lat, lng, intensity, c.sp, c.yr || 2024]);
-        placed++;
-      }
-      // Fallback: if all attempts failed, use city center
-      while (placed < c.n) {
-        const jitter = (Math.random() - 0.5) * 0.02;
-        points.push([c.lat + jitter, c.lng + jitter, 0.5, c.sp, c.yr || 2024]);
-        placed++;
-      }
-    }
-    return points;
+    return this._mapData;
   }
 
-  addSimpleHeatmap(points, filterYear) {
-    // Always drop the previous layer group. The old guard was
-    // `if (this.markers.length)`, but rendering is chunked across animation
-    // frames, so on a second call (map init immediately followed by the year
-    // slider's first apply) `markers` was still empty — the first group was
-    // never removed and every marker was drawn TWICE. Dragging the year slider
-    // compounded it and mixed years together.
+  // Render records, optionally only those documented up to `filterYear`
+  // (cumulative: shows how the vectors' known range grew over time).
+  addSimpleHeatmap(records, filterYear) {
+    if (!this.map || typeof L === 'undefined') return;
     if (this._layerGroup) {
       try { this.map.removeLayer(this._layerGroup); } catch(e) {}
     }
     this._layerGroup = L.layerGroup().addTo(this.map);
     this.markers = [];
-    // Generation token: any chunk chain from a previous call stops immediately.
     const gen = (this._heatGen = (this._heatGen || 0) + 1);
 
-    const filtered = filterYear !== null && filterYear !== undefined
-      ? points.filter(p => p[4] === filterYear)
-      : points;
+    const list = (filterYear !== null && filterYear !== undefined)
+      ? records.filter(r => r.yr && r.yr <= filterYear)
+      : records;
+    const spById = {};
+    SPECIES_DB.forEach(s => { spById[s.id] = s; });
+    const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+      c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const STATUS = { established: 'Established', invasive: 'Invasive — first detection',
+                     detected: 'Detected (not established)', introduced: 'Introduced (not established)',
+                     occurrence: 'Recorded occurrence' };
 
-    // Stable index→species mapping for historical database centers
-    // (sp:0-3 in the centers data always mean these 4 original species)
-    const SP_MAP = {
-      0: 'anopheles',
-      1: 'aedes_aegypti',
-      2: 'aedes_albopictus',
-      3: 'culex',
-    };
-
-    // ── Chunked rendering ──────────────────────────────────────────────────
     const CHUNK = 150;
     let i = 0;
     const addChunk = () => {
-      if (gen !== this._heatGen) return;   // a newer render superseded this one
-      const end = Math.min(i + CHUNK, filtered.length);
+      if (gen !== this._heatGen) return;       // superseded by a newer render
+      const end = Math.min(i + CHUNK, list.length);
       for (; i < end; i++) {
-        const [lat, lng, intensity, spIdx] = filtered[i];
-        // Look up by stable string ID, not by array position
-        const spId = SP_MAP[spIdx] || 'anopheles';
-        const sp   = SPECIES_DB.find(s => s.id === spId) || SPECIES_DB[0];
-        const alpha = 0.12 + intensity * 0.45;
-        const size  = 4 + intensity * 9;
-        // Non-vector species: unified grey (visual clutter reduction)
-        const circleColor = sp.asymptomatic ? '#475569' : sp.color;
-        const circle = L.circleMarker([lat, lng], {
-          radius: size * 0.55,
-          fillColor: circleColor,
-          color: 'transparent',
-          fillOpacity: sp.asymptomatic ? alpha * 0.35 : alpha * 0.65,
-          weight: 0,
-        }).addTo(this._layerGroup);
-        this.markers.push(circle);
+        const r  = list[i];
+        const sp = spById[r.sp] || SPECIES_DB[0];
+        const firm = r.status === 'established' || r.status === 'invasive' || r.status === 'occurrence';
+        const m = L.circleMarker([r.lat, r.lng], {
+          radius: r.status === 'invasive' ? 7 : 5,
+          fillColor: sp.color,
+          color: r.status === 'invasive' ? '#ffffff' : sp.color,
+          weight: r.status === 'invasive' ? 1.5 : (firm ? 0 : 1),
+          fillOpacity: sp.asymptomatic ? 0.35 : (firm ? 0.75 : 0.3),
+          dashArray: firm ? null : '2,2',
+        }).addTo(this._layerGroup)
+          .bindPopup(
+            `<b>${esc(r.taxon || sp.name)}</b><br>` +
+            `${esc(r.place)}<br>` +
+            `<small>${esc(STATUS[r.status] || r.status)}${r.yr ? ' · ' + r.yr : ''}<br>` +
+            `${esc(sp.disease || '')}</small>`);
+        this.markers.push(m);
       }
-      if (i < filtered.length) requestAnimationFrame(addChunk);
+      if (i < list.length) requestAnimationFrame(addChunk);
     };
     requestAnimationFrame(addChunk);
   }
@@ -4884,7 +4416,8 @@ class App {
     if (!sliderEl || !labelEl) return;
     const apply = (i) => {
       const yr = YEAR_STEPS[i];
-      labelEl.textContent = yr === null ? 'ALL' : String(yr);
+      // Cumulative: every record documented up to and including this year.
+      labelEl.textContent = yr === null ? 'ALL' : '≤ ' + yr;
       this.mapCtrl.filterByYear(yr);
     };
     sliderEl.addEventListener('input', e => apply(parseInt(e.target.value)));

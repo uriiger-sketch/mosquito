@@ -14,7 +14,7 @@
  *     the network untouched (the client deliberately uses XHR for them).
  */
 
-const VERSION      = 'v1';
+const VERSION      = 'v2';
 const SHELL_CACHE  = `mn-shell-${VERSION}`;
 const ASSET_CACHE  = `mn-assets-${VERSION}`;
 const TILE_CACHE   = 'mn-tiles';          // unversioned: tiles never change
@@ -24,7 +24,7 @@ const SHELL_URLS = ['./', './index.html'];
 const ASSET_URLS = [
   './icon.svg', './favicon-32.png', './favicon-16.png',
   './apple-touch-icon.png', './icon-192.png', './icon-512.png',
-  './manifest.webmanifest',
+  './manifest.webmanifest', './map-data.json',
 ];
 
 self.addEventListener('install', (e) => {

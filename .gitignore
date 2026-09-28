@@ -18,3 +18,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# map-data build cache
+tools/.cache/
