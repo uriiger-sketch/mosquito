@@ -1659,28 +1659,36 @@ button:focus-visible,
               <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#7c3aed"></div>Ae. japonicus</div></td><td>~730</td><td>WNV / Usutu</td><td style="color:var(--amber)">MEDIUM</td></tr>
               <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#0891b2"></div>Ae. vexans</div></td><td>~515</td><td>Rift Valley Fever</td><td style="color:var(--amber)">MEDIUM</td></tr>
               <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#3d9eff"></div>Cx. quinquefasciatus</div></td><td>~453</td><td>West Nile</td><td style="color:var(--text2)">MEDIUM</td></tr>
-              <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#64748b"></div>Cx. pipiens</div></td><td>~600</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
+              <tr><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#64748b"></div>Cx. pipiens</div></td><td>~594</td><td>West Nile / Usutu</td><td style="color:var(--amber)">HIGH</td></tr>
               <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#78716c"></div>Culiseta annulata</div></td><td>~350</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
               <tr style="opacity:0.6"><td><div class="sp-dot-cell"><div class="sp-dot-sm" style="background:#a8a29e"></div>Oc. caspius</div></td><td>~548</td><td>Non-vector</td><td style="color:var(--text3)">NONE</td></tr>
             </tbody>
           </table>
-          <p style="margin-top:10px">
-      <strong style="color:var(--text1)">Research-grade classifier</strong> — based on Pantula et al. 2021, Mukundarajan et al. 2017, and Rompotis et al. 2015.
-      Five gates must all pass before any detection is reported:
-    </p>
-    <ul style="margin-top:6px">
-      <li><strong>SNR gate: ≥ 22 dB</strong> above noise floor (literature minimum: 20 dB)</li>
-      <li><strong>Hum rejection:</strong> 50/60 Hz harmonic series (100, 120, 150, 180, 240, 300, 360, 400, 420, 480, 600 Hz…) auto-rejected — these overlap all species bands</li>
-      <li><strong>Q-factor: ≥ 15 dB</strong> above ±200 Hz neighbors — mosquito wingbeats are near-pure tones; broadband HVAC/noise fails this</li>
-      <li><strong>Harmonic ratio gate:</strong> 2f must be present and within 12 dB of fundamental; if 2f is louder than fundamental → electrical artifact, rejected</li>
-      <li><strong>Temporal gate: 1.6 seconds</strong> sustained detection required (40 frames at 25 fps) — eliminates all transient false positives</li>
-      <li><strong>Ambient noise gate:</strong> if broadband RMS is too high (loud room, speech, music) all detection is suspended</li>
-    </ul>
-    <p style="margin-top:8px;color:var(--text3);font-size:0.55rem">
-      For best results: quiet room, after dark, microphone near open window or door. 
-      A real Anopheles produces a ~410 Hz tone that must sustain for ≥1.6 s with 
-      harmonics at ~820 Hz and ~1230 Hz all above 22 dB SNR simultaneously.
-    </p>
+          <p style="margin-top:10px"><strong style="color:var(--text1)">Two detectors run on every frame:</strong></p>
+          <ul style="margin-top:6px">
+            <li><strong>Close range</strong> — a Gaussian Goertzel filter bank at each species' wingbeat frequency, with SNR, tonality, periodicity, sub-frame persistence and harmonic-ratio gates. Very selective; works for mosquitoes within a few centimetres.</li>
+            <li><strong>Long range</strong> — a harmonic track-before-detect tracker borrowed from sonar: every frequency bin is compared with its own noise floor, evidence from f<sub>0</sub>, 2f<sub>0</sub> and 3f<sub>0</sub> is combined, and it accumulates along the drifting pitch track for ~1.5 s. It rejects voices and motors by physics: nothing may sound below the fundamental, the tone must be continuous with smoothly drifting pitch, and perfectly steady tones (fans, motors) are notched out. Cards show <strong>LOCKED · FAR</strong> when this detector made the lock.</li>
+            <li>Both feed a 2-second vote: ≥ 62 % of independent frames must agree before anything is shown, and a confirmed find must reach 70 % confidence before it is sent to the global map.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details class="info-section">
+        <summary class="info-section-header">
+          <span class="ish-icon">📏</span>
+          <span class="ish-title">Getting the Most Range</span>
+          <span class="ish-chevron">›</span>
+        </summary>
+        <div class="info-section-body">
+          <p>A mosquito's wingbeat is very quiet, and beyond ~10 cm its sound falls by half (−6 dB) every time the distance doubles. Range is therefore set by how far the tone stands above background noise — every 6 dB you win back doubles the distance.</p>
+          <ul>
+            <li><strong>Go where the mosquitoes go.</strong> They home in on breath (CO<sub>2</sub>) and body heat. Put the phone beside the sleeper's head, 20–40 cm away. Halving the distance is worth +6 dB.</li>
+            <li><strong>Lay the phone flat on a hard surface</strong> (table, floor, bed frame), microphone end toward the sleeping area. A hard boundary reinforces the pressure at the microphone: about +3 dB.</li>
+            <li><strong>Switch off fans and air-conditioning</strong> while monitoring. They add broadband noise and blow away the CO<sub>2</sub> plume that draws mosquitoes in.</li>
+            <li><strong>Keep the room quiet</strong>: no TV, music or conversation near the phone.</li>
+            <li><strong>Remove the phone case</strong> if it partly covers the microphone port.</li>
+            <li><strong>Monitor at dusk and through the night</strong> for <em>Anopheles</em> and <em>Culex</em>; daytime for <em>Aedes</em>.</li>
+          </ul>
         </div>
       </details>
 
@@ -1691,17 +1699,15 @@ button:focus-visible,
           <span class="ish-chevron">›</span>
         </summary>
         <div class="info-section-body">
-          <p><strong>Each circle on the map = one city-level vector presence record.</strong> Colour indicates species. Opacity reflects relative burden.</p>
-          <p>All data is from free, public, peer-reviewed sources. Radii are pre-validated to keep scatter on land (coastal cities ≤0.22°).</p>
+          <p><strong>Each circle is one documented location where the vector is present</strong> — never a synthetic or random point. Colour = species; ringed circles = invasive first detections (e.g. <em>An. stephensi</em> in Africa); faint dashed circles = detected or introduced but not established.</p>
+          <p>Every record is checked against a 1:10m land mask (points in the sea or in lakes are corrected or removed) and de-duplicated. The records, their sources and the cleaning steps are rebuilt reproducibly by <code>tools/build_map_data.py</code>.</p>
           <ul>
-            <li><strong>WHO World Malaria Report 2025</strong> — 282M cases, 610K deaths in 2024. <a href="https://who.int/malaria/reports" target="_blank">who.int</a></li>
-            <li><strong>PAHO Dengue Bulletin 2024</strong> — 14.4M Americas cases (record). Brazil 10M+. <a href="https://paho.org" target="_blank">paho.org</a></li>
-            <li><strong>WHO WER-10052 (2025)</strong> — Global dengue country breakdown.</li>
-            <li><strong>CDC ArboNET 2024</strong> — 1,466 US WNV cases. SD highest seroprevalence. <a href="https://cdc.gov/west-nile-virus" target="_blank">cdc.gov</a></li>
-            <li><strong>ECDC Mosquito Maps (May 2024)</strong> — EU Ae. albopictus distribution. <a href="https://ecdc.europa.eu" target="_blank">ecdc.europa.eu</a></li>
-            <li><strong>Kraemer et al. 2015 (eLife, DOI:10.7554/eLife.08347)</strong> — Global Aedes compendium.</li>
+            <li><strong>WHO World Malaria Report 2025</strong> and Sinka et al. 2012 (dominant <em>Anopheles</em> vectors)</li>
+            <li><strong>PAHO dengue bulletins 2024</strong>, <strong>CDC ArboNET</strong>, <strong>ECDC invasive-mosquito maps (Jun 2025)</strong></li>
+            <li><strong>Kraemer et al. 2015</strong> global <em>Aedes</em> compendium (eLife, doi:10.7554/eLife.08347)</li>
+            <li><em>An. stephensi</em> invasion: Djibouti 2012, Kebri Dehar (Ethiopia) 2016, Arba Minch, Marsabit, Turkana and Kisumu (Kenya), Accra (Ghana) 2022, Al Hudaydah (Yemen) 2021, Jaffna (Sri Lanka) 2017</li>
           </ul>
-          <p>Historical slider spans 1996 (Romania WNV) through 2024. All city centroids verified against OpenStreetMap.</p>
+          <p>The year slider is cumulative: "≤ 2010" shows everything documented by 2010.</p>
         </div>
       </details>
 
@@ -1714,10 +1720,10 @@ button:focus-visible,
         <div class="info-section-body">
           <ul>
             <li><strong>No audio stored or transmitted.</strong> Microphone data is processed in real-time and immediately discarded.</li>
-            <li><strong>No audio transmitted.</strong> Only gradient weight updates leave the device.</li>
+            <li><strong>What does leave the device:</strong> confirmed detections (species, confidence, frequency, and a location randomly shifted by up to ~2.8 km), and differentially-private model weights for federated learning.</li>
             <li><strong>Differential Privacy:</strong> Gaussian mechanism with ε=1.0, δ=1e-5. Gradient L2 norm clipped to 1.0 before noise injection.</li>
-            <li><strong>Anonymous device ID:</strong> Random 128-bit value, SHA-256 hashed before any upload. Never linked to identity.</li>
-            <li><strong>FedAvg:</strong> Aggregates every 100 local steps, weighted by step count.</li>
+            <li><strong>Anonymous device ID:</strong> a random 128-bit value created on your device, never linked to your identity. The server stores only its SHA-256 hash.</li>
+            <li><strong>FedAvg:</strong> each device uploads its locally trained weights every 20 training steps; the server averages them, weighted by step count.</li>
           </ul>
         </div>
       </details>
@@ -2032,9 +2038,10 @@ const SPECIES_DB = [
   {
     id: 'culex_pipiens',  name: 'Culex pipiens',
     common: 'Northern House Mosquito',
-    disease: 'Non-vector (nuisance)',  risk: 'LOW',  freq: 594,
+    // Primary West Nile virus vector in Europe and North America (also Usutu).
+    disease: 'West Nile / Usutu',  risk: 'HIGH',  freq: 594,
     freqRange: [578, 615],  color: '#64748b',
-    asymptomatic: true,   activity: 'night',  regions: ['Cosmopolitan temperate'],
+    asymptomatic: false,  activity: 'night',  regions: ['Cosmopolitan temperate'],
   },
   {
     id: 'culiseta_annulata', name: 'Culiseta annulata',
@@ -2428,6 +2435,213 @@ class MosquitoAudioEngine {
 //           Rompotis et al. 2015, Moore et al. 2018 (PLOS CB)
 // ═══════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════
+//  FarFieldTracker — long-range harmonic track-before-detect
+//
+//  Physics: beyond the acoustic near field (λ/2π ≈ 8-14 cm at 400-700 Hz)
+//  a flight tone's pressure falls as 1/r (-6 dB per doubling of distance)
+//  and air absorption is negligible, so range is set purely by SNR: every
+//  6 dB of processing gain doubles the distance at which a mosquito can be
+//  heard. The narrowband FFT already buys ~36 dB over the full audio band;
+//  this tracker keeps that gain instead of discarding it, and adds more:
+//
+//   1. Whitening — each bin is divided by its own slowly-adapting noise
+//      floor, so evidence is "times above local noise" even in coloured
+//      (fan / traffic / pink) noise.
+//   2. Harmonic summation — evidence from f0, 2f0 and 3f0 is combined.
+//   3. Track-before-detect — a Viterbi/CUSUM recursion accumulates evidence
+//      along a frequency path allowed to drift ±1 bin per frame (Doppler,
+//      manoeuvring), so ~1.5 s of weak frames add up (the sonar LOFAR
+//      line-tracking technique) rather than each frame having to win alone.
+//
+//  False-alarm control (the whole point — range is worthless if it cries
+//  wolf): a sub-harmonic veto (voices and motors at f0/2 or f0/3 also put
+//  energy on a candidate's harmonics; a mosquito has nothing below f0), a
+//  stationarity test (motors are rock-steady in pitch and level; a flying
+//  mosquito wanders), broadband blanking (clicks, bangs, speech onsets), a
+//  minimum track length, and a CFAR threshold calibrated on noise-only
+//  audio by tools/detection_bench.js.
+// ═══════════════════════════════════════════════════════════════════
+class FarFieldTracker {
+  constructor(binHz) {
+    this.binHz  = binHz;
+    // f0 search band 280-800 Hz. Adult voice fundamentals sit below ~260 Hz;
+    // above 280 Hz a voice only appears through harmonics, which the
+    // sub-harmonic veto removes. (Lowest target species: ~290 Hz.)
+    this.kLo    = Math.round(280 / binHz);
+    this.kHi    = Math.round(800 / binHz);
+    this.kMin   = Math.max(2, Math.floor(this.kLo / 3) - 2);  // room for f0/3 veto
+    this.kMax   = 3 * this.kHi + 2;                  // room for 3f0
+    this.WH     = [1.0, 0.7, 0.5];                   // harmonic weights (H1 dominates)
+    // Expected harmonic sum on pure noise: W[k] ~ Exp(1), max of 3 ~ mean 1.833.
+    this.BIAS   = (this.WH[0] * 1 + (this.WH[1] + this.WH[2]) * 1.833) * 1.10;
+    this.LAMBDA = 0.93;                              // track memory ≈ 14 frames ≈ 1.3 s
+    this.TAU    = 30;                                // CFAR threshold (calibrated; see bench)
+    this.MIN_TRACK = 8;                              // frames (~0.75 s) a track must persist
+    this.CAL_FRAMES = 20;
+    this.reset();
+  }
+
+  reset() {
+    const nb = this.kMax + 2;
+    this.noise  = new Float64Array(nb);
+    this.W      = new Float64Array(nb);
+    this.P      = new Float64Array(nb);             // raw power (for physical ratios)
+    this.S      = new Float64Array(this.kHi + 2);
+    this.S2     = new Float64Array(this.kHi + 2);
+    this.hist   = [];                                // {k, f, a} per frame of the best track
+    this.frames = 0;
+    this._notch = null;
+    this._med   = new Float64Array(3 * this.kHi - this.kLo + 1);
+  }
+
+  setSensitivity(level) {
+    const scale = [0.70, 0.85, 1.0, 1.3, 1.7][Math.max(0, Math.min(4, level - 1))];
+    this.TAU = 30 * scale;
+  }
+
+  _max3(k) {
+    const W = this.W;
+    return Math.max(W[k - 1], W[k], W[k + 1]);
+  }
+
+  process(db) {
+    const { kMin, kMax, kLo, kHi, W, noise } = this;
+    if (!db || db.length <= kMax + 1) return { detected: false, T: 0 };
+    this.frames++;
+
+    // ── 1. per-bin noise floor + whitening ────────────────────────────
+    const cal = this.frames <= this.CAL_FRAMES;
+    for (let k = kMin - 1; k <= kMax + 1; k++) {
+      const v = db[k];
+      const P = Number.isFinite(v) ? Math.pow(10, v / 10) : 1e-30;
+      if (cal || noise[k] <= 0) {
+        noise[k] += (P - noise[k]) / Math.min(this.frames, this.CAL_FRAMES);
+      } else {
+        // Fast when the bin looks like noise, very slow when it holds a strong
+        // component — so a passing mosquito is not learned as "noise", while a
+        // machine that runs for minutes is eventually absorbed.
+        // Strong components move the floor by at most ×(1+3/800) per frame:
+        // a mosquito visit (seconds to a minute) is barely absorbed, however loud,
+        // while a machine running for minutes still is. (An uncapped slow EMA
+        // absorbed a fixed FRACTION per frame, collapsing any loud tone to W≈8
+        // within ~10 s.) Lines identified as machines are notched out quickly.
+        const nt = this._notch;
+        let notched = false;
+        if (nt && nt.frames > 0) {
+          const h = Math.round(k / nt.k);
+          notched = h >= 1 && h <= 3 && Math.abs(k - h * nt.k) <= h;
+        }
+        if (notched)                 noise[k] += (P - noise[k]) / 25;
+        else if (P > 4 * noise[k])   noise[k] += (4 * noise[k] - noise[k]) / 800;
+        else                         noise[k] += (P - noise[k]) / 100;
+      }
+      this.P[k] = P;
+      W[k] = P / (noise[k] + 1e-30);
+    }
+    if (this._notch && this._notch.frames > 0) this._notch.frames--;
+    if (cal) return { detected: false, T: 0, calibrating: true };
+
+    // ── 2. broadband blanking / level normalisation ───────────────────
+    const md = this._med; let n = 0;
+    for (let k = kLo; k <= 3 * kHi; k++) md[n++] = W[k];
+    const sorted = md.subarray(0, n).sort();
+    const norm = sorted[n >> 1] / 0.693;             // median of Exp(1) is ln 2
+    const S = this.S, S2 = this.S2, L = this.LAMBDA;
+    if (norm > 4) {                                  // click / bang / broadband burst
+      for (let k = kLo; k <= kHi; k++) S[k] *= L;
+      this.hist.push(null); if (this.hist.length > 24) this.hist.shift();
+      return { detected: false, T: 0, blanked: true };
+    }
+    if (norm > 1) for (let k = kMin - 1; k <= kMax + 1; k++) W[k] /= norm;
+
+    // ── 3. harmonic sum + sub-harmonic veto + Viterbi/CUSUM update ────
+    let T = 0, kBest = -1;
+    for (let k = kLo; k <= kHi; k++) {
+      let hs = this.WH[0] * W[k] + this.WH[1] * this._max3(2 * k) + this.WH[2] * this._max3(3 * k);
+      // A lower-pitched source (voice, motor) whose harmonics land on k, 2k, 3k
+      // also has energy at k/2 & 3k/2, or k/3 & 2k/3. A mosquito does not.
+      const s2 = this._max3(Math.round(k / 2)), s32 = this._max3(Math.round(1.5 * k));
+      const s3 = this._max3(Math.round(k / 3)), s23 = this._max3(Math.round(2 * k / 3));
+      if ((s2 > 8 && s32 > 8) || (s3 > 8 && s23 > 8)) hs = 0;
+      const prev = Math.max(S[k - 1] || 0, S[k], S[k + 1] || 0);
+      const v = Math.max(0, L * prev + hs - this.BIAS);
+      S2[k] = v;
+      if (v > T) { T = v; kBest = k; }
+    }
+    for (let k = kLo; k <= kHi; k++) S[k] = S2[k];
+
+    // ── 4. track bookkeeping: sub-bin f0 (parabolic, in dB) + amplitude ──
+    let f = kBest * this.binHz;
+    if (kBest > 0) {
+      const a = db[kBest - 1], b = db[kBest], c = db[kBest + 1];
+      if (Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c)) {
+        const den = a - 2 * b + c;
+        if (den < 0) f = (kBest + Math.max(-0.5, Math.min(0.5, 0.5 * (a - c) / den))) * this.binHz;
+      }
+    }
+    // Per-frame features of the candidate: fundamental energy (mainlobe spans
+    // ±1 bin) and 2nd-harmonic energy.
+    const Pm = (k) => Math.max(this.P[k - 1], this.P[k], this.P[k + 1]);
+    this.hist.push(kBest > 0 ? { k: kBest, f, a: this._max3(kBest),
+                                 p1: Pm(kBest), p2: Pm(2 * kBest) } : null);
+    if (this.hist.length > 24) this.hist.shift();
+
+    // contiguous track: recent frames whose best bin stayed within ±2 bins
+    const tr = [];
+    for (let i = this.hist.length - 1; i >= 0 && tr.length < 16; i--) {
+      const h = this.hist[i];
+      if (!h || Math.abs(h.k - kBest) > 2) break;
+      tr.push(h);
+    }
+    tr.reverse();
+
+    // ── 5. is this track physically a free-flying mosquito? ───────────
+    // Measured on synthetic adversaries (tools/detection_bench.js):
+    //  • continuity — a wingbeat tone is continuous; voices come in syllables,
+    //    so the track only survives their gaps through memory, with the
+    //    fundamental bin empty. Require the fundamental in most frames.
+    //  • smooth pitch — manoeuvres and Doppler move a mosquito's pitch by a few
+    //    Hz per second; speech intonation glides several Hz per frame.
+    //  • H1 dominance — the flight tone's fundamental is its strongest partial.
+    //  • not steady — even a constant wingbeat carries ±~1 Hz of Doppler as the
+    //    insect circles (v/c·f0 ≈ 1/343 × 400 Hz); a motor or fan is steady to
+    //    a fraction of a Hz. Only testable once the pitch estimate is precise.
+    let machine = false, fStd = 0, pres = 0, dfMed = 0, dom = 0, ma = 0;
+    if (tr.length >= this.MIN_TRACK) {
+      const fs = tr.map(h => h.f);
+      const mf = fs.reduce((s, x) => s + x, 0) / fs.length;
+      fStd = Math.sqrt(fs.reduce((s, x) => s + (x - mf) ** 2, 0) / fs.length);
+      ma   = tr.reduce((s, h) => s + h.a, 0) / tr.length;
+      // Dominance is a property of the SOURCE, so compare raw powers.
+      const p1 = tr.reduce((s, h) => s + h.p1, 0), p2 = tr.reduce((s, h) => s + h.p2, 0);
+      dom  = p1 / (p2 || 1e-30);
+      pres = tr.filter(h => h.a >= 2.0).length / tr.length;
+      const dfs = [];
+      for (let i = 1; i < fs.length; i++) dfs.push(Math.abs(fs[i] - fs[i - 1]));
+      dfs.sort((a, b) => a - b);
+      dfMed = dfs.length ? dfs[dfs.length >> 1] : 0;
+      // A steady tone still shows pitch-estimate jitter that grows as SNR falls
+      // (~2.5/sqrt(SNR) Hz measured: 0.5 Hz at 14 dB per bin). Free flight
+      // measured 2.3-3 Hz. Call it a machine if it is no less steady than the
+      // estimator alone would make a pure tone look (with margin).
+      machine = fStd < Math.max(1.0, 4.0 / Math.sqrt(Math.max(ma, 1)));
+      // Machine lines are notched out: absorb them into the noise floor fast.
+      if (machine) this._notch = { k: kBest, frames: 60 };
+    }
+    const plausible = pres >= 0.75 && dfMed <= 4.0 && dom >= 0.8 && !machine;
+
+    const detected = kBest > 0 && T > this.TAU && tr.length >= this.MIN_TRACK && plausible;
+    // Confidence grows with evidence above threshold; floor 0.55 so a lock
+    // still needs a sustained track (the vote window averages frame confidences).
+    const conf = detected ? Math.min(0.92, 0.55 + 0.35 * Math.log2(T / this.TAU) / 3) : 0;
+    return {
+      detected, T, f0: f, k: kBest, conf, machine, fStd, pres, dfMed, dom,
+      trackLen: tr.length, snrLinear: kBest > 0 ? W[kBest] : 0,
+    };
+  }
+}
+
 class MosquitoClassifier {
   // ── DETECTION ENGINE v2 ─────────────────────────────────────────
   // Improvements over v1 (from mosquito-acoustics skill):
@@ -2529,6 +2743,8 @@ class MosquitoClassifier {
     this.lastRejection   = {};
     this.lastGoertzelSNR = {};
     this.lastTonality    = {};
+    this.lastVia         = {};
+    this.ff = new FarFieldTracker(engine && engine.binHz ? engine.binHz : 44100 / 8192);
     SPECIES_DB.forEach(sp => {
       this.lastRejection[sp.id]   = '';
       this.lastGoertzelSNR[sp.id] = 0;
@@ -2558,6 +2774,7 @@ class MosquitoClassifier {
     this.AMBIENT_GATE_DB      = ambientTable[idx];
     this.FLATNESS_GATE        = flatnessTable[idx];
     this.AUTOCORR_MIN         = autocorrTable[idx];
+    if (this.ff) this.ff.setSensitivity(level);
     // Keep the confidence window aligned to the (new) vote window length.
     this.CONF_FRAMES = this.VOTE_FRAMES;
     this.confIdx     = 0;
@@ -2824,9 +3041,16 @@ class MosquitoClassifier {
   // Otherwise returns confidence multiplier 1.0–1.35 based on harmonic strength.
   harmonicBonus(timeSamples, sp) {
     const params = this.goertzelParams[sp.id];
-    const pow1f  = this.gaussianBankPower(timeSamples, params.f0Bank);
-    const pow2f  = this.gaussianBankPower(timeSamples, params.f2Bank);
-    const pow3f  = params.f3Bank ? this.gaussianBankPower(timeSamples, params.f3Bank) : 0;
+    // timeSamples are pre-emphasised (x[n] − 0.97·x[n−1]), whose power gain
+    // |1 − αe^{−jω}|² rises with frequency: ~4× more at 2f0 than at f0 for
+    // these species. Undo it so the harmonic RATIOS below are physical —
+    // otherwise real mosquitoes read H2 ≈ H1, trip the "inverted harmonics"
+    // rejection and the HPS penalty, and rarely lock even when loud.
+    const SR = 44100, A = 0.97;
+    const g = (hz) => 1 + A * A - 2 * A * Math.cos(2 * Math.PI * hz / SR);
+    const pow1f  = this.gaussianBankPower(timeSamples, params.f0Bank) / g(sp.freq);
+    const pow2f  = this.gaussianBankPower(timeSamples, params.f2Bank) / g(2 * sp.freq);
+    const pow3f  = params.f3Bank ? this.gaussianBankPower(timeSamples, params.f3Bank) / g(3 * sp.freq) : 0;
 
     const h2Present = pow2f >= this.HARMONIC_SNR_RATIO * pow1f;
     const h3Present = pow3f >= this.HARMONIC_SNR_RATIO * 0.5 * pow1f;
@@ -2841,7 +3065,7 @@ class MosquitoClassifier {
     if (!this._harms) this._harms = {};
     this._harms[sp.id] = { p1f: pow1f, p2f: pow2f, p3f: pow3f };
 
-    const ref   = this.refPower(timeSamples, params.ref);
+    const ref   = this.refPower(timeSamples, params.ref) / g(sp.freq);   // same compensation
     const snr2f = pow2f / (ref + 1e-12);
     const snr3f = pow3f / (ref + 1e-12);
     const bonus2 = Math.min(0.25, Math.max(0,
@@ -2871,11 +3095,88 @@ class MosquitoClassifier {
     return candidates.filter(c => !suppressed.has(c.species.id));
   }
 
+  // Species the far-field track belongs to: the nearest species centre whose
+  // frequency range contains the measured f0 (skipping disabled species).
+  _farFieldSpecies(f0) {
+    let best = null, bestD = Infinity;
+    for (const sp of SPECIES_DB) {
+      if (window._app && window._app._disabledSpecies && window._app._disabledSpecies.has(sp.id)) continue;
+      if (f0 < sp.freqRange[0] || f0 > sp.freqRange[1]) continue;
+      const d = Math.abs(f0 - sp.freq);
+      if (d < bestD) { bestD = d; best = sp; }
+    }
+    return best;
+  }
+
+  // Near-field evidence for one species (the original gate chain, unchanged in
+  // intent): returns { pass, conf, snrLinear, reason }.
+  _nearField(sp, td, rawFreqData, useGoertzel) {
+    let snrLinear;
+    if (useGoertzel) {
+      snrLinear = this.adaptiveSNR(td, sp);
+      this.lastGoertzelSNR[sp.id] = snrLinear;
+    } else {
+      const loBin = this.engine.freqToBin(sp.freqRange[0]);
+      const hiBin = Math.min(this.engine.freqToBin(sp.freqRange[1]), rawFreqData.length-1);
+      let peak = -130;
+      for (let i=loBin; i<=hiBin; i++) {
+        if (isFinite(rawFreqData[i]) && rawFreqData[i] > peak) peak = rawFreqData[i];
+      }
+      snrLinear = Math.pow(10, (peak - this.lastNoiseFloor) / 10);
+    }
+    const fail = (reason) => ({ pass: false, conf: 0, snrLinear, reason });
+
+    const effectiveSNR = this.GOERTZEL_SNR_MIN * this.getActivityFactor(sp);
+    if (snrLinear < effectiveSNR) return fail(`snr×${snrLinear.toFixed(1)}<${effectiveSNR.toFixed(1)}`);
+
+    if (useGoertzel) {
+      const tonality = this.tonalityScore(td, sp.freq);
+      this.lastTonality[sp.id] = tonality;
+      if (tonality < this.TONALITY_MIN) return fail(`tonal:${tonality.toFixed(1)}<${this.TONALITY_MIN}`);
+
+      // Autocorrelation periodicity (Mukundarajan STM 2017). NB: R[τ0]/R[0] on
+      // the raw waveform is ~ tone power / TOTAL broadband power, so this gate
+      // only passes close, loud mosquitoes — the far-field tracker covers range.
+      const acorr = this.autocorrPeriodicity(td, sp.freq);
+      if (acorr < this.AUTOCORR_MIN) return fail(`acorr:${acorr.toFixed(3)}<${this.AUTOCORR_MIN}`);
+
+      const frames = this.subframeConsistency(td, sp.freq);
+      if (frames < 3) return fail(`transient:${frames}/4`);
+    }
+
+    let hBonus = 1.0;
+    if (useGoertzel) {
+      hBonus = this.harmonicBonus(td, sp);
+      if (hBonus === 0) return fail('no-harmonic');
+    }
+
+    const SNR_MAX = 80;
+    let conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
+                            (Math.log10(SNR_MAX)  - Math.log10(this.GOERTZEL_SNR_MIN)));
+    conf = Math.min(1, conf * hBonus);
+
+    // Harmonic-structure check (HumBugDB 2020: H2 = 10-75% of H1 in power).
+    // _harms holds pre-emphasis-compensated powers (see harmonicBonus).
+    if (useGoertzel) {
+      const hp = this._harms?.[sp.id];
+      if (hp && hp.p1f > 1e-20) {
+        const h2r = hp.p2f / hp.p1f, h3r = hp.p3f / hp.p1f;
+        if (!(h2r >= 0.05 && h2r <= 0.80) || !(h3r <= 0.60)) conf *= 0.70;
+      }
+    }
+    return { pass: true, conf, snrLinear, reason: '' };
+  }
+
   analyze(rawFreqData, timeData) {
     if (!rawFreqData || !rawFreqData.length) return [];
 
     this.lastNoiseFloor = this.estimateNoiseFloor(rawFreqData);
     this.ambientRMS     = this.computeAmbientRMS(rawFreqData);
+
+    // Far-field tracker runs on EVERY frame (even gated ones) so its per-bin
+    // noise floor stays current.
+    const ff = this.ff ? this.ff.process(rawFreqData) : { detected: false };
+    this.lastFarField = ff;
 
     const confIdx = this.confIdx % this.CONF_FRAMES;
     this.confIdx++;
@@ -2904,6 +3205,7 @@ class MosquitoClassifier {
     const useGoertzel = timeData && timeData.length >= this._goertzelBlock;
     // Pre-emphasis computed once per analysis frame — boosts mosquito freq range vs low-freq noise
     const td = useGoertzel ? this.preEmphasis(timeData) : null;
+    const ffSp = ff.detected ? this._farFieldSpecies(ff.f0) : null;
     const candidates  = [];
 
     for (const sp of SPECIES_DB) {
@@ -2920,94 +3222,20 @@ class MosquitoClassifier {
         continue;
       }
 
-      let snrLinear;
-      if (useGoertzel) {
-        // ── Goertzel path with adaptive noise subtraction ──────────
-        snrLinear = this.adaptiveSNR(td, sp);
-        this.lastGoertzelSNR[sp.id] = snrLinear;
-      } else {
-        // ── FFT fallback ──────────────────────────────────────────
-        const loBin = this.engine.freqToBin(sp.freqRange[0]);
-        const hiBin = Math.min(this.engine.freqToBin(sp.freqRange[1]), rawFreqData.length-1);
-        let peak = -130;
-        for (let i=loBin; i<=hiBin; i++) {
-          if (isFinite(rawFreqData[i]) && rawFreqData[i] > peak) peak = rawFreqData[i];
-        }
-        snrLinear = Math.pow(10, (peak - this.lastNoiseFloor) / 10);
+      // Two independent evidence paths; a frame passes if either does.
+      const nf = this._nearField(sp, td, rawFreqData, useGoertzel);
+      let pass = nf.pass, conf = nf.conf, snrLinear = nf.snrLinear, via = 'near';
+      if (ffSp && ffSp.id === sp.id && ff.conf > (pass ? conf : 0)) {
+        pass = true; conf = ff.conf; via = 'far';
+        snrLinear = Math.max(snrLinear, ff.snrLinear);
       }
+      this.lastVia[sp.id] = pass ? via : '';
 
-      const effectiveSNR = this.GOERTZEL_SNR_MIN * this.getActivityFactor(sp);
-      if (snrLinear < effectiveSNR) {
+      if (!pass) {
         this.confBuffer[sp.id][confIdx] = 0;
-        this.lastRejection[sp.id] = `snr×${snrLinear.toFixed(1)}<${effectiveSNR.toFixed(1)}`;
+        this.lastRejection[sp.id] = nf.reason;
         this._addVote(sp.id, false);
         continue;
-      }
-
-      // ── Tonality gate: reject broadband noise ──────────────────
-      if (useGoertzel) {
-        const tonality = this.tonalityScore(td, sp.freq);
-        this.lastTonality[sp.id] = tonality;
-        if (tonality < this.TONALITY_MIN) {
-          this.confBuffer[sp.id][confIdx] = 0;
-          this.lastRejection[sp.id] = `tonal:${tonality.toFixed(1)}<${this.TONALITY_MIN}`;
-          this._addVote(sp.id, false);
-          continue;
-        }
-      }
-
-      // ── Autocorrelation periodicity gate (Mukundarajan STM 2017) ──
-      if (useGoertzel) {
-        const acorr = this.autocorrPeriodicity(td, sp.freq);
-        if (acorr < this.AUTOCORR_MIN) {
-          this.confBuffer[sp.id][confIdx] = 0;
-          this.lastRejection[sp.id] = `acorr:${acorr.toFixed(3)}<${this.AUTOCORR_MIN}`;
-          this._addVote(sp.id, false);
-          continue;
-        }
-      }
-
-      // ── Sub-frame temporal consistency: rejects transients ────────
-      if (useGoertzel) {
-        const frames = this.subframeConsistency(td, sp.freq);
-        if (frames < 3) {
-          this.confBuffer[sp.id][confIdx] = 0;
-          this.lastRejection[sp.id] = `transient:${frames}/4`;
-          this._addVote(sp.id, false);
-          continue;
-        }
-      }
-
-      // ── Harmonic gate + bonus: require 2f or 3f at levels 4–5 ────
-      let hBonus = 1.0;
-      if (useGoertzel) {
-        hBonus = this.harmonicBonus(td, sp);
-        if (hBonus === 0) {
-          this.confBuffer[sp.id][confIdx] = 0;
-          this.lastRejection[sp.id] = 'no-harmonic';
-          this._addVote(sp.id, false);
-          continue;
-        }
-      }
-
-      // ── Confidence: log-domain SNR normalisation ───────────────
-      const SNR_MAX = 80;
-      let conf = Math.min(1, (Math.log10(snrLinear) - Math.log10(this.GOERTZEL_SNR_MIN)) /
-                              (Math.log10(SNR_MAX)  - Math.log10(this.GOERTZEL_SNR_MIN)));
-      conf = Math.min(1, conf * hBonus);
-
-      // HPS harmonic structure check: penalise signals whose H2/H1 or H3/H1 ratios
-      // fall outside the mosquito biological range (HumBugDB 2020: H2 = 10-75% of H1).
-      // Non-mosquito interference often has flat or rising harmonic series.
-      if (useGoertzel) {
-        const hp = this._harms?.[sp.id];
-        if (hp && hp.p1f > 1e-20) {
-          const h2r = hp.p2f / hp.p1f;
-          const h3r = hp.p3f / hp.p1f;
-          const h2ok = h2r >= 0.05 && h2r <= 0.80;
-          const h3ok = h3r <= 0.60;
-          if (!h2ok || !h3ok) conf *= 0.70;
-        }
       }
 
       this.confBuffer[sp.id][confIdx] = conf;
@@ -3021,11 +3249,12 @@ class MosquitoClassifier {
         if (avgConf >= this.CONFIDENCE_THRESHOLD) {
           candidates.push({
             species:      sp,
-            frequency:    sp.freq,
+            frequency:    via === 'far' && ff.f0 ? ff.f0 : sp.freq,
             snr:          10 * Math.log10(Math.max(1, snrLinear)),
             snrLinear,
             voteFraction,
             confidence:   avgConf,
+            range:        via,          // 'near' (gate chain) or 'far' (tracker)
           });
         }
       }
@@ -5162,7 +5391,8 @@ class App {
       } else if (det) {
         const pct = Math.round(det.confidence * 100);
         if (confEl)   { confEl.textContent = pct + '%'; confEl.style.opacity = '1'; }
-        if (statusEl) statusEl.textContent = '✦ LOCKED';
+        // 'far' = locked by the long-range harmonic tracker, not the close-range gates
+        if (statusEl) statusEl.textContent = det.range === 'far' ? '✦ LOCKED · FAR' : '✦ LOCKED';
         if (freqEl)   freqEl.textContent   = det.frequency.toFixed(0) + ' Hz';
         if (snrEl)    snrEl.textContent    = '+' + det.snr.toFixed(1) + ' dB';
         if (reasonEl) reasonEl.textContent = det.species.disease;
