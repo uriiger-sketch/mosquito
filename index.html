@@ -242,6 +242,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .app {
   height: 100vh; height: 100dvh;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);       /* never wider than the viewport, even at large text sizes */
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "top" "main" "nav";
 }
@@ -254,11 +255,14 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: var(--sp-2); text-decoration: none; color: var(--text-1); min-height: 44px; }
+.brand { display: flex; align-items: center; gap: var(--sp-2); text-decoration: none; color: var(--text-1); min-height: 44px; min-width: 0; flex: 0 1 auto; }
+.brand img { flex: none; }
 .brand img { width: 30px; height: 30px; border-radius: 8px; }
-.brand-word { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.012em; }
+.brand-word { font-size: 1.0625rem; font-weight: 650; letter-spacing: -0.012em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-word span { color: var(--accent); }
-.topbar-spacer { flex: 1; }
+.topbar-spacer { flex: 1 1 0; min-width: 0; }
+.icon-btn { flex: none; }
+.net-pill { flex: 0 1 auto; }
 
 .net-pill {
   display: inline-flex; align-items: center; gap: var(--sp-2);
@@ -266,8 +270,9 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
   border-radius: var(--r-full); border: 1px solid var(--line);
   background: var(--surface-1);
   font-size: var(--fs-caption); font-weight: 500; color: var(--text-2);
-  white-space: nowrap;
+  white-space: nowrap; min-width: 0; max-width: 46vw; overflow: hidden;
 }
+#net-text { overflow: hidden; text-overflow: ellipsis; }
 .net-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: none; }
 .net-pill[data-net="online"] .net-dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(127, 214, 160, 0.16); }
 .net-pill[data-net="offline"] .net-dot { background: var(--text-3); }
@@ -434,7 +439,7 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .hero[data-state="detected"]  { --state: var(--det-color, var(--risk-critical)); }
 .hero[data-state="error"]     { --state: var(--danger); }
 
-.dial { position: relative; width: min(100%, 18.5rem); aspect-ratio: 1; }
+.dial { position: relative; width: min(100%, 18.5rem); aspect-ratio: 1; container-type: inline-size; }
 .dial-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .dial-face { fill: url(#dialFace); stroke: var(--line); stroke-width: 1; }
 .dial-ticks { stroke: var(--text-3); stroke-width: 1.4; stroke-linecap: round; opacity: 0.35; }
@@ -486,17 +491,18 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .dial-glyph {
   display: grid; place-items: center;
   width: 3rem; height: 3rem; border-radius: 50%;
+  width: min(3rem, 16cqi); height: min(3rem, 16cqi);
   color: var(--state);
   background: color-mix(in srgb, var(--state) 12%, transparent);
   margin-bottom: var(--sp-1);
   transition: color var(--dur-4) var(--ease-out), background var(--dur-4) var(--ease-out);
 }
 .dial-glyph .icon { width: 1.625rem; height: 1.625rem; }
-.dial-over { font-size: var(--fs-over); font-weight: 650; letter-spacing: 0.12em; text-transform: uppercase; color: var(--state); min-height: 1em; }
-.dial-title { font-size: 2rem; font-weight: 620; letter-spacing: -0.022em; line-height: var(--lh-tight); color: var(--text-1); text-wrap: balance; }
-.dial-title.sci { font-size: 2.25rem; font-weight: 400; letter-spacing: 0; line-height: 1.02; }
-.dial-title.sci.long { font-size: 1.75rem; }
-.dial-sub { font-size: var(--fs-sm); color: var(--text-2); line-height: var(--lh-snug); max-width: 13rem; text-wrap: balance; }
+.dial-over { font-size: var(--fs-over); font-size: min(var(--fs-over), 3.8cqi); font-weight: 650; letter-spacing: 0.12em; text-transform: uppercase; color: var(--state); min-height: 1em; }
+.dial-title { font-size: 2rem; font-size: min(2rem, 10.8cqi); font-weight: 620; letter-spacing: -0.022em; line-height: var(--lh-tight); color: var(--text-1); text-wrap: balance; }
+.dial-title.sci { font-size: 2.25rem; font-size: min(2.25rem, 12.2cqi); font-weight: 400; letter-spacing: 0; line-height: 1.02; }
+.dial-title.sci.long { font-size: 1.75rem; font-size: min(1.75rem, 9.5cqi); }
+.dial-sub { font-size: var(--fs-sm); font-size: min(var(--fs-sm), 4.8cqi); color: var(--text-2); line-height: var(--lh-snug); max-width: 13rem; text-wrap: balance; }
 
 .hero-controls { display: grid; justify-items: center; gap: var(--sp-3); width: 100%; max-width: 22rem; }
 .listen-btn { width: 100%; }
@@ -769,6 +775,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .evt .sp-swatch { margin-top: 0; align-self: center; }
 .evt-name { font-size: var(--fs-sm); font-weight: 580; }
 .evt-meta { font-size: var(--fs-caption); color: var(--text-3); }
+.evt-meta .sci { font-size: 0.9375rem; color: var(--text-2); }
 .evt-time { font-size: var(--fs-sm); color: var(--text-2); text-align: right; }
 .hist-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .empty {
@@ -831,7 +838,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-xs); }
 .kv dt { color: var(--text-3); }
-.kv dd { color: var(--text-1); font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all; }
+.kv dd { color: var(--text-1); font-family: var(--font-mono); font-size: 0.75rem; overflow-wrap: anywhere; }
 .fed-bar { margin: var(--sp-2) 0; }
 .server-result { font-family: var(--font-mono); font-size: 0.75rem; padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); word-break: break-word; }
 .server-result[data-tone="ok"] { color: var(--ok); }
@@ -865,6 +872,7 @@ dialog::backdrop { background: rgba(3, 6, 8, 0.72); backdrop-filter: blur(3px); 
   @keyframes sheet-in { from { transform: translateY(40px); opacity: 0.4; } to { transform: none; opacity: 1; } }
 }
 .sheet-grab { width: 36px; height: 4px; border-radius: 4px; background: var(--surface-4); margin: var(--sp-2) auto 0; }
+@media (min-width: 600px) { .sheet-grab { display: none; } }
 
 .setting { display: grid; gap: var(--sp-2); padding: var(--sp-4) 0; border-top: 1px solid var(--line); }
 .setting:first-child { border-top: 0; padding-top: 0; }
@@ -926,6 +934,7 @@ legend { padding: 0; }
   transition: transform var(--dur-3) var(--ease-out), opacity var(--dur-3) var(--ease-out);
 }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
+@media (max-width: 899px) { body.has-banner .toast { bottom: calc(var(--tabbar-h) + var(--safe-b) + 9.5rem); } }   /* never stack on the install banner */
 .toast .icon { color: var(--accent); }
 
 .det-toast {
@@ -986,10 +995,14 @@ legend { padding: 0; }
 /* ── Responsive ────────────────────────────────────────────────────────── */
 @media (max-width: 374px) {
   :root { --gutter: 0.75rem; }
-  .net-pill .net-extra { display: none; }
-  .dial-title { font-size: 1.75rem; }
+  .dial-title { font-size: 1.75rem; font-size: min(1.75rem, 10.8cqi); }
   .det-stat { padding: var(--sp-3); }
   .det-stat-val { font-size: 1.1875rem; }
+}
+/* Large default text on a narrow phone: the logo alone carries the brand. */
+@media (max-width: 22.4em) { .brand-word { display: none; } }
+@media (min-width: 600px) and (max-width: 899px) {
+  .listen-grid { max-width: 40rem; margin: 0 auto; }
 }
 @media (min-width: 600px) {
   .stat-tiles { grid-template-columns: repeat(4, 1fr); }
@@ -1015,7 +1028,6 @@ legend { padding: 0; }
   .toast, .det-toast, .install { bottom: calc(var(--sp-6) + var(--safe-b)); }
   .det-toast, .install { left: auto; right: calc(var(--sp-6) + var(--safe-r)); width: 26rem; }
   .listen-grid { grid-template-columns: minmax(22rem, 27rem) minmax(0, 1fr); align-items: start; gap: var(--sp-5); }
-  .listen-col.left { position: sticky; top: 0; }
   .readouts { grid-template-columns: 1fr 1fr; }
   .readout-wide { grid-column: 1 / -1; }
   .spec-canvas-box { height: 15rem; }
@@ -1836,7 +1848,7 @@ function fmtDuration(ms) {
   const h = Math.floor(m / 60), r = m % 60;
   return r ? `${h} h ${r} min` : `${h} h`;
 }
-const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 function fmtAgo(ms) {
   const s = Math.round(ms / 1000);
   if (s < 10) return 'just now';
@@ -3616,7 +3628,7 @@ class App {
       const meta = [Number.isFinite(e.conf) ? fmtPct(e.conf) : null, Number.isFinite(e.f0) ? `${Math.round(e.f0)} Hz` : null,
                     e.range === 'far' ? 'far' : e.range === 'near' ? 'near' : null].filter(Boolean).join(' · ');
       html += `<li class="evt" style="--c:${color}"><span class="sp-swatch" aria-hidden="true"></span>
-        <div><div class="evt-name">${esc(name)} <span class="sci faint">${esc(sci)}</span></div><div class="evt-meta num">${esc(meta)}</div></div>
+        <div style="min-width:0"><div class="evt-name">${esc(name)}</div><div class="evt-meta num"><span class="sci">${esc(sci)}</span> · ${esc(meta)}</div></div>
         <div class="evt-time num">${esc(fmtTime(e.t))}</div></li>`;
     }
     $('#hist-recent').innerHTML = html;
@@ -3702,7 +3714,7 @@ class App {
       e.preventDefault();
       deferred = e;
       // Show after 45 s of use so we don't nag on arrival.
-      setTimeout(() => { if (deferred && !this._dimmed) banner.classList.add('show'); }, 45000);
+      setTimeout(() => { if (deferred && !this._dimmed) { banner.classList.add('show'); document.body.classList.add('has-banner'); } }, 45000);
     });
     $('#pib-install-btn').addEventListener('click', async () => {
       if (!deferred) return;
@@ -3710,9 +3722,10 @@ class App {
       const { outcome } = await deferred.userChoice;
       deferred = null;
       banner.classList.remove('show');
+      document.body.classList.remove('has-banner');
       if (outcome === 'accepted') this.showToast('Installed — open MosquitoNet from your home screen', 'check-circle');
     });
-    $('#pib-dismiss-btn').addEventListener('click', () => { banner.classList.remove('show'); deferred = null; });
+    $('#pib-dismiss-btn').addEventListener('click', () => { banner.classList.remove('show'); document.body.classList.remove('has-banner'); deferred = null; });
   }
 
   // ═══ Bedside dimming ═══════════════════════════════════════════════════
