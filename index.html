@@ -510,11 +510,10 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .hero[data-running="true"] .listen-btn { background: var(--surface-3); color: var(--text-1); border-color: var(--line-strong); }
 .hero[data-running="true"] .listen-btn:hover { background: var(--surface-4); }
 .live-line {
-  display: flex; align-items: center; justify-content: center; gap: var(--sp-2);
-  min-height: 1.5rem;
+  min-height: 1.5rem; text-align: center; text-wrap: balance;
   font-size: var(--fs-sm); color: var(--text-2);
 }
-.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); flex: none; }
+.live-dot { display: inline-block; vertical-align: 0.05em; width: 8px; height: 8px; margin-right: var(--sp-2); border-radius: 50%; background: var(--live); }
 .hero[data-running="true"] .live-dot { animation: live 1.8s var(--ease-in-out) infinite; }
 @keyframes live { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .hero-tip { font-size: var(--fs-sm); color: var(--text-2); text-align: center; max-width: 22rem; text-wrap: balance; }
@@ -1867,6 +1866,8 @@ function fmtDay(t) {
   if (diff === 1) return 'Yesterday';
   return d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
 }
+// Genus of a detection, tolerant of engines that omit it on species-level results.
+const genusOf = (det) => (det && (det.genus || (det.species && det.species.genus))) || 'Unknown';
 const ACTIVITY = {
   night: { icon: 'moon', label: 'Night' },
   dusk:  { icon: 'dusk', label: 'Dusk & dawn' },
@@ -3682,7 +3683,7 @@ class App {
       const lock = this._lastLock;
       if (!lock) return;
       const sp = lock.det.species;
-      const name = sp ? `${sp.common} (${sp.name})` : `${lock.det.genus} mosquito`;
+      const name = sp ? `${sp.common} (${sp.name})` : `${genusOf(lock.det)} mosquito`;
       const risk = sp && sp.asymptomatic ? 'a nuisance species' : `a carrier of ${(sp && (getLocalDisease(sp.id, this.deviceLat, this.deviceLng) || sp.disease)) || 'disease'}`;
       // Emoji are fine in share text (they are not UI chrome).
       this.share({ title: 'MosquitoNet detection',
@@ -3944,6 +3945,7 @@ class App {
 
   showMicHelp(kind, err) {
     this._micError = kind;
+    this.setRunningUI(false);       // button now reads "Try again"
     this.renderIdle();
     const detail = {
       denied:  'Access was refused or is blocked for this site.',
@@ -4189,7 +4191,7 @@ class App {
   handleDetections(dets, now) {
     dets.forEach((det, i) => {
       const sp  = det.species || null;
-      const key = sp ? sp.id : 'genus:' + det.genus;
+      const key = sp ? sp.id : 'genus:' + genusOf(det);
       const conf = Number.isFinite(det.confidence) ? det.confidence : 0;
       if (conf > (this._bestConf[key] || 0)) this._bestConf[key] = conf;
 
@@ -4216,8 +4218,8 @@ class App {
         const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
         const r1 = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : null);
         this._eventRec = this.history.add({
-          t: now, sp: sp ? sp.id : null, name: sp ? sp.name : `${det.genus} sp.`, common: sp ? sp.common : '',
-          genus: det.genus || (sp && sp.genus) || null, risk: sp ? sp.risk : null,
+          t: now, sp: sp ? sp.id : null, name: sp ? sp.name : `${genusOf(det)} sp.`, common: sp ? sp.common : '',
+          genus: genusOf(det), risk: sp ? sp.risk : null,
           conf: r1(conf, 3), f0: r1(f0, 1), range: det.range || null, snr: r1(det.snr, 1),
           lat: r1(this.deviceLat, 2), lng: r1(this.deviceLng, 2),
         });
@@ -4247,7 +4249,7 @@ class App {
 
   onNewEvent(det, conf, now) {
     const sp = det.species;
-    const name = sp ? `${sp.common}, ${sp.name}` : `${det.genus} mosquito, species uncertain`;
+    const name = sp ? `${sp.common}, ${sp.name}` : `${genusOf(det)} mosquito, species uncertain`;
     this.announce(`Mosquito detected: ${name}. ${Math.round(conf * 100)} percent confidence.`);
     if (!(this.activeTab === 'listen' && this._heroVisible)) this.showDetToast(det, conf);
     if (this.activeTab === 'history') this.renderHistory();
@@ -4257,8 +4259,8 @@ class App {
     const sp = det.species;
     const t = $('#det-toast');
     t.style.setProperty('--c', sp ? riskMeta(sp.risk).color : 'var(--warn)');
-    setText($('#dt-title'), sp ? sp.common : `${det.genus} mosquito`);
-    setText($('#dt-sub'), `Detected · ${sp ? shortSci(sp.name) : det.genus + ' sp.'} · ${fmtPct(conf)}`);
+    setText($('#dt-title'), sp ? sp.common : `${genusOf(det)} mosquito`);
+    setText($('#dt-sub'), `Detected · ${sp ? shortSci(sp.name) : genusOf(det) + ' sp.'} · ${fmtPct(conf)}`);
     t.classList.add('show');
     clearTimeout(this._dtTimer);
     this._dtTimer = setTimeout(() => this.hideDetToast(), 12000);
@@ -4339,7 +4341,7 @@ class App {
       case 'listening': {
         glyph = 'listen'; over = 'Listening'; title = 'No mosquito';
         const lock = this._lastLock;
-        sub = lock && lock.det ? `Last heard ${fmtAgo(now - lock.t)}: ${lock.det.species ? shortSci(lock.det.species.name) : lock.det.genus + ' sp.'}`
+        sub = lock && lock.det ? `Last heard ${fmtAgo(now - lock.t)}: ${lock.det.species ? shortSci(lock.det.species.name) : genusOf(lock.det) + ' sp.'}`
             : this.session && this.session.detections ? `${this.session.detections} detection${this.session.detections === 1 ? '' : 's'} this session`
             : 'Nothing heard yet · room is quiet enough';
         break;
@@ -4362,7 +4364,7 @@ class App {
         const uncertain = !sp || det.taxonLevel === 'genus' || det.speciesUncertain === true;
         glyph = 'mosquito';
         over = now - lock.t < 3000 ? 'Mosquito detected' : `Heard ${fmtAgo(now - lock.t)}`;
-        title = uncertain ? `${det.genus} sp.` : sp.name.replace(/\([^)]*\)\s*/g, '');
+        title = uncertain ? `${genusOf(det)} sp.` : sp.name.replace(/\([^)]*\)\s*/g, '');
         sci = true; long = title.length > 16;
         sub = uncertain ? `Species uncertain · ${fmtPct(lock.conf)}` : `${sp.common} · ${fmtPct(lock.conf)}`;
         arc = Math.round(clamp(lock.conf, 0, 1) * 100);
@@ -4425,9 +4427,9 @@ class App {
     risk.className = `badge badge-risk ${rm.cls}`;
     setText(risk, sp ? rm.label : 'Risk depends on species');
     setText($('#det-when'), now - lock.t < 3000 ? 'Now' : `Heard ${fmtAgo(now - lock.t)}`);
-    setText($('#det-name'), uncertain ? `${det.genus} mosquito` : sp.common);
-    setText($('#det-sci'), uncertain ? `${det.genus} sp.` : sp.name);
-    setText($('#det-genus'), uncertain ? '· species uncertain' : `· genus ${det.genus || sp.genus}`);
+    setText($('#det-name'), uncertain ? `${genusOf(det)} mosquito` : sp.common);
+    setText($('#det-sci'), uncertain ? `${genusOf(det)} sp.` : sp.name);
+    setText($('#det-genus'), uncertain ? '· species uncertain' : `· genus ${genusOf(det)}`);
     const disease = sp ? (getLocalDisease(sp.id, this.deviceLat, this.deviceLng) || sp.disease) : '';
     setText($('#det-disease'), disease);
     $('#det-conf').innerHTML = `${Math.round(lock.conf * 100)}<small>%</small>`;
@@ -4471,7 +4473,7 @@ class App {
       diag.hidden = false;
     } else diag.hidden = true;
 
-    $('#det-todo').innerHTML = guidanceFor(sp, det.genus).map(([ic, t]) => `<li>${icon(ic)}<span>${esc(t)}</span></li>`).join('');
+    $('#det-todo').innerHTML = guidanceFor(sp, genusOf(det)).map(([ic, t]) => `<li>${icon(ic)}<span>${esc(t)}</span></li>`).join('');
   }
 
   renderRoom(st, slow) {
