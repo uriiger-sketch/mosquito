@@ -1172,7 +1172,12 @@ def heartbeat():
         body   = _json_body()
         body   = body if isinstance(body, dict) else {}
         raw_id = body.get('deviceId', 'anon')
-        sess   = ''
+        # v3 clients POST the heartbeat so the raw device id never appears in a
+        # URL (URLs end up in platform/CDN access logs next to the client IP).
+        # They send the session start time as a number.
+        sess   = body.get('sess', '')
+        if isinstance(sess, (int, float)) and not isinstance(sess, bool):
+            sess = str(int(sess)) if math.isfinite(sess) and sess > 0 else ''
     sess = sess[:32] if isinstance(sess, str) else ''   # stored per device: bound it
     h = dh(raw_id)
     wait = _throttled('dev:heartbeat', h)

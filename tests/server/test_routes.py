@@ -64,6 +64,23 @@ def test_heartbeat_post_and_non_object_body(client):
     assert r.status_code == 200
 
 
+def test_heartbeat_post_v3_counts_sessions_like_get(client):
+    # The v3 client POSTs {deviceId, listening, sess:<number>} so the device id
+    # never lands in a URL; sessions must be counted exactly as for GET.
+    s = post(client, '/heartbeat', {'deviceId': 'dev1', 'listening': 1, 'sess': 1761160000000}).get_json()
+    assert s['active_now'] == 1 and s['total_sessions'] == 1
+    s = post(client, '/heartbeat', {'deviceId': 'dev1', 'listening': 1, 'sess': 1761160000000}).get_json()
+    assert s['total_sessions'] == 1                  # same session: no double count
+    s = post(client, '/heartbeat', {'deviceId': 'dev1', 'listening': 0, 'sess': 1761160099999}).get_json()
+    assert s['total_sessions'] == 2
+    # Not listening yet (sess 0) and junk values never open a session.
+    for junk in (0, -5, True, float('nan'), [1], {'a': 1}):
+        body = '{"deviceId": "dev2", "sess": %s}' % ('NaN' if junk != junk else json.dumps(junk))
+        r = post(client, '/heartbeat', None, raw=body)
+        assert r.status_code == 200
+    assert client.get('/heartbeat?deviceId=dev3').get_json()['total_sessions'] == 2
+
+
 def test_detection_happy_path_and_log(client):
     r = post_det(client)
     assert r.status_code == 200

@@ -2235,25 +2235,29 @@ class FederatedLearningClient {
     }
   }
 
-  // ── Heartbeat: called every 30s to register presence ─────────────────────
-  // Tells the server "I exist right now" — no audio, no location.
-  // This is what drives the "live now" counter.
-  sendHeartbeat(listening, sessionStart) {
-    // XHR — bypasses service worker, no CORS preflight, works on iOS PWA
-    return new Promise(resolve => {
-      if (!window.SERVER_URL) { resolve(null); return; }
-      const id  = this.getAnonymousId();
-      const url = `${window.SERVER_URL}/heartbeat?deviceId=${encodeURIComponent(id)}` +
-                  `&listening=${listening?1:0}&sess=${sessionStart||0}`;
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.timeout = 8000;
-      xhr.onload  = () => {
-        try { resolve(JSON.parse(xhr.responseText)); } catch(e) { resolve(null); }
-      };
-      xhr.onerror = xhr.ontimeout = () => resolve(null);
-      xhr.send();
-    });
+  // ── Location privacy ──────────────────────────────────────────────────────
+  // Fresh random jitter on every report does NOT protect a home: averaging N
+  // reports from the same place shrinks the error by √N (100 finds → ~150 m).
+  // Instead each device draws ONE secret offset, uniform over a disc of radius
+  // ~1.5 km, and keeps it; reports carry that constant offset plus a small fresh
+  // jitter, so averaging converges to a point ~1.5 km from home, never the home.
+  // (The server adds its own per-device offset before publishing — defence in depth.)
+  _locationOffset() {
+    const R_DEG = 0.0135, JIT = 0.002;            // ≈ 1.5 km disc, ± ≈ 110 m jitter
+    if (!this._locOff) {
+      let o = null;
+      try { o = JSON.parse(localStorage.getItem('mosquitonet_loc_offset')); } catch (e) {}
+      if (!o || !Number.isFinite(o.dLat) || !Number.isFinite(o.dLng)) {
+        const u = new Uint32Array(2);
+        crypto.getRandomValues(u);
+        const r = R_DEG * Math.sqrt(u[0] / 2 ** 32), th = 2 * Math.PI * (u[1] / 2 ** 32);
+        o = { dLat: r * Math.cos(th), dLng: r * Math.sin(th) };
+        try { localStorage.setItem('mosquitonet_loc_offset', JSON.stringify(o)); } catch (e) {}
+      }
+      this._locOff = o;
+    }
+    return { dLat: this._locOff.dLat + (Math.random() - 0.5) * JIT,
+             dLng: this._locOff.dLng + (Math.random() - 0.5) * JIT };
   }
 
   // ── Report a confirmed detection ──────────────────────────────────────────
@@ -2267,9 +2271,9 @@ class FederatedLearningClient {
     const app = window._app;
     let lat = null, lng = null;
     if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
-      const jitter = 0.025;   // ±~2.8 km differential-privacy jitter
-      lat = app.deviceLat + (Math.random() - 0.5) * jitter;
-      lng = app.deviceLng + (Math.random() - 0.5) * jitter;
+      const o = this._locationOffset();
+      lat = Math.max(-90, Math.min(90, app.deviceLat + o.dLat));
+      lng = ((app.deviceLng + o.dLng + 540) % 360) - 180;
     }
     const round = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : undefined);
     const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
@@ -3767,11 +3771,14 @@ class App {
     // Heartbeat via XHR — bypasses the service worker, no CORS preflight, works in iOS PWAs.
     const sendHeartbeat = () => {
       if (!SERVER_URL) { this.setNet('offline'); return; }
-      const id  = this.fedClient.getAnonymousId();
-      const url = `${SERVER_URL}/heartbeat?deviceId=${encodeURIComponent(id)}` +
-                  `&listening=${this.running ? 1 : 0}&sess=${this.sessionStart || 0}`;
+      // POST, not GET: the raw device id must never appear in a URL — URLs are
+      // kept in hosting/CDN access logs next to the client IP. text/plain keeps
+      // it a "simple" CORS request (no preflight).
+      const body = JSON.stringify({ deviceId: this.fedClient.getAnonymousId(),
+                                    listening: this.running ? 1 : 0, sess: this.sessionStart || 0 });
       const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
+      xhr.open('POST', `${SERVER_URL}/heartbeat`, true);
+      xhr.setRequestHeader('Content-Type', 'text/plain');
       xhr.timeout = 8000;
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -3784,7 +3791,7 @@ class App {
       };
       xhr.onerror   = () => this.setNet('offline');
       xhr.ontimeout = () => this.setNet('offline');
-      xhr.send();
+      xhr.send(body);
     };
     const fetchStats = async () => {
       if (!SERVER_URL) return;
