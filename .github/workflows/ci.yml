@@ -164,6 +164,19 @@ jobs:
           docker run --rm --entrypoint cat -v mn-data:/data mosquitonet:ci /data/mosquitonet_state.json \
             | python3 -c "import json, sys; s = json.load(sys.stdin); assert s['stats']['total_detections'] == 2 and s['next_id'] == 3, s"
 
+      - name: A DATA_DIR that does not exist yet is created and owned by the app user
+        run: |
+          docker run -d --name mn2 -p 8081:8080 -e DATA_DIR=/srv/mn/data mosquitonet:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/health | python3 -c "import json, sys; h = json.load(sys.stdin); assert h['data_dir'] == '/srv/mn/data' and h['writable'] and not h['ephemeral'], h"
+          test "$(docker exec mn2 cat /proc/1/status | awk '/^Uid:/ {print $2}')" = 10001
+          docker rm -f mn2
+
       - name: Logs on failure
         if: failure()
-        run: docker logs mn 2>&1 | tail -100 || true
+        run: |
+          docker logs mn 2>&1 | tail -100 || true
+          docker logs mn2 2>&1 | tail -50 || true
