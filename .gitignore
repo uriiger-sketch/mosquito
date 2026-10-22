@@ -27,3 +27,8 @@ node_modules/
 test-results/
 playwright-report/
 .eval-cache/
+
+# Python test artefacts
+.coverage
+.pytest_cache/
+htmlcov/
