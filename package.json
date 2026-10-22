@@ -1,0 +1,14 @@
+{
+  "name": "mosquitonet",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Acoustic mosquito surveillance PWA — on-device detection, crowdsourced vector map.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\"",
+    "bench": "node tools/detection_bench.js",
+    "bench:quick": "node tools/detection_bench.js --quick",
+    "serve": "http-server -p 8080 -c-1 ."
+  }
+}

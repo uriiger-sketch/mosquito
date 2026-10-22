@@ -2,7 +2,7 @@
 /*
  * Detection-range benchmark for the MosquitoNet classifier.
  *
- * Runs the REAL MosquitoClassifier (extracted from index.html) on synthetic
+ * Runs the REAL MosquitoClassifier (js/detector.js, loaded as the page loads it) on synthetic
  * audio framed exactly like the app (8192-sample window, hop 4096, Blackman
  * dB spectrum like an AnalyserNode) and measures:
  *
@@ -14,44 +14,23 @@
  * air absorption at these frequencies is negligible. So a detector that works
  * at an SNR X dB lower has a detection range 10^(X/20) times longer.
  *
- * Usage:  node tools/detection_bench.js [--trials N] [--quick]
+ * Usage:  node tools/detection_bench.js [--trials N] [--quick] [--root <checkout>]
  */
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 
 const SR = 44100, N = 8192, HOP = 4096;
 const BIN_HZ = SR / N;
 
-// ── Extract the classifier (and what it depends on) from index.html ─────────
-const HTML = (() => { const i = process.argv.indexOf('--html');
-  return i >= 0 ? path.resolve(process.argv[i + 1]) : path.join(__dirname, '..', 'index.html'); })();
+// ── Load the engine exactly as the page runs it (js/species.js + js/detector.js)
+// --root <dir> benchmarks another checkout (e.g. a baseline worktree).
+const ROOT = (() => { const i = process.argv.indexOf('--root');
+  return i >= 0 ? path.resolve(process.argv[i + 1]) : path.join(__dirname, '..'); })();
+const loadEngine = require('./lib/load-engine');
 
 function loadClassifier() {
-  const src = fs.readFileSync(HTML, 'utf8');
-  const grab = (startMark, endMark) => {
-    const a = src.indexOf(startMark);
-    const b = src.indexOf(endMark, a + startMark.length);
-    if (a < 0 || b < 0) throw new Error('cannot extract ' + startMark);
-    return src.slice(a, b);
-  };
-  const code = [
-    grab('const SPECIES_DB = [', '\nfunction getNativeSpecies'),
-    src.includes('class FarFieldTracker') ? grab('class FarFieldTracker', '\nclass MosquitoClassifier') : '',
-    grab('class MosquitoClassifier', '\nclass FederatedLearningClient'),
-    'this.SPECIES_DB = SPECIES_DB; this.MosquitoClassifier = MosquitoClassifier;',
-  ].join('\n');
-  const quiet = { log: (...a) => { if (!String(a[0]).startsWith('[Sensitivity]')) console.log(...a); },
-                  warn: console.warn, error: console.error };
-  const ctx = {
-    window: { _app: null }, console: quiet, Math, Float32Array, Float64Array, Uint8Array,
-    Int32Array, Array, Object, Number, Set, Map, isFinite, Infinity, NaN,
-    timeOfDayCategory: () => 'day',
-  };
-  vm.createContext(ctx);
-  vm.runInContext(code, ctx);
-  return ctx;
+  return loadEngine({ root: ROOT });
 }
 
 // ── DSP helpers ──────────────────────────────────────────────────────────────
@@ -181,18 +160,13 @@ function run(ctx, signal, speciesId, level) {
   });
   clf.getActivityFactor = () => 1.0;
   clf.setSensitivity(level);
-  clf._fastCalib = true;
+  clf.beginCalibration();
   const calibFrames = Math.round(2.0 * SR / HOP);
   let frames = 0, hits = 0, anyHits = 0, firstHit = -1;
   const perSpecies = {};
   for (let end = N; end <= signal.length; end += HOP) {
     const frame = signal.subarray(end - N, end);
-    if (frames === calibFrames) {                 // what startListening() does at 2 s
-      clf._fastCalib = false;
-      for (const sp of ctx.SPECIES_DB) {
-        clf.voteBuffer[sp.id].fill(0); clf.votePtr[sp.id] = 0; clf.voteCount[sp.id] = 0;
-      }
-    }
+    if (frames === calibFrames) clf.endCalibration();   // what startListening() does at 2 s
     const dets = clf.analyze(analyserDb(frame), Float32Array.from(frame));
     frames++;
     for (const d of dets) perSpecies[d.species.id] = (perSpecies[d.species.id] || 0) + 1;
@@ -212,8 +186,7 @@ function main() {
   const TRIALS = tIdx >= 0 ? +argv[tIdx + 1] : (quick ? 3 : 6);
   const level = 3;
   const ctx = loadClassifier();
-  const hasFF = /class FarFieldTracker/.test(fs.readFileSync(HTML, 'utf8'));
-  console.log(`Classifier: ${path.basename(HTML)} (${hasFF ? 'with far-field tracker' : 'baseline'})  | sensitivity ${level} | ${TRIALS} trials/point`);
+  console.log(`Engine: ${path.relative(process.cwd(), ROOT) || '.'}/js/detector.js  | sensitivity ${level} | ${TRIALS} trials/point`);
 
   const NOISE_RMS = 0.01;                         // -40 dBFS room noise
   const DUR = 14, SIG_START = 3;                  // 3 s noise-only warm-up, then 11 s of flight
