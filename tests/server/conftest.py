@@ -39,6 +39,7 @@ class Harness:
             'RATE_LIMIT_SCALE': '0',        # most tests are not about rate limiting
             'TRUSTED_PROXY_HOPS': '1',
             'PSEUDONYM_SECRET': 'test-secret',
+            'PUBLIC_GEO_OFFSET': '0',       # exact coordinates; offset tests turn it on
         }
 
     def start(self, **env):

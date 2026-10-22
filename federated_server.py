@@ -22,13 +22,15 @@ v13 — launch hardening (security + reliability audit):
   - Every client-supplied field is type-checked, bounded and sanitised before it
     reaches RAM, disk, logs or the public /log (a 250 KB `disease` string was
     stored verbatim — 20k such rows = 5 GB → OOM; an unhashable eventId → 500).
-  - Privacy: public /log and /log.txt coarsen coordinates to ~1 km and replace
-    the stable device hash with a per-day keyed pseudonym. Each report is
-    jittered independently on the client, so averaging one device's reports
-    used to recover its home location to ~100 m.
+  - Privacy: each report is jittered independently on the client, so averaging
+    one phone's reports recovered its home to ~100 m. Public /log and /log.txt
+    now shift coordinates by a secret per-device constant offset (≈ ±2 km)
+    before rounding, and replace the stable device hash with a per-day keyed
+    pseudonym.
   - FedAvg: magnitude bounds, one pending update per device per round, L2
-    clipping of each client's delta, step weight capped — a single sybil can
-    no longer steer the global model in one round.
+    clipping of each client's delta, step weight capped, the global model
+    kept in a bounded box, and a per-IP upload budget — a single sybil can no
+    longer steer the global model.
   - Durability: unbuffered O_APPEND writes rolled back on failure (a full disk
     now returns 503 so the client retries, instead of acknowledging a find that
     was never written); torn-tail repair; corrupt state quarantined and rebuilt
@@ -44,7 +46,7 @@ all state lives in this process and a second writer would corrupt DATA_DIR.
 """
 
 import os, re, io, sys, json, math, time, hmac, errno, atexit, hashlib, shutil
-import threading, ipaddress, functools
+import threading, ipaddress, functools, itertools
 from collections import deque, OrderedDict
 from datetime import datetime, timezone
 import numpy as np
@@ -545,9 +547,18 @@ def _acquire_single_writer_lock():
         return
     try:
         _lock_fh = open(LOCK_FILE, 'a+')
+    except OSError as e:
+        # Can't even create the lock file: a permissions/volume problem (which
+        # /health's `writable` reports), not a second writer — don't cry wolf.
+        _log(f'[lock] cannot open {LOCK_FILE}: {e} — single-writer check skipped')
+        return
+    try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         single_instance = True
-    except OSError:
+    except OSError as e:
+        if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES):
+            _log(f'[lock] flock failed: {e} — single-writer check skipped')
+            return
         single_instance = False
         _log('=' * 72)
         _log(f'[WARNING] another process already holds {LOCK_FILE}.')
@@ -611,6 +622,12 @@ global_b = np.array([-0.4,-0.3,-0.3,-0.4], dtype=float)
 # ±3 and the client trains with LR 0.01 and clipped gradients, so no honest
 # upload comes anywhere near these bounds.
 FED_WEIGHT_ABS_MAX = 50.0   # any |w| above this is rejected outright (400)
+# Clipping bounds each ROUND, not the sum of rounds: sybils (device ids are free)
+# could drive many rounds in one direction until the global model itself passed
+# FED_WEIGHT_ABS_MAX — honest clients merging it would then be rejected, and the
+# persisted model would fail validation and silently reset at the next boot. So
+# the global model is kept inside a box well within the upload bound.
+FED_GLOBAL_ABS_MAX = 20.0
 FED_CLIP_NORM  = _env_num('FED_CLIP_NORM', 2.0, 0.01, 1000.0)   # L2 cap on (client − global)
 FED_MAX_STEPS  = 50         # step weight cap (honest clients send 20; was 500 → 25× leverage)
 
@@ -678,27 +695,71 @@ start_time        = time.time()
 
 # ── Public-output privacy ─────────────────────────────────────────────────────
 # Clients jitter coordinates by up to ±~1.4 km, but independently per report, so
-# the mean of one device's reports converges on its true location. Public
-# endpoints therefore (a) round coordinates to PUBLIC_COORD_DECIMALS (2 ≈ 1.1 km)
-# and (b) show a keyed per-day pseudonym instead of the stable device hash, so
-# reports can't be linked across days. The raw jittered values and the stable
-# hash stay in the private JSONL for the operator.
+# the mean of one device's reports converges on its true location — and that
+# works even without a device id, by clustering reports around a home. Rounding
+# alone doesn't help: the jitter is wider than any useful grid, so it acts as
+# dither and the mean of rounded values still converges. Public endpoints
+# therefore show each report shifted by a SECRET, PER-DEVICE, CONSTANT offset
+# (±PUBLIC_GEO_OFFSET degrees, ≈ ±2.2 km by default) before rounding: averaging
+# any number of reports, over any number of days, converges on true + offset,
+# which an outsider cannot remove. The device itself appears as a keyed per-day
+# pseudonym, so reports can't be linked across days either. The raw jittered
+# values and the stable hash stay in the private JSONL for the operator.
 PUBLIC_COORD_DECIMALS = _env_num('PUBLIC_COORD_DECIMALS', 2, 0, 4, int)
-_PSEUDO_KEY = (os.environ.get('PSEUDONYM_SECRET') or '').encode() or os.urandom(32)
+PUBLIC_GEO_OFFSET     = _env_num('PUBLIC_GEO_OFFSET', 0.02, 0.0, 0.5)
 _DAY_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
+
+def _server_secret():
+    """Key for pseudonyms and offsets. It must outlive restarts — a new key
+    would give every device a fresh offset, and averaging across keys undoes
+    the protection — so it is created once in DATA_DIR (0600) unless
+    PSEUDONYM_SECRET provides one."""
+    env = os.environ.get('PSEUDONYM_SECRET')
+    if env:
+        return env.encode()
+    path = os.path.join(DATA_DIR, '.server_secret')
+    for _ in range(2):
+        try:
+            with open(path, 'rb') as f:
+                key = f.read()
+            if len(key) >= 32:
+                return key
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            _log(f'[privacy] cannot read {path}: {e}')
+            break
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'wb') as f:
+                f.write(os.urandom(32))
+                f.flush()
+                os.fsync(f.fileno())
+        except FileExistsError:
+            continue                     # another process won the race: read theirs
+        except OSError as e:
+            _log(f'[privacy] cannot persist {path}: {e}')
+            break
+    _log('[privacy] WARNING: using a temporary key — public offsets/pseudonyms change on restart')
+    return os.urandom(32)
+
+_PSEUDO_KEY = _server_secret()
 
 @functools.lru_cache(maxsize=65536)
 def _pseudonym(device, day):
     return hmac.new(_PSEUDO_KEY, f'{device}|{day}'.encode(), hashlib.sha256).hexdigest()[:16]
 
+@functools.lru_cache(maxsize=65536)
+def _geo_offset(device):
+    """(Δlat, Δlng) in ±PUBLIC_GEO_OFFSET: uniform, secret, fixed per device."""
+    d = hmac.new(_PSEUDO_KEY, f'geo|{device}'.encode(), hashlib.sha256).digest()
+    u = [int.from_bytes(d[i:i + 8], 'big') / 2.0 ** 64 for i in (0, 8)]
+    return tuple((2.0 * x - 1.0) * PUBLIC_GEO_OFFSET for x in u)
+
 def _public_device(e):
     ts = e.get('ts')
     day = ts[:10] if isinstance(ts, str) and _DAY_RE.match(ts) else 'na'
     return _pseudonym(str(e.get('device', '')), day)
-
-def _coarse(v):
-    f = _finite(v)
-    return None if f is None else round(f, PUBLIC_COORD_DECIMALS)
 
 _PUBLIC_KEYS = ('id', 'ts', 'species', 'name', 'disease', 'freq', 'conf', 'risk',
                 'asymptomatic', 'conf_updated',
@@ -706,11 +767,16 @@ _PUBLIC_KEYS = ('id', 'ts', 'species', 'name', 'disease', 'freq', 'conf', 'risk'
 
 def _public_row(e):
     """What /log may show of a stored entry: an allowlist of keys (private ones
-    such as 'eid' never leak), coarsened coordinates and a pseudonymous device."""
+    such as 'eid' never leak), offset + rounded coordinates, pseudonymous device."""
     out = {k: e[k] for k in _PUBLIC_KEYS if k in e}
     out['device'] = _public_device(e)
-    out['lat'] = _coarse(e.get('lat'))
-    out['lng'] = _coarse(e.get('lng'))
+    lat, lng = _finite(e.get('lat')), _finite(e.get('lng'))
+    if lat is None or lng is None:
+        out['lat'] = out['lng'] = None
+    else:
+        dlat, dlng = _geo_offset(str(e.get('device', '')))
+        out['lat'] = round(min(90.0, max(-90.0, lat + dlat)), PUBLIC_COORD_DECIMALS)
+        out['lng'] = round(min(180.0, max(-180.0, lng + dlng)), PUBLIC_COORD_DECIMALS)
     return out
 
 
@@ -859,8 +925,8 @@ def fedavg(updates):
         db += w * ub
     # Conservative 0.3 global / 0.7 new keeps a single round from dominating
     # while still converging.
-    cand_W = global_W + 0.7 * dW
-    cand_b = global_b + 0.7 * db
+    cand_W = np.clip(global_W + 0.7 * dW, -FED_GLOBAL_ABS_MAX, FED_GLOBAL_ABS_MAX)
+    cand_b = np.clip(global_b + 0.7 * db, -FED_GLOBAL_ABS_MAX, FED_GLOBAL_ABS_MAX)
     if not (np.all(np.isfinite(cand_W)) and np.all(np.isfinite(cand_b))):
         _log('[FedAvg] non-finite result — keeping previous global model')
         return
@@ -909,6 +975,9 @@ RATE_LIMITS = {
     'ip:any':        (600, 20.0),   # every request from one IP
     'ip:write':      (120, 1.0),    # POST /detection + /federated/upload per IP
     'ip:log':        (30, 0.5),     # /log, /log.txt — up to 5000 rows each
+    'ip:upload':     (10, 1 / 60),  # model uploads: honest phones send one per 20 training
+                                    # steps; this caps how many FedAvg rounds one IP can drive
+    'ip:health':     (120, 2.0),    # own bucket: probes must not starve behind other traffic
     'dev:detection': (60, 0.25),    # burst = draining an offline queue; then 15/min
     'dev:heartbeat': (60, 1.0),     # ~9/min per open tab; leaves room for several tabs
     'dev:upload':    (6, 1 / 30),
@@ -920,9 +989,12 @@ _dev_limiter = _RateLimiter(100_000)   # separate map: rotating device ids can't
 def _client_ip():
     ip = request.remote_addr or 'unknown'
     if ':' in ip:
-        # One IPv6 subscriber typically holds a whole /64; keying on the full
-        # address would hand an attacker 2^64 fresh buckets.
         try:
+            addr = ipaddress.ip_address(ip)
+            if addr.ipv4_mapped:          # ::ffff:1.2.3.4 (dual-stack socket / proxy)
+                return str(addr.ipv4_mapped)   # …would otherwise all collapse into ::/64
+            # One IPv6 subscriber typically holds a whole /64; keying on the full
+            # address would hand an attacker 2^64 fresh buckets.
             return str(ipaddress.ip_network(f'{ip}/64', strict=False))
         except ValueError:
             pass
@@ -996,11 +1068,15 @@ def _reject_origin():
 
 @app.before_request
 def _guard():
-    """Per-IP rate limits and the Origin check for writes. OPTIONS (preflight)
-    and /health (platform liveness probes) are exempt."""
-    if request.method == 'OPTIONS' or request.path == '/health':
+    """Per-IP rate limits and the Origin check for writes. OPTIONS (preflight,
+    no state touched) is exempt; /health has its own generous bucket so
+    platform liveness probes never starve behind a busy shared IP."""
+    if request.method == 'OPTIONS':
         return None
     ip = _client_ip()
+    if request.path == '/health':
+        wait = _throttled('ip:health', ip)
+        return _rate_limited(wait) if wait else None
     wait = _throttled('ip:any', ip)       # first, so even rejected requests cost a token
     if wait:
         return _rate_limited(wait)
@@ -1012,6 +1088,8 @@ def _guard():
             return _reject_origin()
     if request.method == 'POST' and request.path in ('/detection', '/federated/upload'):
         wait = _throttled('ip:write', ip)
+    if not wait and request.method == 'POST' and request.path == '/federated/upload':
+        wait = _throttled('ip:upload', ip)
     if not wait and request.path in ('/log', '/log.txt'):
         wait = _throttled('ip:log', ip)
     if wait:
@@ -1403,24 +1481,31 @@ def _int_arg(name, default, lo, hi):
     except (TypeError, ValueError):
         return default
 
+def _select_rows(from_id, limit, sp_filter=None, dev_filter=None):
+    """Newest-first log entries → (rows, stats snapshot). Unfiltered, walk
+    newest→oldest and stop at `limit`, so the lock is held for O(limit) rather
+    than O(entire log). A selective filter may have to walk the whole window
+    (and HMAC every row for `device`), so then the deque's references are copied
+    under the lock — a fast C-level copy — and filtered outside it: one picky
+    query must not stall every detection behind the global lock."""
+    with write_lock:
+        snap = dict(full_stats())
+        newest = (e for e in reversed(detection_log) if e['id'] > from_id)
+        if not (sp_filter or dev_filter):
+            return list(itertools.islice(newest, limit)), snap
+        pool = list(detection_log)
+    rows = (e for e in reversed(pool)
+            if e['id'] > from_id
+            and (not sp_filter or e.get('species') == sp_filter)
+            and (not dev_filter or _public_device(e) == dev_filter))
+    return list(itertools.islice(rows, limit)), snap
+
 @app.route('/log', methods=['GET'])
 def log_json():
-    sp_filter  = request.args.get('species')
-    dev_filter = request.args.get('device')     # matches the public per-day pseudonym
     # Cap at 5000 (was 50000 → a 13 MB unauthenticated response per request).
-    limit   = _int_arg('limit', 500, 1, 5000)
-    from_id = _int_arg('from_id', 0, 0, 2**62)
-    # Walk newest→oldest and stop as soon as we have `limit` rows, so the lock is
-    # held for O(limit) rather than O(entire log) on every call.
-    rows = []
-    with write_lock:
-        for e in reversed(detection_log):
-            if e['id'] <= from_id:                                   continue
-            if sp_filter  and e.get('species') != sp_filter:         continue
-            if dev_filter and _public_device(e) != dev_filter:       continue
-            rows.append(e)
-            if len(rows) >= limit: break
-        s = dict(full_stats())
+    rows, s = _select_rows(_int_arg('from_id', 0, 0, 2**62), _int_arg('limit', 500, 1, 5000),
+                           request.args.get('species'),
+                           request.args.get('device'))   # the public per-day pseudonym
     # Project outside the lock (pure reads of dicts whose keys we only add).
     return jsonify({'total_ever': s['total_detections'], 'total_log': s['log_size'],
                     'returned': len(rows), 'detections': [_public_row(e) for e in rows]})
@@ -1428,19 +1513,9 @@ def log_json():
 
 @app.route('/log.txt', methods=['GET'])
 def log_txt():
-    sp_filter = request.args.get('species')
-    limit   = _int_arg('limit', 2000, 1, 5000)
-    from_id = _int_arg('from_id', 0, 0, 2**62)
-
-    rows = []
-    with write_lock:
-        for e in reversed(detection_log):
-            if e['id'] <= from_id:  continue
-            if sp_filter and e.get('species') != sp_filter: continue
-            rows.append(e)
-            if len(rows) >= limit: break
-        total_ever = stats['total_detections']
-        total_log  = len(detection_log)
+    rows, s = _select_rows(_int_arg('from_id', 0, 0, 2**62), _int_arg('limit', 2000, 1, 5000),
+                           request.args.get('species'))
+    total_ever, total_log = s['total_detections'], s['log_size']
 
     buf = io.StringIO()
     buf.write('━' * 60 + '\n')

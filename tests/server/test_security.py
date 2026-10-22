@@ -154,12 +154,57 @@ def test_device_is_a_per_day_pseudonym(client, srv):
     assert dev_hash[:8] not in txt and devices[0][:8] in txt
 
 
-def test_pseudonym_key_is_secret(harness, monkeypatch):
+def test_server_secret_is_persisted_privately(harness, tmp_path):
+    import os
     a = harness.start(PSEUDONYM_SECRET=None)
-    pa = a._pseudonym('dev', '2026-10-20')
-    a._shutdown()
-    b = harness.start(PSEUDONYM_SECRET=None)
-    assert b._pseudonym('dev', '2026-10-20') != pa     # random per process when unset
+    path = os.path.join(harness.data_dir, '.server_secret')
+    assert os.stat(path).st_mode & 0o077 == 0
+    pa, oa = a._pseudonym('dev', '2026-10-20'), a._geo_offset('dev')
+    b = harness.restart(a, PSEUDONYM_SECRET=None)
+    # Stable across restarts: a fresh key per boot would give every device a new
+    # offset, and averaging over several keys would undo the protection.
+    assert b._pseudonym('dev', '2026-10-20') == pa and b._geo_offset('dev') == oa
+    b._shutdown()
+    other = harness.start(PSEUDONYM_SECRET=None, DATA_DIR=str(tmp_path / 'other'))
+    assert other._pseudonym('dev', '2026-10-20') != pa      # random per installation
+
+
+def test_public_offset_is_secret_constant_and_bounded(harness):
+    srv = harness.start(PUBLIC_GEO_OFFSET='0.02')
+    c = srv.app.test_client()
+    # Pick a device whose secret offset is clearly non-zero (deterministic key).
+    dev = next(f'dev{i}' for i in range(1000)
+               if min(map(abs, srv._geo_offset(srv.dh(f'dev{i}')))) > 0.01)
+    dlat, dlng = srv._geo_offset(srv.dh(dev))
+    for day, sp in (('20', 'culex'), ('21', 'anopheles')):
+        post_det(c, deviceId=dev, lat=10.0, lng=20.0, species=sp, ts=f'2026-10-{day}T10:00:00Z')
+    post_det(c, deviceId='someone-else', lat=10.0, lng=20.0)
+    rows = c.get('/log').get_json()['detections']
+    mine = [(r['lat'], r['lng']) for r in rows if r['species'] in ('culex', 'anopheles')]
+    assert mine[0] == mine[1]                                  # constant across days
+    assert mine[0] == (round(10.0 + dlat, 2), round(20.0 + dlng, 2))
+    assert all(abs(v - t) <= 0.02 + 0.005 for v, t in zip(mine[0], (10.0, 20.0)))
+    other = next((r['lat'], r['lng']) for r in rows if r['species'] == 'aedes_albopictus')
+    assert other != mine[0]                                    # per device, not global
+
+
+def test_averaging_attack_converges_on_the_offset_not_the_home(harness):
+    """The attack the offset exists for: average one phone's (client-jittered,
+    rounded) public reports. It must NOT recover the true location."""
+    import random
+    srv = harness.start(PUBLIC_GEO_OFFSET='0.02')
+    dev = next(f'p{i}' for i in range(1000)
+               if min(map(abs, srv._geo_offset(srv.dh(f'p{i}')))) > 0.01)
+    rng = random.Random(7)
+    home = (32.0812, 34.7745)
+    entries = [{'id': i, 'device': srv.dh(dev), 'ts': '2026-10-20T00:00:00Z',
+                'lat': home[0] + (rng.random() - 0.5) * 0.025,     # the client's jitter
+                'lng': home[1] + (rng.random() - 0.5) * 0.025} for i in range(2000)]
+    pub = [srv._public_row(e) for e in entries]
+    mean = (sum(p['lat'] for p in pub) / len(pub), sum(p['lng'] for p in pub) / len(pub))
+    dlat, dlng = srv._geo_offset(srv.dh(dev))
+    assert abs(mean[0] - (home[0] + dlat)) < 0.002 and abs(mean[1] - (home[1] + dlng)) < 0.002
+    assert abs(mean[0] - home[0]) > 0.008 and abs(mean[1] - home[1]) > 0.008   # > ~0.9 km off
 
 
 def test_private_fields_never_served(client):

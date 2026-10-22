@@ -74,14 +74,38 @@ def test_log_endpoints_have_their_own_tighter_bucket(limited):
     assert c.get('/hotspots').status_code == 200
 
 
-def test_health_and_preflight_are_never_throttled(limited):
+def test_ipv4_mapped_addresses_are_keyed_as_ipv4(limited):
     limited.RATE_LIMITS['ip:any'] = (1, 0.001)
     c = limited.app.test_client()
+    h = lambda ip: {'X-Forwarded-For': ip}
+    assert c.get('/federated/stats', headers=h('::ffff:1.2.3.4')).status_code == 200
+    # A different IPv4 client must not share the bucket (they all used to map to ::/64)…
+    assert c.get('/federated/stats', headers=h('::ffff:5.6.7.8')).status_code == 200
+    # …while the same client, mapped or not, does.
+    assert c.get('/federated/stats', headers=h('1.2.3.4')).status_code == 429
+
+
+def test_health_has_its_own_bucket_and_preflight_is_free(limited):
+    limited.RATE_LIMITS['ip:any'] = (1, 0.001)
+    limited.RATE_LIMITS['ip:health'] = (3, 0.001)
+    c = limited.app.test_client()
     c.get('/federated/stats')
-    for _ in range(5):
+    for _ in range(3):                    # other traffic exhausted ip:any; probes still pass
         assert c.get('/health').status_code == 200
         assert c.options('/detection').status_code in (200, 204)
+    assert c.get('/health').status_code == 429
+    assert c.options('/detection').status_code in (200, 204)
     assert c.get('/federated/stats').status_code == 429
+
+
+def test_per_ip_upload_budget_limits_rounds(limited):
+    limited.RATE_LIMITS['ip:upload'] = (3, 0.001)
+    c = limited.app.test_client()
+    w = {'W': [[0.0] * 4] * 4, 'b': [0.0] * 4}
+    for i in range(3):                    # rotating device ids don't buy more uploads
+        assert post(c, '/federated/upload', {'deviceId': f's{i}', 'weights': w, 'steps': 1}).status_code == 200
+    assert post(c, '/federated/upload', {'deviceId': 's9', 'weights': w, 'steps': 1}).status_code == 429
+    assert post_det(c).status_code == 200            # detections unaffected
 
 
 def test_ip_write_bucket(limited):

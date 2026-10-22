@@ -70,8 +70,9 @@ default (a typo never stops the server from booting).
 | `DETECTION_LOG_MAX` | `20000` | Detections kept in RAM for `/log`. |
 | `SEEN_EVENTS_MAX` | `20000` | Size of the idempotency window (eventIds remembered to drop client retries). |
 | `DETECTION_CELLS_MAX` | `20000` | Hotspot cells tracked (least recently hit cells are evicted first). |
+| `PUBLIC_GEO_OFFSET` | `0.02` | Max secret per-device shift (degrees, ≈ 2.2 km) applied to coordinates in the public `/log` and `/log.txt`. `0` disables it (not recommended). |
 | `PUBLIC_COORD_DECIMALS` | `2` | Decimals of lat/lng shown by the public `/log` and `/log.txt` (2 ≈ 1.1 km). The private JSONL keeps 4. |
-| `PSEUDONYM_SECRET` | random per start | Key for the per-day device pseudonyms in `/log`. Set it only if pseudonyms must stay stable across restarts. |
+| `PSEUDONYM_SECRET` | generated once | Key for the public device pseudonyms and offsets. By default a random key is created on first boot in `DATA_DIR/.server_secret` (mode 0600) and reused; set this only to manage the key yourself. Changing it re-randomises every public offset. |
 | `FED_CLIP_NORM` | `2.0` | Max L2 distance one federated upload can pull the model per round. |
 
 ### Rate limits
@@ -84,7 +85,9 @@ address; per-device limits sit well above what the app actually sends.
 |---|---|---|---|
 | per IP, everything | 600 | 20 / s | all requests except `/health` and `OPTIONS` |
 | per IP, writes | 120 | 1 / s | `POST /detection`, `POST /federated/upload` |
+| per IP, model uploads | 10 | 1 / min | `POST /federated/upload` (caps how many learning rounds one address can drive) |
 | per IP, logs | 30 | 1 / 2 s | `/log`, `/log.txt` |
+| per IP, health | 120 | 2 / s | `/health` only (separate, so probes never starve behind busy traffic) |
 | per device, detections | 60 | 15 / min | `POST /detection` (burst = draining an offline queue) |
 | per device, heartbeats | 60 | 60 / min | `/heartbeat` (one open app sends ~9 / min) |
 | per device, uploads | 6 | 2 / min | `POST /federated/upload` |
@@ -95,7 +98,7 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 
 ### Health check fields
 
-`GET /health` (never rate limited) returns the public stats plus:
+`GET /health` (its own generous rate-limit bucket) returns the public stats plus:
 
 | Field | Meaning |
 |---|---|
@@ -111,10 +114,17 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 
 ### Privacy of the public log
 
-`/log` and `/log.txt` are public. They show coordinates rounded to ~1 km and a
-device pseudonym that changes every day (UTC), so one phone's reports can't be
-linked across days or averaged into its home location. The stable device hash,
-eventIds and 4-decimal (client-jittered) coordinates stay in the private JSONL.
+`/log` and `/log.txt` are public. The app jitters each report by up to ~1.4 km,
+but independently per report, so averaging one phone's reports used to reveal
+its home to ~100 m (rounding doesn't stop that — the jitter is wider than the
+grid). The public log therefore shifts every phone's coordinates by its own
+**secret, constant** offset of up to `PUBLIC_GEO_OFFSET` (≈ 2.2 km) before
+rounding: averaging any number of reports, over any number of days, lands on
+the offset point, not the home. Devices appear as a pseudonym that changes every
+UTC day. The stable device hash, eventIds and 4-decimal (client-jittered)
+coordinates stay in the private JSONL; `/hotspots` uses ~5 km cells.
+Keep `DATA_DIR/.server_secret` with the data — losing it re-randomises the
+offsets, and averaging across old and new offsets weakens the protection.
 Request logs never contain the raw device id: the Docker image's access log
 omits query strings and client IPs.
 

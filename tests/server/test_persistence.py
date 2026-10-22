@@ -250,6 +250,13 @@ def test_second_process_on_same_data_dir_is_flagged(harness, srv):
         other._shutdown(flush=False)
 
 
+def test_unopenable_lock_file_is_not_reported_as_a_second_writer(harness):
+    os.makedirs(os.path.join(harness.data_dir, '.mosquitonet.lock'))   # open() → EISDIR
+    srv = harness.start()
+    assert srv.single_instance is None        # unknown — not a phantom second worker
+    assert srv.app.test_client().get('/health').get_json()['single_instance'] is None
+
+
 def test_exit_flush_is_idempotent_and_writes_state(srv, client, harness):
     post_det(client)
     srv._flush_on_exit()

@@ -127,6 +127,26 @@ def test_steps_are_capped(srv):
     assert srv.stats['total_rounds'] == 1
 
 
+def test_sybil_rounds_cannot_push_the_model_out_of_bounds(harness, srv, client):
+    """Clipping bounds one round; many sybil rounds must still not drive the
+    global model past the upload bound (or honest clients get rejected and the
+    persisted model resets at the next boot)."""
+    for r in range(60):
+        for k in range(3):
+            assert upload(client, f'sybil{r}-{k}', weights(49.0), steps=50).status_code == 200
+    assert srv.stats['total_rounds'] == 60
+    assert np.abs(srv.global_W).max() <= srv.FED_GLOBAL_ABS_MAX
+    assert np.abs(srv.global_b).max() <= srv.FED_GLOBAL_ABS_MAX
+    # An honest client that merged the global model 50/50 is still accepted…
+    merged = {'W': (0.5 * np.array(SEED_W) + 0.5 * srv.global_W).tolist(),
+              'b': (0.5 * np.array(SEED_B) + 0.5 * srv.global_b).tolist()}
+    assert upload(client, 'honest', merged).status_code == 200
+    # …and the trained model survives a restart instead of silently resetting.
+    W = srv.global_W.tolist()
+    srv2 = harness.restart(srv)
+    assert srv2.global_W.tolist() == W
+
+
 def test_fedavg_ignores_invalid_and_empty(srv):
     before = srv.global_W.copy()
     srv.fedavg([])
