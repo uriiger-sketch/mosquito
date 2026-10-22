@@ -26,11 +26,14 @@ const MAX_TILES    = 400;
 const SHELL_URLS = [
   './', './index.html',
   './js/species.js', './js/audio-engine.js', './js/detector.js',
+  './vendor/leaflet/leaflet.js', './vendor/leaflet/leaflet.css',
 ];
 const ASSET_URLS = [
   './icon.svg', './favicon-32.png', './favicon-16.png',
   './apple-touch-icon.png', './icon-192.png', './icon-512.png',
   './map-data.json',
+  './assets/fonts/instrument-sans-latin-wght.woff2',
+  './assets/fonts/instrument-serif-latin-italic.woff2',
 ];
 
 self.addEventListener('install', (e) => {
