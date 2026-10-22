@@ -34,6 +34,12 @@ def test_health_fields(client, srv, harness):
     assert isinstance(h['disk_free_mb'], int) and h['disk_free_mb'] > 0
     assert set(h['counters']) >= {'rejected_detections', 'rate_limited', 'write_errors'}
     assert h['rate_limit_scale'] == 0
+    assert h['client_ip'] == '127.0.0.1'
+
+
+def test_health_client_ip_follows_trusted_proxy(client):
+    h = client.get('/health', headers={'X-Forwarded-For': '203.0.113.9, 198.51.100.7'}).get_json()
+    assert h['client_ip'] == '198.51.100.7'          # only the proxy-appended hop is trusted
     # Only major.minor — the full build string is a fingerprint.
     assert h['python'].count('.') == 1
 

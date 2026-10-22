@@ -86,7 +86,7 @@ address; per-device limits sit well above what the app actually sends.
 | per IP, writes | 120 | 1 / s | `POST /detection`, `POST /federated/upload` |
 | per IP, logs | 30 | 1 / 2 s | `/log`, `/log.txt` |
 | per device, detections | 60 | 15 / min | `POST /detection` (burst = draining an offline queue) |
-| per device, heartbeats | 30 | 30 / min | `/heartbeat` |
+| per device, heartbeats | 60 | 60 / min | `/heartbeat` (one open app sends ~9 / min) |
 | per device, uploads | 6 | 2 / min | `POST /federated/upload` |
 
 Throttled requests get `429` + `Retry-After` — except `/detection`, which gets
@@ -105,6 +105,7 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 | `single_instance` | `false` = another process holds `DATA_DIR` — fix immediately. |
 | `disk_free_mb` | Free space on the `DATA_DIR` volume. |
 | `last_state_save` | Time of the last successful state-file save (every ~5 s while there is activity). |
+| `client_ip` | The address rate limits use for *your* request. **Check it once after deploying:** it must be your own public IP. A Cloudflare/Railway/proxy address means `TRUSTED_PROXY_HOPS` is wrong and all users share one bucket. |
 | `counters` | Since process start: `rejected_detections`, `rejected_uploads`, `rejected_origin`, `rate_limited`, `clipped_updates`, `dropped_fields`, `write_errors`. A climbing `rejected_origin` / `rate_limited` / `clipped_updates` means someone is probing or poisoning. |
 | `python`, `log_cap`, `seen_events`, `min_conf`, `data_dir`, `log_file` | Runtime facts (Python is reported as major.minor only). |
 

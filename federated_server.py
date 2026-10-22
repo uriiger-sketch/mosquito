@@ -910,7 +910,7 @@ RATE_LIMITS = {
     'ip:write':      (120, 1.0),    # POST /detection + /federated/upload per IP
     'ip:log':        (30, 0.5),     # /log, /log.txt — up to 5000 rows each
     'dev:detection': (60, 0.25),    # burst = draining an offline queue; then 15/min
-    'dev:heartbeat': (30, 0.5),
+    'dev:heartbeat': (60, 1.0),     # ~9/min per open tab; leaves room for several tabs
     'dev:upload':    (6, 1 / 30),
 }
 RATE_LIMIT_SCALE = _env_num('RATE_LIMIT_SCALE', 1.0, 0.0, 1000.0)
@@ -1578,6 +1578,10 @@ def health():
         'seen_events':  n_seen,
         'log_cap':      DETECTION_LOG_MAX,
         'rate_limit_scale': RATE_LIMIT_SCALE,
+        # The address rate limits key on for THIS request — the caller's own IP,
+        # so echoing it is harmless. If it shows a proxy/CDN address instead of
+        # your public IP, TRUSTED_PROXY_HOPS is wrong and everyone shares a bucket.
+        'client_ip':    _client_ip(),
         'counters':     ctr,
         **snap,
     })
