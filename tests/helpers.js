@@ -83,7 +83,8 @@ function runClassifier(signal, { level = 3, lat = null, lng = null, disabled } =
     binHz: BIN_HZ, sampleRate: SR,
     freqToBin: hz => Math.min(Math.round(hz / BIN_HZ), N / 2 - 1),
   });
-  clf.getActivityFactor = () => 1.0;
+  clf.getActivityFactor = () => 1.0;                       // legacy engines
+  if (typeof clf.setTimeOfDay === 'function') clf.setTimeOfDay('none');   // tests must not depend on the clock
   clf.setSensitivity(level);
   clf.setLocation(lat, lng);
   if (disabled) clf.setDisabledSpecies(disabled);

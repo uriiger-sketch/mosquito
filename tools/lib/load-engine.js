@@ -7,6 +7,10 @@
  *
  *   const { MosquitoClassifier, SPECIES_DB } = require('./tools/lib/load-engine')();
  *   const eng = require('./tools/lib/load-engine')({ root: '/path/to/checkout' });
+ *
+ * Names a given checkout does not define (e.g. getLocalTaxon on an older
+ * baseline) come back as undefined instead of throwing, so the evaluation
+ * harness can drive old and new engines through the same code.
  */
 const fs = require('fs');
 const path = require('path');
@@ -14,6 +18,8 @@ const vm = require('vm');
 
 const DEFAULT_ROOT = path.join(__dirname, '..', '..');
 const FILES = ['js/species.js', 'js/detector.js'];
+const NAMES = ['SPECIES_DB', 'WINGBEAT_MODEL', 'getNativeSpecies', 'getLocalDisease', 'getLocalTaxon', 'solarTimes',
+  'timeOfDayCategory', 'FarFieldTracker', 'MosquitoClassifier', 'SpeciesModel'];
 
 module.exports = function loadEngine(opts = {}) {
   const root = opts.root || DEFAULT_ROOT;
@@ -28,8 +34,6 @@ module.exports = function loadEngine(opts = {}) {
   }
   // Lexical (const/class) globals are not properties of the context object;
   // read them out through a final script evaluated in the same scope.
-  return vm.runInContext(`({
-    SPECIES_DB, getNativeSpecies, getLocalDisease, solarTimes, timeOfDayCategory,
-    FarFieldTracker, MosquitoClassifier,
-  })`, ctx);
+  const body = NAMES.map(n => `${n}: typeof ${n} === 'undefined' ? undefined : ${n}`).join(',\n');
+  return vm.runInContext(`({ ${body} })`, ctx);
 };

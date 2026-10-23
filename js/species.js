@@ -144,6 +144,24 @@ const SPECIES_DB = [
 // Genus, derived once from the binomial name ("Aedes (Ochlerotatus) caspius" → Aedes).
 SPECIES_DB.forEach(sp => { if (!sp.genus) sp.genus = sp.name.split(' ')[0]; });
 
+// ── Wingbeat-frequency population model (used by the Bayesian identifier) ─────
+// `freq` is read as the population-mean female f0 at T_REF. Individuals differ
+// (body size, age, nutrition): coefficient of variation ≈ 4–8 % within a
+// species (Brogdon 1994, J Med Entomol 31:700; Villarreal et al. 2017, J Med
+// Entomol 54:1116; Kiskin et al. 2021, HumBugDB). Wingbeat frequency rises
+// ≈ 1–2 %/°C (Unwin & Corbet 1984, Physiol Entomol 9:115; Villarreal et al.
+// 2017). No species-specific CVs are well established, so every species gets
+// the mid-range values; per-species overrides can be set on the entries.
+//   freqSigma    between-individual SD of f0 at T_REF (Hz)
+//   freqTempCoef fractional f0 change per °C
+// The identifier also marginalises over the unknown room temperature
+// (N(T_MEAN, T_SD²)), which adds ≈ 5 % spread on top of freqSigma.
+const WINGBEAT_MODEL = { T_REF: 26, T_MEAN: 26, T_SD: 3.5, CV: 0.06, TEMP_COEF: 0.015 };
+SPECIES_DB.forEach(sp => {
+  if (sp.freqSigma === undefined) sp.freqSigma = Math.round(sp.freq * WINGBEAT_MODEL.CV * 10) / 10;
+  if (sp.freqTempCoef === undefined) sp.freqTempCoef = WINGBEAT_MODEL.TEMP_COEF;
+});
+
 // ── Native species by GPS region (WHO/ECDC/CDC distribution 2024) ────────────
 function getNativeSpecies(lat, lng) {
   // ══════════════════════════════════════════════════════════════════════════
@@ -469,5 +487,5 @@ function getLocalTaxon(speciesId, lat, lng) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { SPECIES_DB, getNativeSpecies, getLocalDisease, getLocalTaxon, solarTimes, timeOfDayCategory };
+  module.exports = { SPECIES_DB, WINGBEAT_MODEL, getNativeSpecies, getLocalDisease, getLocalTaxon, solarTimes, timeOfDayCategory };
 }
