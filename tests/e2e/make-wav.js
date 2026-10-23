@@ -114,6 +114,10 @@ const FIXTURES = {
                       build: (n, R) => add(pinkNoise(n, 0.003, R), mosquito(n, 418, 0.02, R)) },
   'culex-464':      { expect: 'Culex', f0: 464, loc: BANGKOK,
                       build: (n, R) => add(pinkNoise(n, 0.003, R), mosquito(n, 464, 0.02, R)) },
+  // Far from every other catalogued species: identification is species-level,
+  // so this fixture also exercises the publish-to-map path.
+  'toxorhynchites-293': { expect: 'Toxorhynchites', f0: 293, loc: BANGKOK,
+                      build: (n, R) => add(pinkNoise(n, 0.003, R), mosquito(n, 293, 0.02, R)) },
   'fan-420':        { expect: 'none', build: (n, R) => add(pinkNoise(n, 0.003, R), machine(n, 420, 0.01)) },
   'speech':         { expect: 'none', build: (n, R) => add(pinkNoise(n, 0.003, R), speech(n, 0.02, R)) },
 };

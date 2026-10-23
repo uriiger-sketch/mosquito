@@ -1743,9 +1743,12 @@ legend { padding: 0; }
 
 <button class="dim-veil" id="dim-veil" type="button" aria-label="Screen dimmed — tap to wake" tabindex="-1"><span aria-hidden="true">Tap to wake</span></button>
 
-<script src="js/species.js"></script>
-<script src="js/audio-engine.js"></script>
-<script src="js/detector.js"></script>
+<!-- ?v= pins the app code to THIS page version, so no HTTP/memory/SW cache can
+     ever pair a new index.html with an old engine. The deploy workflow rewrites
+     it to the commit SHA; keep the three in step when editing by hand. -->
+<script src="js/species.js?v=3.0.0"></script>
+<script src="js/audio-engine.js?v=3.0.0"></script>
+<script src="js/detector.js?v=3.0.0"></script>
 <script>
 (() => {
 'use strict';
@@ -2247,18 +2250,24 @@ class FederatedLearningClient {
   // (The server adds its own per-device offset before publishing — defence in depth.)
   _locationOffset() {
     const R_DEG = 0.0135, JIT = 0.002;            // ≈ 1.5 km disc, ± ≈ 110 m jitter
-    if (!this._locOff) {
+    if (this._locOff === undefined) {
+      const KEY = 'mosquitonet_loc_offset';
       let o = null;
-      try { o = JSON.parse(localStorage.getItem('mosquitonet_loc_offset')); } catch (e) {}
+      try { o = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
       if (!o || !Number.isFinite(o.dLat) || !Number.isFinite(o.dLng)) {
         const u = new Uint32Array(2);
         crypto.getRandomValues(u);
         const r = R_DEG * Math.sqrt(u[0] / 2 ** 32), th = 2 * Math.PI * (u[1] / 2 ** 32);
-        o = { dLat: r * Math.cos(th), dLng: r * Math.sin(th) };
-        try { localStorage.setItem('mosquitonet_loc_offset', JSON.stringify(o)); } catch (e) {}
+        o = { dLat: r * Math.cos(th), dLng: r * Math.sin(th) };   // dLng in km-equivalent degrees; scaled below
+        let kept = false;
+        try { localStorage.setItem(KEY, JSON.stringify(o)); kept = JSON.parse(localStorage.getItem(KEY)).dLat === o.dLat; } catch (e) {}
+        // An offset that cannot be kept is redrawn every session, and averaging
+        // across sessions would converge on the home: send no location at all.
+        if (!kept) o = null;
       }
       this._locOff = o;
     }
+    if (!this._locOff) return null;
     return { dLat: this._locOff.dLat + (Math.random() - 0.5) * JIT,
              dLng: this._locOff.dLng + (Math.random() - 0.5) * JIT };
   }
@@ -2275,8 +2284,13 @@ class FederatedLearningClient {
     let lat = null, lng = null;
     if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
       const o = this._locationOffset();
-      lat = Math.max(-90, Math.min(90, app.deviceLat + o.dLat));
-      lng = ((app.deviceLng + o.dLng + 540) % 360) - 180;
+      if (o) {
+        // Degrees of longitude shrink with cos(lat): scale so the offset disc is
+        // ~1.5 km in every direction, not just north–south.
+        const k = 1 / Math.max(0.2, Math.cos(app.deviceLat * Math.PI / 180));
+        lat = Math.max(-90, Math.min(90, app.deviceLat + o.dLat));
+        lng = ((app.deviceLng + o.dLng * k + 540) % 360) - 180;
+      }
     }
     const round = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : undefined);
     const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
@@ -2316,14 +2330,22 @@ class FederatedLearningClient {
     return `${Date.now().toString(36)}-${rnd}`;
   }
 
+  // The in-memory queue is the source of truth; localStorage is a best-effort
+  // mirror so finds survive reloads. (Reading storage on every call meant that
+  // with site data blocked, or the quota full, every find was silently lost.)
   _loadQueue() {
-    try { return JSON.parse(localStorage.getItem('mosquitonet_pending_dets')) || []; }
-    catch(e) { return []; }
+    if (!this._queue) {
+      let q = null;
+      try { q = JSON.parse(localStorage.getItem('mosquitonet_pending_dets')); } catch (e) {}
+      this._queue = Array.isArray(q) ? q : [];
+    }
+    return this._queue.slice();
   }
 
   _saveQueue(q) {
+    this._queue = q.slice();
     try { localStorage.setItem('mosquitonet_pending_dets', JSON.stringify(q)); }
-    catch(e) { /* storage full / disabled — queue lives in memory this session */ }
+    catch (e) { /* storage full / disabled — the queue lives in memory this session */ }
   }
 
   _enqueueDetection(payload) {
@@ -2499,6 +2521,7 @@ class MapController {
       maxZoom: 18,
       noWrap: true,
       bounds: WORLD_BOUNDS,
+      crossOrigin: true,        // CORS tiles (OSM sends ACAO *): cacheable offline by the SW
       attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
     }).addTo(this.map);
     // Offline or blocked tiles: say so once, keep the data layers usable.
@@ -2960,7 +2983,7 @@ class HistoryStore {
   clear() { this._events = []; this._sessions = []; store.del(this.KEY); store.del(this.SKEY); }
 
   static CSV_COLUMNS = ['timestamp', 'species_id', 'species', 'common_name', 'genus', 'risk',
-                        'confidence', 'f0_hz', 'range', 'snr_db', 'lat', 'lng'];
+                        'confidence', 'f0_hz', 'range', 'snr_db', 'lat', 'lng', 'taxon_level', 'species_probability'];
   toCSV() {
     const q = (v) => {
       if (v === null || v === undefined) return '';
@@ -2968,7 +2991,8 @@ class HistoryStore {
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const rows = this._events.map(e => [new Date(e.t).toISOString(), e.sp, e.name, e.common, e.genus, e.risk,
-                                        e.conf, e.f0, e.range, e.snr, e.lat, e.lng].map(q).join(','));
+                                        e.conf, e.f0, e.range, e.snr, e.lat, e.lng,
+                                        e.level || (e.sp ? 'species' : 'genus'), e.pSp].map(q).join(','));
     return [HistoryStore.CSV_COLUMNS.join(','), ...rows].join('\r\n') + '\r\n';
   }
   toJSON() {
@@ -3895,7 +3919,9 @@ class App {
           SPECIES_DB.forEach(sp => {
             const local = ns.has(sp.id);
             const user = this._userToggles[sp.id];
-            const enabled = local ? true : (typeof user === 'boolean' ? user : false);
+            // An explicit user choice always wins (it used to be overridden for
+            // native species at every first GPS fix); otherwise native = on.
+            const enabled = typeof user === 'boolean' ? user : local;
             if (!enabled) ds.add(sp.id);
           });
         }
@@ -4018,7 +4044,12 @@ class App {
       // 1. Wake Lock: keep the screen on while listening
       try {
         if ('wakeLock' in navigator) {
-          this._wakeLock = await navigator.wakeLock.request('screen');
+          const engineAtStart = this.engine;
+          const lock = await navigator.wakeLock.request('screen');
+          // Stop may have run while the request was pending: never keep the
+          // screen on (or attach the handlers below) for a session that ended.
+          if (!this.running || this.engine !== engineAtStart) { try { lock.release(); } catch (e) {} return; }
+          this._wakeLock = lock;
           this._wakeLock.addEventListener('release', () => { this._wakeLock = null; });
         }
       } catch (e) { /* denied — listen anyway */ }
@@ -4117,6 +4148,9 @@ class App {
     this._detectionCooldown = {};
     this._serverCooldown = {};
     this._bestConf = {};
+    // Track ids restart with the next session's classifier: forget the
+    // track → event mapping so a new insect can never join an old event.
+    this._trackEvents = null; this._genusEvents = null;
 
     if (wasRunning && this.session) {
       const end = Date.now();
@@ -4189,7 +4223,13 @@ class App {
     const sr  = eng.sampleRate || (eng.ctx && eng.ctx.sampleRate) || 44100;
     const hop = eng.hopSamples || 4096;          // fftSize / 2 at the actual rate
     if (this._lastAnalysisTime != null && (ctxNow - this._lastAnalysisTime) * sr < hop) return;
-    this._lastAnalysisTime = ctxNow;
+    // Advance on the audio clock by exactly one hop, so the classifier's time
+    // constants (vote window, track memory, pitch-rate gates) run at the cadence
+    // they were calibrated for. Snapping to ctxNow quantised every hop up to the
+    // next display frame (+11 % at 44.1 kHz / 60 Hz). Resync after a stall.
+    const hopSec = hop / sr;
+    this._lastAnalysisTime = (this._lastAnalysisTime == null || ctxNow - this._lastAnalysisTime > 2 * hopSec)
+      ? ctxNow : this._lastAnalysisTime + hopSec;
     if (!this.classifier) return;
 
     const dets = this.classifier.analyze(rawFreq, timeData) || [];
@@ -4202,17 +4242,37 @@ class App {
 
   // One cooldown governs counts, history, federated training and the map; the
   // server upload has its own and waits for ≥ 70 % peak confidence.
+  // One physical insect = one event. Events are keyed by the engine's trackId
+  // (the species label of a single track can flip as its mean f0 wanders near a
+  // posterior boundary — keying on species turned one mosquito into several
+  // events and uploads). A track re-acquired as the same genus within LOCAL_CD
+  // is treated as the same insect. The event's identification is refined in
+  // place as evidence accumulates. Only species-level identifications reaching
+  // CONF_UPLOAD are published, once per event: a genus-level ("Aedes sp.")
+  // result is kept in History as genus-level and never sent as a species.
   handleDetections(dets, now) {
-    dets.forEach((det, i) => {
-      const sp  = det.species || null;
-      const key = sp ? sp.id : 'genus:' + genusOf(det);
-      const conf = Number.isFinite(det.confidence) ? det.confidence : 0;
-      if (conf > (this._bestConf[key] || 0)) this._bestConf[key] = conf;
+    if (!this._trackEvents) { this._trackEvents = new Map(); this._genusEvents = {}; this._evSeq = 0; }
+    for (const [tid, ev] of this._trackEvents) if (now - ev.last > 10 * 60000) this._trackEvents.delete(tid);
 
-      if (now - (this._detectionCooldown[key] || 0) >= LOCAL_CD) {
+    dets.forEach((det, i) => {
+      const sp = det.species || null;
+      const genus = genusOf(det);
+      const speciesLevel = !!sp && det.taxonLevel !== 'genus';
+      const conf = Number.isFinite(det.confidence) ? det.confidence : 0;
+      const pSp = sp && Array.isArray(det.posterior) ? ((det.posterior.find(p => p.id === sp.id) || {}).p || 0) : 0;
+      const tid = det.trackId != null ? det.trackId : null;
+
+      let ev = tid !== null ? this._trackEvents.get(tid) : null;
+      if (!ev) {
+        const g = this._genusEvents[genus];
+        if (g && now - g.last < LOCAL_CD) ev = g;                 // same insect, track re-acquired
+      }
+      const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
+      const r1 = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : null);
+
+      if (!ev) {
         // ── New local event ──
-        this._detectionCooldown[key] = now;
-        this._bestConf[key] = conf;
+        ev = { id: ++this._evSeq, first: now, last: now, peak: conf, uploaded: false, rec: null };
         if (sp) this.sessionCounts[sp.id]++;
         if (this.session) this.session.detections++;
 
@@ -4229,30 +4289,53 @@ class App {
           } catch (e) { console.warn('[map] addLocalDetection:', e); }
         }
 
-        const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
-        const r1 = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : null);
-        this._eventRec = this.history.add({
-          t: now, sp: sp ? sp.id : null, name: sp ? this.taxonOf(sp).name : `${genusOf(det)} sp.`, common: sp ? this.taxonOf(sp).common : '',
-          genus: genusOf(det), risk: sp ? sp.risk : null,
+        ev.rec = this.history.add({
+          t: now, sp: null, name: `${genus} sp.`, common: '', genus, risk: null, level: 'genus', pSp: null,
           conf: r1(conf, 3), f0: r1(f0, 1), range: det.range || null, snr: r1(det.snr, 1),
           lat: r1(this.deviceLat, 2), lng: r1(this.deviceLng, 2),
         });
-        this._eventKey = key;
+        this._applyIdentification(ev.rec, sp, genus, speciesLevel, pSp);
         if (i === 0) this.onNewEvent(det, conf, now);
-      } else if (this._eventKey === key && this._eventRec && conf > (this._eventRec.conf || 0)) {
-        // Same event, better evidence: keep the stored peak (persisted by tick()).
-        this._eventRec.conf = parseFloat(conf.toFixed(3));
-        this.history.markDirty();
+      } else {
+        // Same insect, more evidence: refine the stored record in place.
+        const rec = ev.rec;
+        if (rec) {
+          let dirty = false;
+          if (conf > (rec.conf || 0)) { rec.conf = r1(conf, 3); dirty = true; }
+          // Upgrade genus → species, or switch species only on stronger evidence.
+          if (speciesLevel && (rec.level !== 'species' || (pSp > (rec.pSp || 0) && rec.sp !== sp.id))) {
+            this._applyIdentification(rec, sp, genus, true, pSp); dirty = true;
+          } else if (speciesLevel && rec.sp === sp.id && pSp > (rec.pSp || 0)) { rec.pSp = r1(pSp, 3); dirty = true; }
+          if (Number.isFinite(f0)) { rec.f0 = r1(f0, 1); dirty = true; }
+          if (dirty) this.history.markDirty();
+        }
       }
+      ev.last = now;
+      ev.peak = Math.max(ev.peak, conf);
+      if (tid !== null) this._trackEvents.set(tid, ev);
+      this._genusEvents[genus] = ev;
 
-      const peak = this._bestConf[key] || 0;
-      if (i === 0) this.touchLock(det, key, peak, now);
+      if (i === 0) this.touchLock(det, 'ev:' + ev.id, ev.peak, now);
 
-      if (sp && now - (this._serverCooldown[key] || 0) >= SERVER_CD && peak >= CONF_UPLOAD) {
-        this._serverCooldown[key] = now;
-        this.fedClient.reportDetection({ ...det, confidence: peak });   // upload the peak
+      if (speciesLevel && !ev.uploaded && ev.peak >= CONF_UPLOAD &&
+          now - (this._serverCooldown[sp.id] || 0) >= SERVER_CD) {
+        ev.uploaded = true;
+        this._serverCooldown[sp.id] = now;
+        this.fedClient.reportDetection({ ...det, confidence: ev.peak });   // upload the peak
       }
     });
+  }
+
+  // Write a (genus- or species-level) identification into a history record.
+  _applyIdentification(rec, sp, genus, speciesLevel, pSp) {
+    if (speciesLevel && sp) {
+      const tx = this.taxonOf(sp);
+      Object.assign(rec, { sp: sp.id, name: tx.name, common: tx.common, risk: sp.risk, level: 'species',
+                           pSp: Number.isFinite(pSp) ? parseFloat(pSp.toFixed(3)) : null });
+    } else {
+      Object.assign(rec, { sp: null, name: `${genus} sp.`, common: '', risk: null, level: 'genus', pSp: null });
+    }
+    rec.genus = genus;
   }
 
   touchLock(det, key, peak, now) {
@@ -4433,7 +4516,7 @@ class App {
     const det = lock.det, sp = det.species;
     const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
     const post = Array.isArray(det.posterior) ? det.posterior : [];
-    const key = [lock.key, Math.round(lock.conf * 100), Math.round(f0 || 0), det.range, post.slice(0, 3).map(p => p.id + Math.round(p.p * 100)).join(),
+    const key = [lock.key, det.species ? det.species.id : '', det.taxonLevel || '', Math.round(lock.conf * 100), Math.round(f0 || 0), det.range, post.slice(0, 3).map(p => p.id + Math.round(p.p * 100)).join(),
                  this.settings.diag, Math.round(det.snr || 0)].join('|');
     if (key === this._detKey) return;
     this._detKey = key;
@@ -4545,7 +4628,7 @@ class App {
       if (!slow) continue;
       let text;
       if (ps.status === 'off') text = 'Off';
-      else if (ps.status === 'locked') text = (lock && lock.key === r.id && lock.det.range === 'far') ? 'Detected · far' : 'Detected';
+      else if (ps.status === 'locked') text = (lock && lock.det.species && lock.det.species.id === r.id && lock.det.range === 'far') ? 'Detected · far' : 'Detected';
       else if (ps.status === 'building') text = `Building ${Math.round(ps.level * 100)}%`;
       else {
         // Debounce: show a reason only once it has held for two updates.
@@ -4555,7 +4638,7 @@ class App {
       }
       if (text !== null) setText(r.statusEl, text);
       if (diag && r.debugEl) {
-        const det = lock && lock.key === r.id ? lock.det : null;
+        const det = lock && lock.det.species && lock.det.species.id === r.id ? lock.det : null;
         setText(r.debugEl, `${ps.debug || 'pass'} · level ${Math.round(ps.level * 100)}%${det && Number.isFinite(det.snr) ? ` · SNR +${det.snr.toFixed(1)} dB` : ''}`);
       }
     }

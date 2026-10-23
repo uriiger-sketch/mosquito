@@ -175,6 +175,7 @@ class FarFieldTracker {
 
   configure(binHz, hopSec) {
     const D = this.cfg;
+    const geo = [this.binHz, this.hopSec, this.kLo, this.kHi].join();
     this.binHz = binHz; this.hopSec = hopSec;
     this.kLo  = Math.max(6, Math.round(D.F_LO / binHz));
     this.kHi  = Math.round(D.F_HI / binHz);
@@ -190,7 +191,11 @@ class FarFieldTracker {
     this.calFrames = Math.max(5, Math.round(D.CAL_S / hopSec));
     this.maxMiss = Math.max(1, Math.round(D.TRACK_MISS_S / hopSec));
     this.histLen = Math.round(4.0 / hopSec);
-    this.reset();
+    // Only a change of geometry (bin width, hop, band edges) invalidates the
+    // learned noise floor and the tracks. A sensitivity change mid-session
+    // re-derives the parameters but keeps both — it used to wipe the floor and
+    // drop a locked mosquito for ~4 s.
+    if (!this.noise || geo !== [binHz, hopSec, this.kLo, this.kHi].join()) this.reset();
   }
 
   reset() {
@@ -296,8 +301,26 @@ class FarFieldTracker {
   process(db) {
     const { kMin, kMax, kLo, kHi, W, P, L, noise } = this;
     if (!db || db.length <= kMax + 2) return null;
+
+    // ── 0. no data ≠ silence ──────────────────────────────────────────
+    // A muted/stolen microphone (OS mic toggle, a phone call, another app,
+    // the first frames of a stream) delivers digital zeros: the AnalyserNode
+    // returns −∞ in every bin. Learning that as the noise floor collapses it to
+    // ~1e-30, and because a strong floor may only rise slowly afterwards, every
+    // real frame then reads as an extreme broadband burst and is blanked — the
+    // detector went deaf for minutes (19 min after 3 s of zeros during
+    // calibration). Such frames carry no information: skip them entirely.
+    let live = 0;
+    for (let k = kLo; k <= kHi; k += 4) if (db[k] > -200) live++;
+    if (live * 4 < (kHi - kLo + 1) / 2) {
+      this.blanked = true;
+      return { blanked: true, noData: true, tracks: this.tracks };
+    }
+
     this.frames++;
-    const cal = this.forceCal || this.frames <= this.calFrames;
+    // Calibrate until at least half a calibration's worth of REAL frames has
+    // been seen, even if the app's calibration window ended during a mute.
+    const cal = this.forceCal || this.frames <= this.calFrames || this.calCount < (this.calFrames >> 1);
     if (cal) this.calCount++;
 
     // ── 1. per-bin noise floor + whitening ────────────────────────────
@@ -316,6 +339,7 @@ class FarFieldTracker {
       } else {
         noise[k] += this.aNoise * (p - noise[k]);
       }
+      if (noise[k] < 1e-16) noise[k] = 1e-16;          // −160 dB: below any real mic's floor
       P[k] = p; L[k] = Number.isFinite(v) ? v : -300;
       W[k] = p / (noise[k] + 1e-30);
     }
@@ -604,7 +628,11 @@ class MosquitoClassifier {
     if (!this._tuned) Object.assign(this.cfg, MN_LEVELS[this.level - 1]);
     this._cfgKey = '';
     if (this.fftSize) this._configure(this.fftSize / 2);
-    if (this.ff) this.ff.setSensitivity(this.level);
+    if (this.ff) {
+      this.ff.setSensitivity(this.level);
+      // Vote windows may have shrunk: keep each track's most recent votes.
+      for (const t of this.ff.tracks) if (t.votes && t.votes.length > this.VOTE_FRAMES) t.votes.splice(0, t.votes.length - this.VOTE_FRAMES);
+    }
   }
 
   // Human-readable text for a raw gate string (raw text stays in .debug).
@@ -812,7 +840,10 @@ class MosquitoClassifier {
         t.lockedFrames++;
         t.busy = 0; for (const id of this._busy.keys()) if (id !== t.id) t.busy++;
         if (!post) post = this.model.posterior(f0, ctx);
-        if (post && post.post.length) out.push(this._detection(t, f0, post));
+        // A lock must still pass the species-range gate: if the enabled set
+        // changes under a locked track (user toggle, first GPS fix), a 617 Hz
+        // tone must not be reported as the only species left enabled (290 Hz).
+        if (post && post.post.length && post.zMin <= 3.5) out.push(this._detection(t, f0, post));
         else t.locked = false;
       }
       if (!best || vf > best.voteFraction || (vf === best.voteFraction && t.T > best.T)) best = t;

@@ -17,7 +17,7 @@
  *     the network untouched (the client deliberately uses XHR for them).
  */
 
-const VERSION      = 'v3';
+const VERSION      = 'v4';
 const SHELL_CACHE  = `mn-shell-${VERSION}`;
 const ASSET_CACHE  = `mn-assets-${VERSION}`;
 const TILE_CACHE   = 'mn-tiles';          // unversioned: tiles never change
@@ -40,7 +40,8 @@ self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
     // Pre-cache best-effort: one missing asset must not abort the install.
     const shell = await caches.open(SHELL_CACHE);
-    await Promise.allSettled(SHELL_URLS.map((u) => shell.add(u)));
+    // cache: 'reload' — never precache a copy the HTTP cache is still holding.
+    await Promise.allSettled(SHELL_URLS.map((u) => shell.add(new Request(u, { cache: 'reload' }))));
     const assets = await caches.open(ASSET_CACHE);
     await Promise.allSettled(ASSET_URLS.map((u) => assets.add(u)));
     await self.skipWaiting();
@@ -98,7 +99,9 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       try {
-        const res = await fetch(req);
+        // A navigate-mode Request can't be re-fetched with an init (TypeError):
+        // rebuild it from the URL to revalidate past the HTTP cache.
+        const res = await fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }));
         if (res && res.ok) (await caches.open(SHELL_CACHE)).put('./index.html', res.clone());
         return res;
       } catch (e) {
@@ -118,7 +121,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       const cache = await caches.open(SHELL_CACHE);
       try {
-        const res = await fetch(req);
+        const res = await fetch(req, { cache: 'no-cache' });   // revalidate: no HTTP-cache skew
         if (res && res.ok) cache.put(req, res.clone());
         return res;
       } catch (e) {

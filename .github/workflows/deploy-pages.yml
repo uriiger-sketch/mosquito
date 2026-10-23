@@ -71,6 +71,10 @@ jobs:
 
           # Fail loudly rather than publish something broken or private.
           test -f index.html || { echo "::error::index.html missing from _site"; exit 1; }
+          # Stamp the app-code URLs with this commit so a new index.html can never
+          # run against a cached copy of the previous js/*.js (version skew).
+          sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${GITHUB_SHA::12}"'"#g' index.html
+          grep -q "js/detector.js?v=${GITHUB_SHA::12}\"" index.html || { echo "::error::app-code version stamp failed"; exit 1; }
           for p in federated_server.py Dockerfile Procfile requirements.txt package.json tests tools .github; do
             if [ -e "$p" ]; then echo "::error::$p leaked into _site"; exit 1; fi
           done
