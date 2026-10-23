@@ -66,7 +66,10 @@ async function runApp(wav, { seconds = 20, lat = null, lng = null, root = path.j
     await page.goto(`http://127.0.0.1:${port}/index.html`, { waitUntil: 'load' });
     await page.waitForFunction(() => window._app, null, { timeout: 15000 });
     await page.waitForTimeout(800);
-    await page.evaluate(() => window._app.startListening());
+    // The same path the Start button takes (GPS request + start), not the bare
+    // startListening(): location-dependent behaviour (native species, local
+    // names) is only exercised when the app actually acquires a fix.
+    await page.evaluate(() => (window._app.startFromGesture || window._app.startListening).call(window._app));
     const samples = [];
     const t0 = Date.now();
     while (Date.now() - t0 < seconds * 1000) {

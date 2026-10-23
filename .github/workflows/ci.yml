@@ -50,6 +50,12 @@ jobs:
       - name: Detector benchmark (quick)
         run: npm run bench:quick
 
+      # The real accuracy gate: seeded synthetic corpus (12 species, adversary
+      # classes, mixtures) checked against tools/eval/thresholds.json; exits
+      # non-zero if detection range, false alarms or identification regress.
+      - name: Accuracy regression gate (eval:quick)
+        run: npm run eval:quick
+
   python:
     name: Server tests (Python 3.12)
     runs-on: ubuntu-latest

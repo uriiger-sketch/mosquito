@@ -1203,7 +1203,7 @@ legend { padding: 0; }
                 <p class="det-disease" id="det-disease"></p>
               </div>
               <div class="det-stats">
-                <div class="det-stat"><span class="overline">Confidence</span><span class="det-stat-val num" id="det-conf">—</span><span class="det-stat-sub" id="det-conf-sub">acoustic match</span></div>
+                <div class="det-stat"><span class="overline">Mosquito</span><span class="det-stat-val num" id="det-conf">—</span><span class="det-stat-sub" id="det-conf-sub">probability</span></div>
                 <div class="det-stat"><span class="overline">Wingbeat</span><span class="det-stat-val num" id="det-f0">—</span><span class="det-stat-sub num" id="det-f0-sub"></span></div>
                 <div class="det-stat"><span class="overline">Distance</span><span class="det-stat-val" id="det-range">—</span><span class="det-stat-sub" id="det-range-sub"></span></div>
               </div>
@@ -1286,7 +1286,7 @@ legend { padding: 0; }
 
             <section class="card privacy-note">
               <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>
-              <p>Sound is analysed on this phone in real time and never recorded or uploaded. Only confirmed detections are shared — anonymously, with location blurred by about 3 km. <button class="link-btn" data-goto="about-privacy" style="min-height:0">Privacy details</button></p>
+              <p>Sound is analysed on this phone in real time and never recorded or uploaded. Only confirmed detections are shared — anonymously, with location shifted by a fixed, secret offset of up to about 1.5 km. <button class="link-btn" data-goto="about-privacy" style="min-height:0">Privacy details</button></p>
             </section>
           </div>
         </div>
@@ -1559,7 +1559,7 @@ legend { padding: 0; }
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
-        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location blurred by about 3 km.</p></div>
+        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location shifted by a fixed, secret offset of up to about 1.5 km.</p></div>
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-bed"/></svg></span>
@@ -1672,7 +1672,7 @@ legend { padding: 0; }
     <button class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>
   <div class="dlg-body">
-    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (blurred by about 3 km). Detection works without it.</p>
+    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (offset by up to about 1.5 km). Detection works without it.</p>
     <details class="plat" data-platform="ios">
       <summary>iPhone or iPad<svg class="icon" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
       <ol class="steps">
@@ -1749,7 +1749,7 @@ legend { padding: 0; }
 <script>
 (() => {
 'use strict';
-/* global SPECIES_DB, getNativeSpecies, getLocalDisease, timeOfDayCategory,
+/* global SPECIES_DB, getNativeSpecies, getLocalDisease, getLocalTaxon, timeOfDayCategory,
           MosquitoAudioEngine, MosquitoClassifier, L */
 
 const SERVER_URL  = 'https://mosquito.charity';
@@ -1829,6 +1829,9 @@ const GENUS_ABBR = { Aedes: 'Ae.', Anopheles: 'An.', Culex: 'Cx.', Culiseta: 'Cs
 function shortSci(name) {
   const parts = String(name || '').replace(/\([^)]*\)\s*/g, '').trim().split(/\s+/);
   if (parts.length < 2) return name || '';
+  // "Anopheles sp." / "Anopheles gambiae s.l." — a genus-level or qualified name
+  // is already short and becomes unreadable abbreviated ("An. sp.").
+  if (/^(sp|spp)\.?$/.test(parts[1])) return parts.join(' ');
   const g = parts[0];
   return `${GENUS_ABBR[g] || g[0] + '.'} ${parts.slice(1).join(' ')}`;
 }
@@ -3152,16 +3155,17 @@ class App {
     const row = (sp, local) => {
       const act = ACTIVITY[sp.activity] || ACTIVITY.night;
       const on = !ds.has(sp.id);
+      const tx = this.taxonOf(sp);
       return `<li class="sp-row" id="sp-${sp.id}" data-id="${sp.id}" data-status="idle" data-enabled="${on}" style="--c:${sp.color}">
         <span class="sp-swatch" aria-hidden="true"></span>
         <div class="sp-main">
-          <div class="sp-l1"><span class="sp-common">${esc(sp.common)}</span></div>
-          <div class="sp-l2">${local ? '<span class="badge badge-local badge-sm">Local</span>' : ''}<span class="sci">${esc(shortSci(sp.name))}</span><span class="num">${sp.freq} Hz</span><span role="img" aria-label="Active: ${esc(act.label.toLowerCase())}" title="Active: ${esc(act.label.toLowerCase())}">${icon(act.icon, 'sp-act')}</span></div>
+          <div class="sp-l1"><span class="sp-common">${esc(tx.common)}</span></div>
+          <div class="sp-l2">${local ? '<span class="badge badge-local badge-sm">Local</span>' : ''}<span class="sci"${tx.note ? ` title="${esc(tx.note)}"` : ''}>${esc(shortSci(tx.name))}</span><span class="num">${sp.freq} Hz</span><span role="img" aria-label="Active: ${esc(act.label.toLowerCase())}" title="Active: ${esc(act.label.toLowerCase())}">${icon(act.icon, 'sp-act')}</span></div>
           <div class="sp-debug" ${this.settings.diag ? '' : 'hidden'}></div>
         </div>
         <div class="sp-side">
           <span class="sp-status">${on ? 'Ready' : 'Off'}</span>
-          ${local ? '' : `<label class="switch-hit"><input type="checkbox" class="switch" role="switch" data-sp="${sp.id}" ${on ? 'checked' : ''} aria-label="Monitor ${esc(sp.common)}, ${esc(sp.name)}"></label>`}
+          ${local ? '' : `<label class="switch-hit"><input type="checkbox" class="switch" role="switch" data-sp="${sp.id}" ${on ? 'checked' : ''} aria-label="Monitor ${esc(tx.common)}, ${esc(tx.name)}"></label>`}
         </div>
         <div class="sp-meter" aria-hidden="true"><div class="sp-meter-fill"></div></div>
       </li>`;
@@ -3604,8 +3608,9 @@ class App {
     const maxSp = Math.max(...bySp.values());
     $('#hist-species').innerHTML = [...bySp.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) => {
       const sp = SPECIES_BY_ID[k];
-      const name = sp ? sp.common : `${k.replace('genus:', '')} (species uncertain)`;
-      const sci = sp ? shortSci(sp.name) : `${k.replace('genus:', '')} sp.`;
+      const tx = sp ? this.taxonOf(sp) : null;
+      const name = tx ? tx.common : `${k.replace('genus:', '')} (species uncertain)`;
+      const sci = tx ? shortSci(tx.name) : `${k.replace('genus:', '')} sp.`;
       return `<li style="--meter-color:${sp ? sp.color : 'var(--text-3)'}">
         <div class="bar-l"><span>${esc(name)} <span class="sci faint">${esc(sci)}</span></span><span class="num">${c}</span></div>
         <div class="meter" aria-hidden="true"><div class="meter-fill" style="transform:scaleX(${(c / maxSp).toFixed(3)})"></div></div></li>`;
@@ -3687,7 +3692,8 @@ class App {
       const lock = this._lastLock;
       if (!lock) return;
       const sp = lock.det.species;
-      const name = sp ? `${sp.common} (${sp.name})` : `${genusOf(lock.det)} mosquito`;
+      const tx = sp ? this.taxonOf(sp) : null;
+      const name = tx ? `${tx.common} (${tx.name})` : `${genusOf(lock.det)} mosquito`;
       const risk = sp && sp.asymptomatic ? 'a nuisance species' : `a carrier of ${(sp && (getLocalDisease(sp.id, this.deviceLat, this.deviceLng) || sp.disease)) || 'disease'}`;
       // Emoji are fine in share text (they are not UI chrome).
       this.share({ title: 'MosquitoNet detection',
@@ -4180,8 +4186,9 @@ class App {
     // rAF delivers ~735 new samples per frame; analysing every frame would cast
     // ~91 %-correlated votes.
     const ctxNow = eng.ctx ? eng.ctx.currentTime : 0;
-    const sr = (eng.ctx && eng.ctx.sampleRate) || 44100;
-    if (this._lastAnalysisTime != null && (ctxNow - this._lastAnalysisTime) * sr < 4096) return;
+    const sr  = eng.sampleRate || (eng.ctx && eng.ctx.sampleRate) || 44100;
+    const hop = eng.hopSamples || 4096;          // fftSize / 2 at the actual rate
+    if (this._lastAnalysisTime != null && (ctxNow - this._lastAnalysisTime) * sr < hop) return;
     this._lastAnalysisTime = ctxNow;
     if (!this.classifier) return;
 
@@ -4225,7 +4232,7 @@ class App {
         const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
         const r1 = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : null);
         this._eventRec = this.history.add({
-          t: now, sp: sp ? sp.id : null, name: sp ? sp.name : `${genusOf(det)} sp.`, common: sp ? sp.common : '',
+          t: now, sp: sp ? sp.id : null, name: sp ? this.taxonOf(sp).name : `${genusOf(det)} sp.`, common: sp ? this.taxonOf(sp).common : '',
           genus: genusOf(det), risk: sp ? sp.risk : null,
           conf: r1(conf, 3), f0: r1(f0, 1), range: det.range || null, snr: r1(det.snr, 1),
           lat: r1(this.deviceLat, 2), lng: r1(this.deviceLng, 2),
@@ -4256,7 +4263,8 @@ class App {
 
   onNewEvent(det, conf, now) {
     const sp = det.species;
-    const name = sp ? `${sp.common}, ${sp.name}` : `${genusOf(det)} mosquito, species uncertain`;
+    const tx = sp ? this.taxonOf(sp) : null;
+    const name = tx ? `${tx.common}, ${tx.name}` : `${genusOf(det)} mosquito, species uncertain`;
     this.announce(`Mosquito detected: ${name}. ${Math.round(conf * 100)} percent confidence.`);
     if (!(this.activeTab === 'listen' && this._heroVisible)) this.showDetToast(det, conf);
     if (this.activeTab === 'history') this.renderHistory();
@@ -4265,9 +4273,10 @@ class App {
   showDetToast(det, conf) {
     const sp = det.species;
     const t = $('#det-toast');
-    t.style.setProperty('--c', sp ? riskMeta(sp.risk).color : 'var(--warn)');
-    setText($('#dt-title'), sp ? sp.common : `${genusOf(det)} mosquito`);
-    setText($('#dt-sub'), `Detected · ${sp ? shortSci(sp.name) : genusOf(det) + ' sp.'} · ${fmtPct(conf)}`);
+    t.style.setProperty('--c', sp ? this.localRisk(sp).color : 'var(--warn)');
+    const tx = det.species ? this.taxonOf(det.species) : null;
+    setText($('#dt-title'), tx ? tx.common : `${genusOf(det)} mosquito`);
+    setText($('#dt-sub'), `Detected · ${tx ? shortSci(tx.name) : genusOf(det) + ' sp.'} · ${fmtPct(conf)}`);
     t.classList.add('show');
     clearTimeout(this._dtTimer);
     this._dtTimer = setTimeout(() => this.hideDetToast(), 12000);
@@ -4348,8 +4357,10 @@ class App {
       case 'listening': {
         glyph = 'listen'; over = 'Listening'; title = 'No mosquito';
         const lock = this._lastLock;
-        sub = lock && lock.det ? `Last heard ${fmtAgo(now - lock.t)}: ${lock.det.species ? shortSci(lock.det.species.name) : genusOf(lock.det) + ' sp.'}`
+        const noisy = !!(this._lastState && this._lastState.noisy);
+        sub = lock && lock.det ? `Last heard ${fmtAgo(now - lock.t)}: ${lock.det.species ? shortSci(this.taxonOf(lock.det.species).name) : genusOf(lock.det) + ' sp.'}`
             : this.session && this.session.detections ? `${this.session.detections} detection${this.session.detections === 1 ? '' : 's'} this session`
+            : noisy ? 'Nothing heard yet · room may be too noisy to hear one'
             : 'Nothing heard yet · room is quiet enough';
         break;
       }
@@ -4371,11 +4382,11 @@ class App {
         const uncertain = !sp || det.taxonLevel === 'genus' || det.speciesUncertain === true;
         glyph = 'mosquito';
         over = now - lock.t < 3000 ? 'Mosquito detected' : `Heard ${fmtAgo(now - lock.t)}`;
-        title = uncertain ? `${genusOf(det)} sp.` : sp.name.replace(/\([^)]*\)\s*/g, '');
+        title = uncertain ? `${genusOf(det)} sp.` : this.taxonOf(sp).name.replace(/\([^)]*\)\s*/g, '');
         sci = true; long = title.length > 16;
-        sub = uncertain ? `Species uncertain · ${fmtPct(lock.conf)}` : `${sp.common} · ${fmtPct(lock.conf)}`;
+        sub = uncertain ? `Species uncertain · ${fmtPct(lock.conf)}` : `${this.taxonOf(sp).common} · ${fmtPct(lock.conf)}`;
         arc = Math.round(clamp(lock.conf, 0, 1) * 100);
-        const col = sp ? riskMeta(sp.risk).color : 'var(--warn)';
+        const col = sp ? this.localRisk(sp).color : 'var(--warn)';
         setStyle(h.root, '--det-color', col);
         this.renderDetCard(lock, now, uncertain);
         break;
@@ -4427,20 +4438,28 @@ class App {
     if (key === this._detKey) return;
     this._detKey = key;
 
-    const rm = sp ? riskMeta(sp.risk) : RISK_META.MEDIUM;
+    const rm = this.localRisk(sp);
     const card = $('#det-card');
     card.style.setProperty('--det-color', sp ? rm.color : 'var(--warn)');
     const risk = $('#det-risk');
     risk.className = `badge badge-risk ${rm.cls}`;
     setText(risk, sp ? rm.label : 'Risk depends on species');
     setText($('#det-when'), now - lock.t < 3000 ? 'Now' : `Heard ${fmtAgo(now - lock.t)}`);
-    setText($('#det-name'), uncertain ? `${genusOf(det)} mosquito` : sp.common);
-    setText($('#det-sci'), uncertain ? `${genusOf(det)} sp.` : sp.name);
+    const tx = sp ? this.taxonOf(sp) : null;
+    setText($('#det-name'), uncertain ? `${genusOf(det)} mosquito` : tx.common);
+    setText($('#det-sci'), uncertain ? `${genusOf(det)} sp.` : tx.name);
+    setAttr($('#det-sci'), 'title', (!uncertain && tx.note) || null);
     setText($('#det-genus'), uncertain ? '· species uncertain' : `· genus ${genusOf(det)}`);
     const disease = sp ? (getLocalDisease(sp.id, this.deviceLat, this.deviceLng) || sp.disease) : '';
     setText($('#det-disease'), disease);
     $('#det-conf').innerHTML = `${Math.round(lock.conf * 100)}<small>%</small>`;
-    setText($('#det-conf-sub'), 'peak match');
+    // confidence = calibrated P(real mosquito); how sure we are of WHICH one is
+    // the posterior (species) or genus probability — shown separately so the two
+    // never read as contradicting each other.
+    const pSp = sp ? ((post.find(p => p.id === sp.id) || {}).p) : undefined;
+    setText($('#det-conf-sub'), uncertain
+      ? (Number.isFinite(det.genusP) ? `${genusOf(det)} ${fmtPct(det.genusP)}` : 'that it is a mosquito')
+      : (Number.isFinite(pSp) ? `species ${fmtPct(pSp)}` : 'that it is a mosquito'));
     $('#det-f0').innerHTML = Number.isFinite(f0) ? `${Math.round(f0)}<small>Hz</small>` : '—';
     setText($('#det-f0-sub'), sp ? `typ. ${sp.freqRange[0]}–${sp.freqRange[1]}` : 'measured');
     setText($('#det-range'), det.range === 'far' ? 'Far' : 'Near');
@@ -4454,7 +4473,7 @@ class App {
       b.classList.toggle('alt', !on && altIds.has(b.dataset.sp));
     });
     $('#tone-legend').innerHTML =
-      (sp && !uncertain ? `<span><i class="lg-on" style="--b:${sp.color}"></i>${esc(shortSci(sp.name))} range</span>` : '') +
+      (sp && !uncertain ? `<span><i class="lg-on" style="--b:${sp.color}"></i>${esc(shortSci(tx.name))} range</span>` : '') +
       (altIds.size > (sp && !uncertain ? 1 : 0) ? `<span><i class="lg-alt"></i>Also possible</span>` : '') +
       (Number.isFinite(f0) ? `<span><i class="lg-mk"></i>Measured ${Math.round(f0)} Hz</span>` : '');
     if (Number.isFinite(f0)) {
@@ -4468,7 +4487,7 @@ class App {
     const altEl = $('#det-alts');
     if (alts.length) {
       altEl.innerHTML = `${uncertain ? 'Candidates' : 'Also possible'}: ` + alts.map(p =>
-        `<span class="sci">${esc(shortSci(SPECIES_BY_ID[p.id].name))}</span> <span class="num">${Math.round(p.p * 100)}%</span>`).join(', ');
+        `<span class="sci">${esc(shortSci(this.taxonOf(SPECIES_BY_ID[p.id]).name))}</span> <span class="num">${Math.round(p.p * 100)}%</span>`).join(', ');
       altEl.hidden = false;
     } else altEl.hidden = true;
 
@@ -4488,7 +4507,10 @@ class App {
     const nf = Number.isFinite(st.noiseFloorDb) ? st.noiseFloorDb : null;
     const q = Math.round(clamp((amb + 100) / 90, 0, 1) * 100) / 100;
     if (this._roomQ !== q) { this._roomQ = q; this.ro.roomMeter.style.transform = `scaleX(${q})`; }
-    const room = this._heroState === 'calibrating' ? 'measuring' : this._heroState === 'gated' ? 'loud' : 'quiet';
+    // 'noisy' (engine): a mosquito ~30 cm away would no longer clear the lock
+    // threshold over this room's 300–800 Hz noise floor.
+    const room = this._heroState === 'calibrating' ? 'measuring'
+               : (this._heroState === 'gated' || st.noisy) ? 'loud' : 'quiet';
     if (this._room !== room) {
       this._room = room;
       setAttr(this.ro.room, 'data-room', room);
@@ -4616,6 +4638,28 @@ class App {
   }
 
   // ═══ Feedback ══════════════════════════════════════════════════════════
+  // Risk to SHOW at the user's location. SPECIES_DB.risk is the species' global
+  // public-health rank; where getLocalDisease says there is no current local
+  // transmission ("Malaria (low risk)" in Israel), a CRITICAL badge would
+  // contradict the text beneath it — show a vector badge at low local risk.
+  localRisk(sp) {
+    if (!sp) return RISK_META.MEDIUM;
+    const dis = getLocalDisease(sp.id, this.deviceLat, this.deviceLng) || '';
+    if (!sp.asymptomatic && /low (current )?risk|no (active|endemic)/i.test(dis)) {
+      return { ...RISK_META.LOW, label: 'Vector · low local risk' };
+    }
+    return riskMeta(sp.risk);
+  }
+
+  // Name to SHOW for a catalogue entry at the user's location (getLocalTaxon):
+  // several entries are acoustic stand-ins, e.g. outside Africa the 'anopheles'
+  // profile is the local malaria mosquito, not An. gambiae. Ids are unchanged.
+  taxonOf(sp) {
+    const t = (sp && typeof getLocalTaxon === 'function')
+      ? getLocalTaxon(sp.id, this.deviceLat, this.deviceLng) : null;
+    return t || { name: sp ? sp.name : '', common: sp ? sp.common : '', note: '', standIn: false };
+  }
+
   announce(msg) {
     const el = $('#announcer');
     if (!el) return;
