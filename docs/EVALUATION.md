@@ -228,7 +228,203 @@ effect once sub-harmonic "ghost" tracks were excluded. A pitch-only
 Longer minimum track age (2.1 s): −0.5 dB and +1 s latency for a modest FA
 reduction — the 2 s/70 % vote was the better trade.
 
+## Key results (test split)
+
+* **False alarms −68 %** pooled over 33 adversary classes (55 → 17 /h). The
+  in-band voice/music/whistle/phone-tone classes that dominated the baseline
+  fall 5–25× (humming 282 → 45 /h, violin 255 → 15, singing 225 → 9, flute
+  222 → 18, whistling 39 → 0, phone tones 9 → 0); small fans 111 → 42, traffic
+  117 → 87. **Regressions:** pop music 84 → 108 /h and non-biting midges 54 →
+  69 /h (the more sensitive engine hears more mosquito-like midges). No class
+  meets the 0.2 /h target except the 15 classes with zero events (whose 20-min
+  upper bound is 11 /h).
+* **Detection range unchanged on average** (mean SNR50 −19.7 vs −19.3 dB), but
+  **loud mosquitoes are no longer missed** (P(detect | SNR ≥ −8 dB) 0.99 vs
+  0.86); *Ae. caspius* +3 dB (1.4× range) after removing the hum blacklist;
+  one Detection per insect (the baseline locked two species at once in 13
+  trials). At **equal false-alarm rate** the new engine has ≈ 4 dB (1.6×) more
+  range: baseline level 4 = −15.3 dB at 18.9 FA/h vs new level 3 = −19.1 dB at
+  18.0 FA/h on the same hard adversary set (levels table).
+* **Confidence is now informative and calibrated**: Brier 0.225 → 0.044,
+  ECE 0.19 → 0.06; mean confidence 0.91 on real locks vs 0.24 on false ones
+  (baseline 0.56 vs 0.53 — no discrimination).
+* **Identification**: more trials correctly identified at every location
+  (species correct/trials: Rome 31 → 49 of 72, Accra 38 → 50 of 84, Mumbai
+  28 → 48 of 96, no GPS 53 → 73 of 144), posteriors better calibrated.
+  Conditional top-1 in Rome looks lower only because the baseline detected
+  just the easy half of the Rome trials.
+* **Cost**: `analyze()` 5.6 → 2.5 ms; latency 2.3 → 2.9 s.
+
 <!-- GENERATED:BEGIN -->
+### Headline (test split, sensitivity 3)
+
+| Metric | Baseline (e46de8d) | Final (this branch) |
+|---|---|---|
+| Mean SNR50 over 12 species (dB, lower = better) | -19.3 | -19.7 |
+| Worst-species SNR50 (dB) | -14.0 | -15.3 |
+| Mean range factor r50/r0 (= 10^(−SNR50/20)) | 9.23 | 9.70 |
+| P(detect) for loud mosquitoes (SNR ≥ −8 dB) | 0.863 | 0.988 |
+| Median lock latency (SNR ≥ −12 dB, s) | 2.29 | 2.94 |
+| Trials with ≥2 species locked at once | 13 | 0 |
+| False alarms / hour, pooled over 33 adversary classes [95 % CI] | 55.18 [50.88, 59.75] | 17.45 [15.07, 20.11] |
+| Adversary classes with any false alarm (of 33) | 21 | 18 |
+| Species top-1 / genus top-1 — no location | 48 % / 66 % | 51 % / 70 % |
+| Species top-1 / genus top-1 — accra | 57 % / 67 % | 62 % / 70 % |
+| Species top-1 / genus top-1 — rome | 86 % / 89 % | 70 % / 79 % |
+| Species top-1 / genus top-1 — mumbai | 42 % / 64 % | 53 % / 72 % |
+| Species posterior Brier / ECE (no location) | 0.689 / 0.143 | 0.610 / 0.110 |
+| Genus posterior ECE (no location) | 0.149 | 0.091 |
+| Detection.confidence vs real-mosquito: Brier / ECE | 0.225 / 0.190 | 0.044 / 0.058 |
+| Mean confidence on real / false locks | 0.56 / 0.53 | 0.91 / 0.24 |
+| analyze() mean / p95 (ms, Node, single thread) | 5.63 / 7.58 | 2.46 / 4.19 |
+
+### Detection: SNR50 per species
+
+SNR50 from isotonic regression of P(detect) on SNR (12 individuals × 11 SNRs per species); `<`/`>` = censored at the grid edge; `~` = non-monotone curve (louder trials missed more often than quieter ones). P(loud) = P(detect) pooled over SNR ≥ −8 dB.
+
+| Species | f0 (Hz) | Baseline SNR50 | Final SNR50 | Δ (dB) | Range × | Baseline P(loud) | Final P(loud) |
+|---|---|---|---|---|---|---|---|
+| Anopheles gambiae | 406 | -19.0 ~ | -19.3 | -0.3 | 1.04 | 0.79 | 1.00 |
+| Anopheles stephensi | 388 | -17.0 ~ | -15.3 | 1.7 | 0.83 | 0.83 | 1.00 |
+| Aedes aegypti | 617 | -20.0 ~ | -21.0 | -1.0 | 1.12 | 0.98 | 1.00 |
+| Aedes albopictus | 668 | -21.5 ~ | -21.1 | 0.4 | 0.96 | 0.94 | 1.00 |
+| Culex quinquefasciatus | 453 | -19.0 | -19.0 ~ | 0.0 | 1.00 | 0.85 | 0.94 |
+| Aedes japonicus | 730 | -22.9 | -22.4 | 0.5 | 0.95 | 0.92 | 1.00 |
+| Aedes vexans | 515 | -20.6 ~ | -20.6 | 0.0 | 1.00 | 0.88 | 1.00 |
+| Mansonia uniformis | 570 | -21.7 ~ | -21.3 | 0.4 | 0.96 | 0.90 | 1.00 |
+| Culex pipiens | 594 | -21.0 | -20.6 | 0.4 | 0.95 | 0.92 | 1.00 |
+| Culiseta annulata | 344 | -17.0 ~ | -18.3 | -1.3 | 1.16 | 0.92 | 1.00 |
+| Aedes (Ochlerotatus) caspius | 548 | -18.0 | -21.0 | -3.0 | 1.41 | 0.69 | 1.00 |
+| Toxorhynchites brevipalpis | 290 | -14.0 ~ | -16.8 | -2.8 | 1.38 | 0.75 | 0.92 |
+
+### False alarms per adversary class (sensitivity 3)
+
+Each class: 20 simulated minutes (4 independent 5-min runs, each starting with the 2 s calibration). Events counted with the app's logic (a species' lock is a new event if its previous event was ≥ 60 s ago). 95 % CI: exact Poisson. Target ≤ 0.2 /h. * = not counted as a false alarm (male mosquitoes are mosquitoes).
+
+| Class | Group | Baseline events | Baseline FA/h [95 % CI] | Final events | Final FA/h [95 % CI] |
+|---|---|---|---|---|---|
+| quiet_room | noise | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| noise_white | noise | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| noise_pink | noise | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| noise_brown | noise | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| fan_desk | machine | 5 | 15.00 [4.87, 35.01] | 3 | 9.00 [1.86, 26.30] |
+| fan_ceiling | machine | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| fan_small | machine | 37 | 111.00 [78.15, 153.00] | 14 | 42.00 [22.96, 70.47] |
+| hum_fridge | machine | 9 | 27.00 [12.35, 51.25] | 5 | 15.00 [4.87, 35.01] |
+| hum_ac | machine | 20 | 60.00 [36.65, 92.67] | 16 | 48.00 [27.44, 77.95] |
+| whine_electrical | machine | 8 | 24.00 [10.36, 47.29] | 2 | 6.00 [0.73, 21.67] |
+| speech_male | voice | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| speech_female | voice | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| speech_child | voice | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| humming | voice | 94 | 282.00 [227.88, 345.10] | 15 | 45.00 [25.19, 74.22] |
+| singing | voice | 75 | 225.00 [176.98, 282.04] | 3 | 9.00 [1.86, 26.30] |
+| whistling | voice | 13 | 39.00 [20.77, 66.69] | 0 | 0.00 [0.00, 11.07] |
+| music_violin | music | 85 | 255.00 [203.69, 315.31] | 5 | 15.00 [4.87, 35.01] |
+| music_flute | music | 74 | 222.00 [174.32, 278.70] | 6 | 18.00 [6.61, 39.18] |
+| music_piano | music | 30 | 90.00 [60.72, 128.48] | 15 | 45.00 [25.19, 74.22] |
+| music_pop | music | 28 | 84.00 [55.82, 121.40] | 36 | 108.00 [75.64, 149.52] |
+| tv | music | 16 | 48.00 [27.44, 77.95] | 6 | 18.00 [6.61, 39.18] |
+| insect_housefly | insect | 10 | 30.00 [14.39, 55.17] | 2 | 6.00 [0.73, 21.67] |
+| insect_honeybee | insect | 17 | 51.00 [29.71, 81.66] | 4 | 12.00 [3.27, 30.73] |
+| insect_bumblebee | insect | 12 | 36.00 [18.60, 62.88] | 4 | 12.00 [3.27, 30.73] |
+| insect_fruitfly | insect | 11 | 33.00 [16.47, 59.05] | 4 | 12.00 [3.27, 30.73] |
+| insect_midge | insect | 18 | 54.00 [32.00, 85.34] | 23 | 69.00 [43.74, 103.53] |
+| crickets | environment | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| birds_song | environment | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| birds_low | environment | 3 | 9.00 [1.86, 26.30] | 0 | 0.00 [0.00, 11.07] |
+| traffic | environment | 39 | 117.00 [83.20, 159.94] | 29 | 87.00 [58.27, 124.95] |
+| rain | environment | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| impulsive | environment | 0 | 0.00 [0.00, 11.07] | 0 | 0.00 [0.00, 11.07] |
+| phone_tones | environment | 3 | 9.00 [1.86, 26.30] | 0 | 0.00 [0.00, 11.07] |
+| mosquito_male * | mosquito | 13 | 39.00 [20.77, 66.69] | 22 | 66.00 [41.36, 99.92] |
+
+### Mixtures: mosquito (SNR −12 dB) with an adversary already playing
+
+Same 20 individuals per row (paired). Detected = a Detection whose f0 is within 5 % of the individual's true f0 inside the 10 s flight bout (onset at 15 s). Other-lock frames = frames in the bout with a lock on something else.
+
+| Adversary | Baseline P(detect) [CI] | Final P(detect) [CI] | Baseline other-lock frames | Final other-lock frames |
+|---|---|---|---|---|
+| none | 15/20 = 0.75 [0.53, 0.89] | 20/20 = 1.00 [0.84, 1.00] | 0 | 0 |
+| fan_desk | 13/20 = 0.65 [0.43, 0.82] | 15/20 = 0.75 [0.53, 0.89] | 37 | 0 |
+| fan_small | 12/20 = 0.60 [0.39, 0.78] | 16/20 = 0.80 [0.58, 0.92] | 180 | 0 |
+| hum_ac | 10/20 = 0.50 [0.30, 0.70] | 11/20 = 0.55 [0.34, 0.74] | 16 | 0 |
+| hum_fridge | 10/20 = 0.50 [0.30, 0.70] | 12/20 = 0.60 [0.39, 0.78] | 125 | 25 |
+| tv | 3/20 = 0.15 [0.05, 0.36] | 4/20 = 0.20 [0.08, 0.42] | 56 | 134 |
+| speech_female | 2/20 = 0.10 [0.03, 0.30] | 5/20 = 0.25 [0.11, 0.47] | 0 | 0 |
+| speech_child | 1/20 = 0.05 [0.01, 0.24] | 2/20 = 0.10 [0.03, 0.30] | 0 | 0 |
+| music_pop | 4/20 = 0.20 [0.08, 0.42] | 1/20 = 0.05 [0.01, 0.24] | 12 | 296 |
+| traffic | 10/20 = 0.50 [0.30, 0.70] | 12/20 = 0.60 [0.39, 0.78] | 20 | 23 |
+| rain | 12/20 = 0.60 [0.39, 0.78] | 16/20 = 0.80 [0.58, 0.92] | 0 | 0 |
+| whine_electrical | 15/20 = 0.75 [0.53, 0.89] | 17/20 = 0.85 [0.64, 0.95] | 113 | 0 |
+
+### Identification (first lock; trials drawn from the location's native species; SNR uniform in [−15, −5] dB)
+
+Top-1/top-3 are conditional on detection; "correct / trials" counts every trial (an undetected mosquito is not identified).
+
+| Location | Engine | Trials | Detected | Species top-1 | Species correct / trials | Species top-3 | Genus top-1 | Genus correct / trials | Species Brier | Species ECE | Genus ECE | Non-native: detected / genus ok |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| none | baseline | 144 | 111 | 48 % | 53/144 | 87 % | 66 % | 73/144 | 0.689 | 0.143 | 0.149 | – |
+| none | final | 144 | 142 | 51 % | 73/144 | 91 % | 70 % | 100/144 | 0.610 | 0.110 | 0.091 | – |
+| accra | baseline | 84 | 67 | 57 % | 38/84 | 93 % | 67 % | 45/84 | 0.513 | 0.123 | 0.134 | 4/15 / 2 |
+| accra | final | 84 | 81 | 62 % | 50/84 | 96 % | 70 % | 57/84 | 0.453 | 0.086 | 0.115 | 13/15 / 6 |
+| rome | baseline | 72 | 36 | 86 % | 31/72 | 100 % | 89 % | 32/72 | 0.251 | 0.107 | 0.062 | 9/18 / 6 |
+| rome | final | 72 | 70 | 70 % | 49/72 | 100 % | 79 % | 55/72 | 0.395 | 0.118 | 0.097 | 17/18 / 9 |
+| mumbai | baseline | 96 | 66 | 42 % | 28/96 | 88 % | 64 % | 42/96 | 0.674 | 0.221 | 0.208 | 4/12 / 2 |
+| mumbai | final | 96 | 90 | 53 % | 48/96 | 92 % | 72 % | 65/96 | 0.568 | 0.080 | 0.105 | 12/12 / 5 |
+
+Final-engine genus confusion (no location prior; rows = true genus, columns = reported):
+
+| true \ reported | Anopheles | Culiseta | Culex | Aedes | Toxorhynchites | none |
+|---|---|---|---|---|---|---|
+| Anopheles | 21 | 1 | 2 | 0 | 0 | 0 |
+| Aedes | 0 | 0 | 4 | 56 | 0 | 0 |
+| Culex | 3 | 0 | 6 | 15 | 0 | 0 |
+| Mansonia | 0 | 0 | 0 | 12 | 0 | 0 |
+| Culiseta | 1 | 7 | 0 | 0 | 3 | 1 |
+| Toxorhynchites | 0 | 1 | 0 | 0 | 10 | 1 |
+
+### Reliability: Detection.confidence vs "real mosquito" (events: first locks of mosquito trials + adversary false-alarm events)
+
+| bin | baseline n | baseline mean p | baseline freq | final n | final mean p | final freq |
+|---|---|---|---|---|---|---|
+| [0.0, 0.1) | 0 | – | – | 107 | 0.04 | 0.11 |
+| [0.1, 0.2) | 0 | – | – | 44 | 0.14 | 0.27 |
+| [0.2, 0.3) | 0 | – | – | 22 | 0.24 | 0.41 |
+| [0.3, 0.4) | 0 | – | – | 10 | 0.35 | 0.40 |
+| [0.4, 0.5) | 436 | 0.47 | 0.41 | 20 | 0.46 | 0.40 |
+| [0.5, 0.6) | 1298 | 0.57 | 0.79 | 17 | 0.56 | 0.65 |
+| [0.6, 0.7) | 104 | 0.63 | 0.30 | 42 | 0.64 | 0.91 |
+| [0.7, 0.8) | 2 | 0.70 | 0.50 | 67 | 0.76 | 0.97 |
+| [0.8, 0.9) | 1 | 0.84 | 1.00 | 237 | 0.86 | 0.96 |
+| [0.9, 1.0) | 4 | 0.94 | 0.25 | 1132 | 0.96 | 0.99 |
+
+### Reliability: top-1 species probability vs species correct (no location)
+
+| bin | baseline n | baseline mean p | baseline freq | final n | final mean p | final freq |
+|---|---|---|---|---|---|---|
+| [0.1, 0.2) | 0 | – | – | 1 | 0.19 | 0.00 |
+| [0.2, 0.3) | 1 | 0.30 | 1.00 | 37 | 0.25 | 0.32 |
+| [0.3, 0.4) | 12 | 0.38 | 0.42 | 40 | 0.37 | 0.47 |
+| [0.4, 0.5) | 32 | 0.45 | 0.38 | 27 | 0.43 | 0.59 |
+| [0.5, 0.6) | 19 | 0.53 | 0.58 | 14 | 0.54 | 0.43 |
+| [0.6, 0.7) | 21 | 0.65 | 0.43 | 10 | 0.67 | 0.90 |
+| [0.7, 0.8) | 13 | 0.73 | 0.46 | 4 | 0.74 | 0.75 |
+| [0.8, 0.9) | 7 | 0.85 | 0.43 | 6 | 0.84 | 0.83 |
+| [0.9, 1.0) | 6 | 0.94 | 1.00 | 3 | 0.95 | 1.00 |
+
+### Sensitivity levels (operating points)
+
+Detection on 4 individuals × 5 SNRs per species; false alarms pooled over the 14 hardest in-band adversary classes (5 min each).
+
+| Level | Baseline mean SNR50 | Baseline FA/h [CI] | Final mean SNR50 | Final FA/h [CI] | Final P(loud) | Final latency (s) |
+|---|---|---|---|---|---|---|
+| 1 | -20.2 | 182.57 [158.88, 208.81] | -19.7 | 46.29 [34.77, 60.39] | 0.979 | 2.20 |
+| 2 | -18.6 | 140.57 [119.88, 163.81] | -19.3 | 36.86 [26.67, 49.65] | 0.979 | 2.39 |
+| 3 | -17.8 | 96.00 [79.05, 115.51] | -19.1 | 18.00 [11.14, 27.52] | 0.979 | 2.85 |
+| 4 | -15.3 | 18.86 [11.82, 28.55] | -18.0 | 11.14 [5.93, 19.05] | 0.979 | 3.32 |
+| 5 | -4.2 | 4.29 [1.39, 10.00] | -17.0 | 5.14 [1.89, 11.19] | 0.979 | 3.69 |
+
+_Generated by tools/eval/report.js from tools/eval/results/baseline-full-test.json (e46de8d) and tools/eval/results/final-full-test.json (d79f1de)._
 <!-- GENERATED:END -->
 
 ## Known limitations

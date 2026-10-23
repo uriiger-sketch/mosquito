@@ -3,13 +3,13 @@
   "mode": "full",
   "split": "test",
   "root": "/home/user/mosquito/.claude/worktrees/agent-a7f8541190f21e490",
-  "commit": "bb6f8f4",
-  "date": "2026-10-23T11:57:44.743Z",
+  "commit": "d79f1de",
+  "date": "2026-10-23T12:27:37.226Z",
   "node": "v22.22.0",
   "jobs": 3417,
   "sampleRate": 44100,
   "fftSize": 8192,
-  "wallSeconds": 1039.7
+  "wallSeconds": 1060.2
  },
  "detection": {
   "perSpecies": {
@@ -3757,14 +3757,14 @@
      1.856,
      26.302
     ],
-    "lockedFrac": 0.01781,
+    "lockedFrac": 0.00674,
     "calLockedFrames": 0,
     "eventSpecies": {
      "aedes_vexans": 1,
      "toxorhynchites": 2
     },
     "maxLevel": 0.955,
-    "fracLevel30": 0.02168
+    "fracLevel30": 0.00999
    },
    "fan_ceiling": {
     "group": "machine",
@@ -3786,69 +3786,68 @@
     "group": "machine",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 12,
-    "perHour": 36,
+    "events": 14,
+    "perHour": 42,
     "ci": [
-     18.602,
-     62.885
+     22.962,
+     70.469
     ],
-    "lockedFrac": 0.11168,
+    "lockedFrac": 0.11625,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "aedes_vexans": 1,
+     "culiseta_annulata": 1,
      "aedes_aegypti": 2,
-     "aedes_albopictus": 4,
-     "aedes_japonicus": 5
+     "aedes_japonicus": 6,
+     "ochlerotatus_caspius": 1,
+     "aedes_albopictus": 4
     },
     "maxLevel": 0.955,
-    "fracLevel30": 0.10974
+    "fracLevel30": 0.11191
    },
    "hum_fridge": {
     "group": "machine",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 6,
-    "perHour": 18,
+    "events": 5,
+    "perHour": 15,
     "ci": [
-     6.606,
-     39.178
+     4.87,
+     35.005
     ],
-    "lockedFrac": 0.06901,
+    "lockedFrac": 0.06056,
     "calLockedFrames": 0,
     "eventSpecies": {
      "aedes_aegypti": 1,
      "aedes_japonicus": 1,
      "toxorhynchites": 1,
-     "aedes_albopictus": 1,
      "anopheles_stephensi": 2
     },
     "maxLevel": 0.864,
-    "fracLevel30": 0.06157
+    "fracLevel30": 0.0577
    },
    "hum_ac": {
     "group": "machine",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 21,
-    "perHour": 63,
+    "events": 16,
+    "perHour": 48,
     "ci": [
-     38.998,
-     96.302
+     27.436,
+     77.949
     ],
-    "lockedFrac": 0.05762,
+    "lockedFrac": 0.04515,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "anopheles_stephensi": 3,
+     "anopheles_stephensi": 1,
      "ochlerotatus_caspius": 5,
      "aedes_albopictus": 2,
      "anopheles": 2,
      "culex": 3,
-     "aedes_vexans": 3,
-     "aedes_aegypti": 2,
-     "toxorhynchites": 1
+     "aedes_vexans": 2,
+     "aedes_aegypti": 1
     },
     "maxLevel": 0.5,
-    "fracLevel30": 0.03028
+    "fracLevel30": 0.02261
    },
    "whine_electrical": {
     "group": "machine",
@@ -3898,7 +3897,7 @@
     "lockedFrac": 0,
     "calLockedFrames": 0,
     "eventSpecies": {},
-    "maxLevel": 0.045,
+    "maxLevel": 0.091,
     "fracLevel30": 0
    },
    "speech_child": {
@@ -3914,197 +3913,182 @@
     "lockedFrac": 0,
     "calLockedFrames": 0,
     "eventSpecies": {},
-    "maxLevel": 0.227,
+    "maxLevel": 0.091,
     "fracLevel30": 0
    },
    "humming": {
     "group": "voice",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 16,
-    "perHour": 48,
+    "events": 15,
+    "perHour": 45,
     "ci": [
-     27.436,
-     77.949
+     25.186,
+     74.221
     ],
-    "lockedFrac": 0.02664,
+    "lockedFrac": 0.02571,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "culiseta_annulata": 4,
-     "anopheles": 4,
-     "ochlerotatus_caspius": 2,
-     "anopheles_stephensi": 1,
+     "culiseta_annulata": 2,
+     "anopheles": 3,
+     "anopheles_stephensi": 3,
      "culex": 1,
      "toxorhynchites": 1,
-     "aedes_albopictus": 2,
+     "aedes_albopictus": 4,
      "aedes_vexans": 1
     },
     "maxLevel": 1,
-    "fracLevel30": 0.02579
+    "fracLevel30": 0.02509
    },
    "singing": {
     "group": "voice",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 10,
-    "perHour": 30,
+    "events": 3,
+    "perHour": 9,
     "ci": [
-     14.386,
-     55.171
+     1.856,
+     26.302
     ],
-    "lockedFrac": 0.01441,
+    "lockedFrac": 0.00364,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "aedes_vexans": 3,
-     "toxorhynchites": 1,
+     "aedes_vexans": 1,
      "aedes_aegypti": 1,
-     "anopheles": 2,
-     "ochlerotatus_caspius": 2,
-     "anopheles_stephensi": 1
+     "anopheles": 1
     },
-    "maxLevel": 0.773,
-    "fracLevel30": 0.01626
+    "maxLevel": 0.636,
+    "fracLevel30": 0.00984
    },
    "whistling": {
     "group": "voice",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 1,
-    "perHour": 3,
+    "events": 0,
+    "perHour": 0,
     "ci": [
-     0.076,
-     16.715
+     0,
+     11.067
     ],
-    "lockedFrac": 0.0007,
+    "lockedFrac": 0,
     "calLockedFrames": 0,
-    "eventSpecies": {
-     "aedes_japonicus": 1
-    },
-    "maxLevel": 0.591,
-    "fracLevel30": 0.00232
+    "eventSpecies": {},
+    "maxLevel": 0.182,
+    "fracLevel30": 0
    },
    "music_violin": {
     "group": "music",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 17,
-    "perHour": 51,
+    "events": 5,
+    "perHour": 15,
     "ci": [
-     29.709,
-     81.656
+     4.87,
+     35.005
     ],
-    "lockedFrac": 0.02455,
+    "lockedFrac": 0.00627,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "aedes_japonicus": 3,
-     "aedes_albopictus": 1,
      "toxorhynchites": 2,
-     "culex": 2,
-     "anopheles_stephensi": 4,
-     "aedes_vexans": 1,
-     "culiseta_annulata": 1,
-     "aedes_aegypti": 1,
-     "anopheles": 1,
+     "culex": 1,
+     "aedes_japonicus": 1,
      "ochlerotatus_caspius": 1
     },
-    "maxLevel": 0.909,
-    "fracLevel30": 0.0333
+    "maxLevel": 0.636,
+    "fracLevel30": 0.00945
    },
    "music_flute": {
     "group": "music",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 13,
-    "perHour": 39,
+    "events": 6,
+    "perHour": 18,
     "ci": [
-     20.766,
-     66.691
+     6.606,
+     39.178
     ],
-    "lockedFrac": 0.01882,
+    "lockedFrac": 0.00713,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "aedes_japonicus": 4,
-     "aedes_vexans": 4,
      "toxorhynchites": 1,
-     "anopheles": 2,
-     "anopheles_stephensi": 1,
-     "culiseta_annulata": 1
+     "anopheles": 1,
+     "aedes_vexans": 1,
+     "aedes_japonicus": 2,
+     "anopheles_stephensi": 1
     },
-    "maxLevel": 0.955,
-    "fracLevel30": 0.02238
+    "maxLevel": 0.864,
+    "fracLevel30": 0.01123
    },
    "music_piano": {
     "group": "music",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 27,
-    "perHour": 81,
+    "events": 15,
+    "perHour": 45,
     "ci": [
-     53.38,
-     117.851
+     25.186,
+     74.221
     ],
-    "lockedFrac": 0.0412,
+    "lockedFrac": 0.02153,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "toxorhynchites": 6,
-     "culiseta_annulata": 7,
+     "toxorhynchites": 1,
+     "aedes_vexans": 1,
+     "culex": 2,
      "anopheles_stephensi": 5,
-     "aedes_aegypti": 3,
-     "culex": 1,
-     "aedes_japonicus": 2,
-     "aedes_vexans": 2,
-     "anopheles": 1
+     "culiseta_annulata": 4,
+     "anopheles": 1,
+     "aedes_japonicus": 1
     },
-    "maxLevel": 0.864,
-    "fracLevel30": 0.04345
+    "maxLevel": 0.682,
+    "fracLevel30": 0.02439
    },
    "music_pop": {
     "group": "music",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 43,
-    "perHour": 129,
+    "events": 36,
+    "perHour": 108,
     "ci": [
-     93.358,
-     173.762
+     75.642,
+     149.518
     ],
-    "lockedFrac": 0.25225,
+    "lockedFrac": 0.13925,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "anopheles_stephensi": 12,
-     "anopheles": 13,
-     "toxorhynchites": 10,
-     "aedes_japonicus": 2,
-     "aedes_vexans": 2,
-     "culex": 3,
+     "anopheles_stephensi": 10,
+     "anopheles": 11,
+     "toxorhynchites": 8,
+     "aedes_japonicus": 1,
+     "aedes_vexans": 4,
+     "culex": 1,
      "culiseta_annulata": 1
     },
     "maxLevel": 0.955,
-    "fracLevel30": 0.25434
+    "fracLevel30": 0.12857
    },
    "tv": {
     "group": "music",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 10,
-    "perHour": 30,
+    "events": 6,
+    "perHour": 18,
     "ci": [
-     14.386,
-     55.171
+     6.606,
+     39.178
     ],
-    "lockedFrac": 0.0134,
+    "lockedFrac": 0.00736,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "anopheles_stephensi": 1,
-     "anopheles": 2,
-     "aedes_vexans": 2,
+     "culex": 1,
      "aedes_japonicus": 1,
-     "culiseta_annulata": 2,
+     "aedes_albopictus": 1,
      "ochlerotatus_caspius": 1,
-     "culex": 1
+     "culiseta_annulata": 1,
+     "aedes_vexans": 1
     },
     "maxLevel": 0.682,
-    "fracLevel30": 0.01015
+    "fracLevel30": 0.0062
    },
    "insect_housefly": {
     "group": "insect",
@@ -4259,28 +4243,27 @@
     "group": "environment",
     "countsAsFA": true,
     "hours": 0.333,
-    "events": 67,
-    "perHour": 201,
+    "events": 29,
+    "perHour": 87,
     "ci": [
-     155.772,
-     255.263
+     58.265,
+     124.947
     ],
-    "lockedFrac": 0.14397,
+    "lockedFrac": 0.03973,
     "calLockedFrames": 0,
     "eventSpecies": {
-     "anopheles_stephensi": 9,
-     "ochlerotatus_caspius": 6,
-     "anopheles": 9,
-     "aedes_vexans": 10,
-     "culex": 7,
-     "culiseta_annulata": 7,
-     "aedes_aegypti": 5,
-     "aedes_albopictus": 3,
-     "toxorhynchites": 5,
-     "aedes_japonicus": 6
+     "anopheles": 4,
+     "aedes_vexans": 5,
+     "culex": 2,
+     "anopheles_stephensi": 6,
+     "culiseta_annulata": 5,
+     "aedes_aegypti": 1,
+     "ochlerotatus_caspius": 2,
+     "toxorhynchites": 3,
+     "aedes_japonicus": 1
     },
-    "maxLevel": 0.909,
-    "fracLevel30": 0.11416
+    "maxLevel": 0.727,
+    "fracLevel30": 0.03601
    },
    "rain": {
     "group": "environment",
@@ -4356,12 +4339,12 @@
    }
   },
   "pooled": {
-   "events": 285,
+   "events": 192,
    "hours": 11,
-   "perHour": 25.909,
+   "perHour": 17.455,
    "ci": [
-    22.988,
-    29.098
+    15.073,
+    20.106
    ]
   },
   "classesOverTarget": [
@@ -4372,7 +4355,6 @@
    "whine_electrical",
    "humming",
    "singing",
-   "whistling",
    "music_violin",
    "music_flute",
    "music_piano",
@@ -4393,7 +4375,6 @@
    "whine_electrical",
    "humming",
    "singing",
-   "whistling",
    "music_violin",
    "music_flute",
    "music_piano",
@@ -4408,83 +4389,83 @@
   ]
  },
  "confidence": {
-  "n": 1809,
-  "positives": 1524,
-  "negatives": 285,
-  "brier": 0.047,
-  "ece": 0.059,
-  "meanConfPositive": 0.898,
-  "meanConfNegative": 0.168,
+  "n": 1698,
+  "positives": 1506,
+  "negatives": 192,
+  "brier": 0.044,
+  "ece": 0.058,
+  "meanConfPositive": 0.906,
+  "meanConfNegative": 0.243,
   "reliability": [
    {
     "lo": 0,
     "hi": 0.1,
-    "n": 211,
-    "meanP": 0.037,
-    "freq": 0.1
+    "n": 107,
+    "meanP": 0.045,
+    "freq": 0.112
    },
    {
     "lo": 0.1,
     "hi": 0.2,
     "n": 44,
-    "meanP": 0.137,
-    "freq": 0.227
+    "meanP": 0.14,
+    "freq": 0.273
    },
    {
     "lo": 0.2,
     "hi": 0.3,
     "n": 22,
-    "meanP": 0.251,
-    "freq": 0.591
+    "meanP": 0.243,
+    "freq": 0.409
    },
    {
     "lo": 0.3,
     "hi": 0.4,
-    "n": 17,
-    "meanP": 0.34,
-    "freq": 0.471
+    "n": 10,
+    "meanP": 0.349,
+    "freq": 0.4
    },
    {
     "lo": 0.4,
     "hi": 0.5,
-    "n": 18,
-    "meanP": 0.451,
-    "freq": 0.444
+    "n": 20,
+    "meanP": 0.459,
+    "freq": 0.4
    },
    {
     "lo": 0.5,
     "hi": 0.6,
-    "n": 15,
-    "meanP": 0.556,
-    "freq": 0.667
+    "n": 17,
+    "meanP": 0.559,
+    "freq": 0.647
    },
    {
     "lo": 0.6,
     "hi": 0.7,
-    "n": 43,
-    "meanP": 0.644,
-    "freq": 0.907
+    "n": 42,
+    "meanP": 0.643,
+    "freq": 0.905
    },
    {
     "lo": 0.7,
     "hi": 0.8,
-    "n": 66,
-    "meanP": 0.76,
-    "freq": 0.955
+    "n": 67,
+    "meanP": 0.758,
+    "freq": 0.97
    },
    {
     "lo": 0.8,
     "hi": 0.9,
-    "n": 239,
+    "n": 237,
     "meanP": 0.86,
     "freq": 0.958
    },
    {
     "lo": 0.9,
     "hi": 1,
-    "n": 1134,
+    "n": 1132,
     "meanP": 0.963,
-    "freq": 0.99
+    "freq": 0.989
    }
   ]
  },
@@ -4506,48 +4487,48 @@
   },
   "fan_desk": {
    "n": 20,
-   "k": 17,
-   "p": 0.85,
+   "k": 15,
+   "p": 0.75,
    "ci": [
-    0.64,
-    0.948
+    0.531,
+    0.888
    ],
-   "retainedOfRef": 0.85,
-   "anyLock": 18,
-   "otherLockFrames": 40,
-   "genusCorrect": 0.722,
+   "retainedOfRef": 0.75,
+   "anyLock": 15,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.733,
    "latencyMedian": 3.019,
    "preOnsetFalseFrames": 0
   },
   "fan_small": {
    "n": 20,
-   "k": 17,
-   "p": 0.85,
+   "k": 16,
+   "p": 0.8,
    "ci": [
-    0.64,
-    0.948
+    0.584,
+    0.919
    ],
-   "retainedOfRef": 0.85,
-   "anyLock": 18,
-   "otherLockFrames": 51,
-   "genusCorrect": 0.722,
-   "latencyMedian": 3.019,
+   "retainedOfRef": 0.8,
+   "anyLock": 16,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.75,
+   "latencyMedian": 3.066,
    "preOnsetFalseFrames": 0
   },
   "hum_ac": {
    "n": 20,
-   "k": 14,
-   "p": 0.7,
+   "k": 11,
+   "p": 0.55,
    "ci": [
-    0.481,
-    0.855
+    0.342,
+    0.742
    ],
-   "retainedOfRef": 0.7,
-   "anyLock": 20,
-   "otherLockFrames": 466,
-   "genusCorrect": 0.5,
-   "latencyMedian": 2.973,
-   "preOnsetFalseFrames": 47
+   "retainedOfRef": 0.55,
+   "anyLock": 11,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.818,
+   "latencyMedian": 2.926,
+   "preOnsetFalseFrames": 0
   },
   "hum_fridge": {
    "n": 20,
@@ -4558,28 +4539,13 @@
     0.781
    ],
    "retainedOfRef": 0.6,
-   "anyLock": 12,
-   "otherLockFrames": 0,
-   "genusCorrect": 0.833,
+   "anyLock": 13,
+   "otherLockFrames": 25,
+   "genusCorrect": 0.769,
    "latencyMedian": 3.066,
    "preOnsetFalseFrames": 0
   },
   "tv": {
-   "n": 20,
-   "k": 3,
-   "p": 0.15,
-   "ci": [
-    0.052,
-    0.36
-   ],
-   "retainedOfRef": 0.15,
-   "anyLock": 7,
-   "otherLockFrames": 135,
-   "genusCorrect": 0.143,
-   "latencyMedian": 6.362,
-   "preOnsetFalseFrames": 88
-  },
-  "speech_female": {
    "n": 20,
    "k": 4,
    "p": 0.2,
@@ -4588,10 +4554,25 @@
     0.416
    ],
    "retainedOfRef": 0.2,
-   "anyLock": 4,
+   "anyLock": 8,
+   "otherLockFrames": 134,
+   "genusCorrect": 0.375,
+   "latencyMedian": 4.179,
+   "preOnsetFalseFrames": 69
+  },
+  "speech_female": {
+   "n": 20,
+   "k": 5,
+   "p": 0.25,
+   "ci": [
+    0.112,
+    0.469
+   ],
+   "retainedOfRef": 0.25,
+   "anyLock": 5,
    "otherLockFrames": 0,
-   "genusCorrect": 0.75,
-   "latencyMedian": 6.502,
+   "genusCorrect": 0.8,
+   "latencyMedian": 6.177,
    "preOnsetFalseFrames": 0
   },
   "speech_child": {
@@ -4606,38 +4587,38 @@
    "anyLock": 2,
    "otherLockFrames": 0,
    "genusCorrect": 0.5,
-   "latencyMedian": 5.758,
+   "latencyMedian": 8.174,
    "preOnsetFalseFrames": 0
   },
   "music_pop": {
    "n": 20,
-   "k": 3,
-   "p": 0.15,
+   "k": 1,
+   "p": 0.05,
    "ci": [
-    0.052,
-    0.36
+    0.009,
+    0.236
    ],
-   "retainedOfRef": 0.15,
+   "retainedOfRef": 0.05,
    "anyLock": 11,
-   "otherLockFrames": 279,
+   "otherLockFrames": 296,
    "genusCorrect": 0.182,
-   "latencyMedian": 7.198,
-   "preOnsetFalseFrames": 376
+   "latencyMedian": 5.526,
+   "preOnsetFalseFrames": 300
   },
   "traffic": {
    "n": 20,
-   "k": 15,
-   "p": 0.75,
+   "k": 12,
+   "p": 0.6,
    "ci": [
-    0.531,
-    0.888
+    0.387,
+    0.781
    ],
-   "retainedOfRef": 0.75,
-   "anyLock": 19,
-   "otherLockFrames": 220,
-   "genusCorrect": 0.632,
-   "latencyMedian": 4.04,
-   "preOnsetFalseFrames": 413
+   "retainedOfRef": 0.6,
+   "anyLock": 12,
+   "otherLockFrames": 23,
+   "genusCorrect": 0.833,
+   "latencyMedian": 4.272,
+   "preOnsetFalseFrames": 0
   },
   "rain": {
    "n": 20,
@@ -4651,7 +4632,7 @@
    "anyLock": 16,
    "otherLockFrames": 0,
    "genusCorrect": 0.813,
-   "latencyMedian": 3.344,
+   "latencyMedian": 3.297,
    "preOnsetFalseFrames": 0
   },
   "whine_electrical": {
@@ -4672,16 +4653,16 @@
  },
  "levels": {
   "1": {
-   "meanSNR50": -19.333,
+   "meanSNR50": -19.667,
    "worstSNR50": -16,
    "pDetectLoud": 0.979,
    "faPooled": {
-    "events": 44,
+    "events": 54,
     "hours": 1.167,
-    "perHour": 37.714,
+    "perHour": 46.286,
     "ci": [
-     27.403,
-     50.63
+     34.771,
+     60.393
     ]
    },
    "faClassesWithEvents": [
@@ -4691,23 +4672,24 @@
     "singing",
     "music_violin",
     "music_flute",
+    "birds_low",
     "insect_midge",
     "insect_housefly",
     "tv"
    ],
-   "latencyMedianAtSNRge12": 2.387
+   "latencyMedianAtSNRge12": 2.201
   },
   "2": {
    "meanSNR50": -19.333,
    "worstSNR50": -16,
    "pDetectLoud": 0.979,
    "faPooled": {
-    "events": 44,
+    "events": 43,
     "hours": 1.167,
-    "perHour": 37.714,
+    "perHour": 36.857,
     "ci": [
-     27.403,
-     50.63
+     26.674,
+     49.646
     ]
    },
    "faClassesWithEvents": [
@@ -4728,12 +4710,12 @@
    "worstSNR50": -16,
    "pDetectLoud": 0.979,
    "faPooled": {
-    "events": 25,
+    "events": 21,
     "hours": 1.167,
-    "perHour": 21.429,
+    "perHour": 18,
     "ci": [
-     13.867,
-     31.633
+     11.142,
+     27.515
     ]
    },
    "faClassesWithEvents": [
@@ -4742,7 +4724,6 @@
     "humming",
     "singing",
     "music_violin",
-    "music_flute",
     "tv",
     "insect_housefly",
     "insect_midge"
@@ -4754,19 +4735,18 @@
    "worstSNR50": -13.333,
    "pDetectLoud": 0.979,
    "faPooled": {
-    "events": 11,
+    "events": 13,
     "hours": 1.167,
-    "perHour": 9.429,
+    "perHour": 11.143,
     "ci": [
-     4.707,
-     16.87
+     5.933,
+     19.055
     ]
    },
    "faClassesWithEvents": [
     "fan_small",
     "whine_electrical",
-    "singing",
-    "music_flute",
+    "humming",
     "insect_midge",
     "tv"
    ],
@@ -4777,18 +4757,16 @@
    "worstSNR50": -12,
    "pDetectLoud": 0.979,
    "faPooled": {
-    "events": 8,
+    "events": 6,
     "hours": 1.167,
-    "perHour": 6.857,
+    "perHour": 5.143,
     "ci": [
-     2.96,
-     13.511
+     1.887,
+     11.194
     ]
    },
    "faClassesWithEvents": [
-    "fan_small",
     "whine_electrical",
-    "music_flute",
     "insect_midge"
    ],
    "latencyMedianAtSNRge12": 3.687
@@ -4796,9 +4774,9 @@
  },
  "compute": {
   "calls": 639,
-  "meanMs": 2.324,
-  "p50Ms": 2.059,
-  "p95Ms": 3.735,
-  "maxMs": 6.861
+  "meanMs": 2.458,
+  "p50Ms": 2.079,
+  "p95Ms": 4.189,
+  "maxMs": 6.72
  }
 }

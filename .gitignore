@@ -27,3 +27,4 @@ node_modules/
 test-results/
 playwright-report/
 .eval-cache/
+tools/eval/results/quick-test.json

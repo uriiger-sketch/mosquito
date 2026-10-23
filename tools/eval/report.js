@@ -84,10 +84,12 @@ L.push('');
 
 // ── identification ──────────────────────────────────────────────────────────
 L.push('### Identification (first lock; trials drawn from the location\'s native species; SNR uniform in [−15, −5] dB)', '');
-head('Location', 'Engine', 'Trials', 'Detected', 'Species top-1', 'Species top-3', 'Genus top-1', 'Species Brier', 'Species ECE', 'Genus ECE', 'Non-native: detected / genus ok');
+L.push('Top-1/top-3 are conditional on detection; "correct / trials" counts every trial (an undetected mosquito is not identified).', '');
+head('Location', 'Engine', 'Trials', 'Detected', 'Species top-1', 'Species correct / trials', 'Species top-3', 'Genus top-1', 'Genus correct / trials', 'Species Brier', 'Species ECE', 'Genus ECE', 'Non-native: detected / genus ok');
 for (const loc of ['none', 'accra', 'rome', 'mumbai']) for (const [name, M] of [['baseline', B], ['final', F]]) {
   const v = M.identification[loc]; if (!v) continue; const b = v.first, nn = v.nonNative;
-  row(loc, name, b.n, b.detected, pct(b.speciesTop1), pct(b.speciesTop3), pct(b.genusTop1), n(b.speciesBrier, 3), n(b.speciesECE, 3), n(b.genusECE, 3), nn ? `${nn.detected}/${nn.n} / ${nn.genusCorrect}` : '–');
+  row(loc, name, b.n, b.detected, pct(b.speciesTop1), `${Math.round(b.speciesTop1 * b.detected)}/${b.n}`, pct(b.speciesTop3), pct(b.genusTop1), `${Math.round(b.genusTop1 * b.detected)}/${b.n}`,
+    n(b.speciesBrier, 3), n(b.speciesECE, 3), n(b.genusECE, 3), nn ? `${nn.detected}/${nn.n} / ${nn.genusCorrect}` : '–');
 }
 L.push('');
 L.push('Final-engine genus confusion (no location prior; rows = true genus, columns = reported):', '');
