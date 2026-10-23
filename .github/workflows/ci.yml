@@ -1,0 +1,188 @@
+name: CI
+
+# Runs on every push and pull request, and is reused by deploy-pages.yml
+# (workflow_call), which publishes the site only if these jobs pass.
+on:
+  push:
+  pull_request:
+  workflow_call:
+    inputs:
+      skip_e2e:
+        description: Skip the browser end-to-end suite (emergency deploys only)
+        type: boolean
+        default: false
+      skip_docker:
+        description: Skip the backend image smoke test (not needed to publish the static site)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    name: JS unit tests + detector benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # setup-node's npm cache needs a lockfile; there is none while the
+          # project has no npm dependencies, so only enable it once one exists.
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+
+      - name: Install npm dependencies (if any are declared)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          elif node -e "const p = require('./package.json'); process.exit(Object.keys({ ...p.dependencies, ...p.devDependencies }).length ? 0 : 1)"; then
+            npm install --no-audit --no-fund
+          else
+            echo "package.json declares no dependencies - nothing to install"
+          fi
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Detector benchmark (quick)
+        run: npm run bench:quick
+
+      # The real accuracy gate: seeded synthetic corpus (12 species, adversary
+      # classes, mixtures) checked against tools/eval/thresholds.json; exits
+      # non-zero if detection range, false alarms or identification regress.
+      - name: Accuracy regression gate (eval:quick)
+        run: npm run eval:quick
+
+  python:
+    name: Server tests (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'      # production runtime (runtime.txt, Dockerfile)
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: pytest
+        run: pytest --cov=federated_server --cov-report=term-missing --cov-fail-under=85
+
+  e2e:
+    name: End-to-end (Playwright, Chromium)
+    if: ${{ !inputs.skip_e2e }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_VERSION: 1.56.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright
+        run: npm install --no-save --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
+
+      # The ~150 MB browser download is cached per Playwright version; the OS
+      # libraries it needs are (re)installed by --with-deps on every run.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ env.PLAYWRIGHT_VERSION }}-chromium
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # The tests block the page's calls to the production API, so no secrets
+      # or network access to the backend are needed.
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+  docker:
+    name: Backend image smoke test
+    if: ${{ !inputs.skip_docker }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build --pull -t mosquitonet:ci .
+
+      # Reproduce what Railway/Render do: a ROOT-owned volume that already holds
+      # data written by an older (root) image. The entrypoint must hand it to
+      # the unprivileged user, and the server must append to the legacy log.
+      - name: Seed a root-owned volume with legacy data
+        run: |
+          docker volume create mn-data
+          docker run --rm --user 0 --entrypoint /bin/sh -v mn-data:/data mosquitonet:ci -c \
+            'printf "%s\n" "{\"id\":1,\"species\":\"culex\",\"conf\":0.9,\"freq\":450}" > /data/detections.jsonl && chown -R 0:0 /data && chmod 0755 /data'
+
+      - name: Start container and wait for health
+        run: |
+          docker run -d --name mn -p 8080:8080 -v mn-data:/data mosquitonet:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/health | tee /tmp/health.json
+          python3 -c "import json; h = json.load(open('/tmp/health.json')); assert h['status'] == 'ok' and h['writable'] and not h['ephemeral'] and h['single_instance'], h"
+
+      - name: Server runs unprivileged and accepts a detection
+        run: |
+          uid=$(docker exec mn cat /proc/1/status | awk '/^Uid:/ {print $2}')
+          echo "PID 1 uid: $uid"; test "$uid" = 10001
+          resp=$(curl -fsS -X POST -H 'Content-Type: text/plain' -H 'Origin: https://uriiger-sketch.github.io' \
+            --data '{"species":"culex","confidence":0.9,"frequency":450,"deviceId":"ci","eventId":"ci-1"}' \
+            http://127.0.0.1:8080/detection)
+          echo "$resp"
+          echo "$resp" | python3 -c "import json, sys; r = json.load(sys.stdin); assert r['received'] and r['detection_id'] == 2, r"
+
+      - name: Docker HEALTHCHECK reports healthy
+        run: |
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' mn)
+            echo "health: $status"
+            [ "$status" = healthy ] && exit 0
+            [ "$status" = unhealthy ] && break
+            sleep 3
+          done
+          docker inspect -f '{{json .State.Health}}' mn
+          exit 1
+
+      - name: SIGTERM flushes state to the volume
+        run: |
+          docker stop -t 30 mn
+          docker logs mn 2>&1 | tail -20
+          docker logs mn 2>&1 | grep -q '\[Exit\] done'
+          docker run --rm --entrypoint cat -v mn-data:/data mosquitonet:ci /data/mosquitonet_state.json \
+            | python3 -c "import json, sys; s = json.load(sys.stdin); assert s['stats']['total_detections'] == 2 and s['next_id'] == 3, s"
+
+      - name: A DATA_DIR that does not exist yet is created and owned by the app user
+        run: |
+          docker run -d --name mn2 -p 8081:8080 -e DATA_DIR=/srv/mn/data mosquitonet:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1 && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8081/health | python3 -c "import json, sys; h = json.load(sys.stdin); assert h['data_dir'] == '/srv/mn/data' and h['writable'] and not h['ephemeral'], h"
+          test "$(docker exec mn2 cat /proc/1/status | awk '/^Uid:/ {print $2}')" = 10001
+          docker rm -f mn2
+
+      - name: Logs on failure
+        if: failure()
+        run: |
+          docker logs mn 2>&1 | tail -100 || true
+          docker logs mn2 2>&1 | tail -50 || true

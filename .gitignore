@@ -21,3 +21,15 @@ Thumbs.db
 
 # map-data build cache
 tools/.cache/
+
+# Node / test artefacts
+node_modules/
+test-results/
+playwright-report/
+.eval-cache/
+tools/eval/results/quick-test.json
+
+# Python test artefacts
+.coverage
+.pytest_cache/
+htmlcov/

@@ -4,11 +4,21 @@ name: Deploy to GitHub Pages
 # permanent address — https://uriiger-sketch.github.io/mosquito/ — which never
 # changes between deployments. (One-time setup: repo Settings → Pages → Build and
 # deployment → Source → "GitHub Actions".)
+#
+# Gated: the site is published only after the full CI suite (ci.yml) passes —
+# JS unit tests + detector benchmark, server tests, and the browser end-to-end
+# suite. The e2e gate matters doubly here: the service worker caches what we
+# ship on users' devices, so a broken build would outlive its own rollback.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_e2e:
+        description: 'Emergency only: publish without waiting for the browser end-to-end suite'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,7 +31,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read                    # the tests need no write access
+    with:
+      skip_e2e: ${{ inputs.skip_e2e == true }}
+      skip_docker: true                 # backend image doesn't affect the static site
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -30,14 +50,47 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Publish ONLY the static site. This is a DENYLIST on purpose: new static
+      # folders (js/, vendor/, assets/, …) ship automatically, while server
+      # code, tests, tooling, CI and docs never do.
+      - name: Build _site (repo minus non-site paths)
+        run: |
+          set -euo pipefail
+          mkdir _site
+          tar --exclude=./_site --exclude=./.git -cf - . | tar -xf - -C _site
+          cd _site
+          # top-level, non-site paths
+          rm -rf .github .claude tests tools docs \
+                 federated_server.py requirements*.txt Dockerfile Procfile runtime.txt \
+                 netlify.toml package.json package-lock.json pyproject.toml pytest.ini \
+                 .pytest_cache htmlcov .coverage .venv
+          # anywhere in the tree
+          find . \( -name '.git*' -o -name node_modules -o -name __pycache__ -o -name '.env*' \) \
+               -prune -exec rm -rf {} +
+          find . -type f -name '*.md' -delete
+
+          # Fail loudly rather than publish something broken or private.
+          test -f index.html || { echo "::error::index.html missing from _site"; exit 1; }
+          # Stamp the app-code URLs with this commit so a new index.html can never
+          # run against a cached copy of the previous js/*.js (version skew).
+          sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${GITHUB_SHA::12}"'"#g' index.html
+          grep -q "js/detector.js?v=${GITHUB_SHA::12}\"" index.html || { echo "::error::app-code version stamp failed"; exit 1; }
+          for p in federated_server.py Dockerfile Procfile requirements.txt package.json tests tools .github; do
+            if [ -e "$p" ]; then echo "::error::$p leaked into _site"; exit 1; fi
+          done
+          leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' \) -print)
+          if [ -n "$leaked" ]; then echo "::error::non-site files in _site:"; echo "$leaked"; exit 1; fi
+
+          echo "Publishing $(find . -type f | wc -l) files, $(du -sh . | cut -f1):"
+          find . -type f | sort
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          # Publish the repo root — index.html plus the icon and PWA assets.
-          path: '.'
+          path: _site
 
       - name: Deploy
         id: deployment
