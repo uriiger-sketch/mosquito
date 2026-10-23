@@ -92,6 +92,7 @@ const MN_DSP = {
                           // machine in minutes, a mosquito visit barely at all)
   NOTCH_TAU_S: 2.3,       // fast absorption of lines identified as machines
   CAL_S: 1.86,            // initial noise-floor learning before any decision
+  BLANK_NORM: 2,          // mean local normaliser above which a frame is blanked (dev: traffic FA −56 %)
   SUB_VETO: 5,            // whitened level that marks a sub-harmonic as present
   MAX_TRACKS: 4,
   TRACK_MISS_S: 0.4,      // a track survives this long without a supporting peak
@@ -114,7 +115,7 @@ const MN_DSP = {
 
 // Sensitivity levels 1 (most sensitive) … 5 (strictest).
 const MN_LEVELS = [
-  { VOTE_S: 1.5, VOTE_ON: 0.6, Z_MOD: 2.0 },
+  { VOTE_S: 1.2, VOTE_ON: 0.55, Z_MOD: 1.5 },
   { VOTE_S: 1.5, VOTE_ON: 0.6, Z_MOD: 2.0 },
   { VOTE_S: 2.0, VOTE_ON: 0.7, Z_MOD: 2.0 },
   { VOTE_S: 2.5, VOTE_ON: 0.75, Z_MOD: 3.0 },
@@ -345,7 +346,20 @@ class FarFieldTracker {
       Z[k] = zb[b0] * (1 - fr) + zb[b1] * fr;
       W[k] /= Z[k];
     }
+    // Extreme broadband frames (median whitened power over 260-2700 Hz above
+    // BLANK_NORM × its noise value: bangs, a passing vehicle's tyre roar) carry
+    // no usable tonal evidence: let the track statistics decay instead.
     this.blanked = false;
+    if (this.cfg.BLANK_NORM > 0) {
+      let m = 0; for (let b = 0; b < nBlk; b++) m += zb[b];
+      if (m / nBlk > this.cfg.BLANK_NORM) {
+        for (let k = kLo; k <= kHi; k++) S[k] *= lam;
+        this.blanked = true;
+        for (const t of this.tracks) { t.miss++; t.hist.push(null); if (t.hist.length > this.histLen) t.hist.shift(); }
+        this._prune();
+        return { blanked: true, tracks: this.tracks };
+      }
+    }
 
     // ── 3. harmonic sum + sub-harmonic veto + Viterbi/CUSUM update ────
     const V = this.cfg.SUB_VETO, WH = this.WH, bias = this.BIAS;

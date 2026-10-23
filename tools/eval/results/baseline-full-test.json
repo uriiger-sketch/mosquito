@@ -4,12 +4,12 @@
   "split": "test",
   "root": "/tmp/claude-0/-home-user-mosquito/6dc222ec-282d-51fe-abc4-83df6b445fde/scratchpad/baseline",
   "commit": "e46de8d",
-  "date": "2026-10-22T21:14:21.141Z",
+  "date": "2026-10-23T11:40:21.499Z",
   "node": "v22.22.0",
   "jobs": 3417,
   "sampleRate": 44100,
   "fftSize": 8192,
-  "wallSeconds": 2845.5
+  "wallSeconds": 0.1
  },
  "detection": {
   "perSpecies": {
@@ -4632,50 +4632,13 @@
     0.888
    ],
    "retainedOfRef": 1,
+   "anyLock": 15,
+   "otherLockFrames": 0,
    "genusCorrect": 0.667,
    "latencyMedian": 2.276,
    "preOnsetFalseFrames": 0
   },
   "fan_desk": {
-   "n": 20,
-   "k": 14,
-   "p": 0.7,
-   "ci": [
-    0.481,
-    0.855
-   ],
-   "retainedOfRef": 0.867,
-   "genusCorrect": 0.571,
-   "latencyMedian": 2.369,
-   "preOnsetFalseFrames": 0
-  },
-  "fan_small": {
-   "n": 20,
-   "k": 17,
-   "p": 0.85,
-   "ci": [
-    0.64,
-    0.948
-   ],
-   "retainedOfRef": 0.933,
-   "genusCorrect": 0.588,
-   "latencyMedian": 2.554,
-   "preOnsetFalseFrames": 11
-  },
-  "hum_ac": {
-   "n": 20,
-   "k": 11,
-   "p": 0.55,
-   "ci": [
-    0.342,
-    0.742
-   ],
-   "retainedOfRef": 0.733,
-   "genusCorrect": 0.545,
-   "latencyMedian": 2.369,
-   "preOnsetFalseFrames": 0
-  },
-  "hum_fridge": {
    "n": 20,
    "k": 13,
    "p": 0.65,
@@ -4684,21 +4647,70 @@
     0.819
    ],
    "retainedOfRef": 0.8,
-   "genusCorrect": 0.615,
+   "anyLock": 14,
+   "otherLockFrames": 37,
+   "genusCorrect": 0.571,
    "latencyMedian": 2.369,
+   "preOnsetFalseFrames": 0
+  },
+  "fan_small": {
+   "n": 20,
+   "k": 12,
+   "p": 0.6,
+   "ci": [
+    0.387,
+    0.781
+   ],
+   "retainedOfRef": 0.8,
+   "anyLock": 17,
+   "otherLockFrames": 180,
+   "genusCorrect": 0.588,
+   "latencyMedian": 2.322,
+   "preOnsetFalseFrames": 11
+  },
+  "hum_ac": {
+   "n": 20,
+   "k": 10,
+   "p": 0.5,
+   "ci": [
+    0.299,
+    0.701
+   ],
+   "retainedOfRef": 0.667,
+   "anyLock": 11,
+   "otherLockFrames": 16,
+   "genusCorrect": 0.545,
+   "latencyMedian": 2.322,
+   "preOnsetFalseFrames": 0
+  },
+  "hum_fridge": {
+   "n": 20,
+   "k": 10,
+   "p": 0.5,
+   "ci": [
+    0.299,
+    0.701
+   ],
+   "retainedOfRef": 0.667,
+   "anyLock": 13,
+   "otherLockFrames": 125,
+   "genusCorrect": 0.615,
+   "latencyMedian": 2.322,
    "preOnsetFalseFrames": 49
   },
   "tv": {
    "n": 20,
-   "k": 8,
-   "p": 0.4,
+   "k": 3,
+   "p": 0.15,
    "ci": [
-    0.219,
-    0.613
+    0.052,
+    0.36
    ],
-   "retainedOfRef": 0.4,
+   "retainedOfRef": 0.2,
+   "anyLock": 8,
+   "otherLockFrames": 56,
    "genusCorrect": 0.5,
-   "latencyMedian": 1.997,
+   "latencyMedian": 5.619,
    "preOnsetFalseFrames": 52
   },
   "speech_female": {
@@ -4710,6 +4722,8 @@
     0.301
    ],
    "retainedOfRef": 0.133,
+   "anyLock": 2,
+   "otherLockFrames": 0,
    "genusCorrect": 1,
    "latencyMedian": 5.806,
    "preOnsetFalseFrames": 0
@@ -4723,34 +4737,40 @@
     0.236
    ],
    "retainedOfRef": 0.067,
+   "anyLock": 1,
+   "otherLockFrames": 0,
    "genusCorrect": 1,
    "latencyMedian": 9.427,
    "preOnsetFalseFrames": 0
   },
   "music_pop": {
    "n": 20,
-   "k": 7,
-   "p": 0.35,
+   "k": 4,
+   "p": 0.2,
    "ci": [
-    0.181,
-    0.567
+    0.081,
+    0.416
    ],
-   "retainedOfRef": 0.333,
+   "retainedOfRef": 0.267,
+   "anyLock": 7,
+   "otherLockFrames": 12,
    "genusCorrect": 0.429,
-   "latencyMedian": 3.297,
+   "latencyMedian": 4.83,
    "preOnsetFalseFrames": 75
   },
   "traffic": {
    "n": 20,
-   "k": 14,
-   "p": 0.7,
+   "k": 10,
+   "p": 0.5,
    "ci": [
-    0.481,
-    0.855
+    0.299,
+    0.701
    ],
-   "retainedOfRef": 0.8,
+   "retainedOfRef": 0.6,
+   "anyLock": 14,
+   "otherLockFrames": 20,
    "genusCorrect": 0.571,
-   "latencyMedian": 3.715,
+   "latencyMedian": 3.39,
    "preOnsetFalseFrames": 53
   },
   "rain": {
@@ -4762,19 +4782,23 @@
     0.781
    ],
    "retainedOfRef": 0.733,
+   "anyLock": 12,
+   "otherLockFrames": 0,
    "genusCorrect": 0.833,
    "latencyMedian": 2.601,
    "preOnsetFalseFrames": 0
   },
   "whine_electrical": {
    "n": 20,
-   "k": 16,
-   "p": 0.8,
+   "k": 15,
+   "p": 0.75,
    "ci": [
-    0.584,
-    0.919
+    0.531,
+    0.888
    ],
    "retainedOfRef": 1,
+   "anyLock": 16,
+   "otherLockFrames": 113,
    "genusCorrect": 0.625,
    "latencyMedian": 2.276,
    "preOnsetFalseFrames": 132
