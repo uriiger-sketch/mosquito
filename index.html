@@ -1480,7 +1480,7 @@ legend { padding: 0; }
             <div class="acc-body">
               <ul>
                 <li><strong>No audio is stored or transmitted.</strong> Microphone data is analysed in real time and immediately discarded.</li>
-                <li><strong>What does leave the device:</strong> confirmed detections (species, genus, confidence, wingbeat frequency, signal strength, and a location randomly shifted by up to ~2.8 km), and differentially private model weights for federated learning.</li>
+                <li><strong>What does leave the device:</strong> confirmed detections (species, genus, confidence, wingbeat frequency, signal strength, and a location moved by a fixed secret offset of up to ~1.5 km that is unique to your device — so even many finds from home never average back to your home; the server shifts it again before anything is published), and differentially private model weights for federated learning.</li>
                 <li><strong>Your history stays here.</strong> The History tab is stored only in this browser; export or clear it at any time.</li>
                 <li><strong>Differential privacy:</strong> Gaussian mechanism with ε = 1.0, δ = 10<sup>−5</sup>; gradients are clipped to an L2 norm of 1.0 before noise is added.</li>
                 <li><strong>Anonymous device ID:</strong> a random 128-bit value created on your device and never linked to your identity. The server stores only its SHA-256 hash.</li>
