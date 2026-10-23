@@ -4545,8 +4545,10 @@ class App {
       : (Number.isFinite(pSp) ? `species ${fmtPct(pSp)}` : 'that it is a mosquito'));
     $('#det-f0').innerHTML = Number.isFinite(f0) ? `${Math.round(f0)}<small>Hz</small>` : '—';
     setText($('#det-f0-sub'), sp ? `typ. ${sp.freqRange[0]}–${sp.freqRange[1]}` : 'measured');
-    setText($('#det-range'), det.range === 'far' ? 'Far' : 'Near');
-    setText($('#det-range-sub'), det.range === 'far' ? 'long-range tracker' : 'close to phone');
+    // mode 'burst': accumulated from repeated short passes (real mosquitoes are
+    // usually audible only in sub-second episodes), not one continuous track.
+    setText($('#det-range'), det.mode === 'burst' ? 'Passes' : det.range === 'far' ? 'Far' : 'Near');
+    setText($('#det-range-sub'), det.mode === 'burst' ? 'repeated short passes' : det.range === 'far' ? 'long-range tracker' : 'close to phone');
 
     // Tone strip: highlight the species' band, mark the measured f0
     const altIds = new Set(post.filter(p => p.p >= 0.08).map(p => p.id));

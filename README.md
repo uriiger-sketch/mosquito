@@ -53,13 +53,23 @@ tables and limitations: [`docs/EVALUATION.md`](docs/EVALUATION.md)).
 | Reported frequency | catalogue value | **measured f0** |
 | `analyze()` cost (mean, Node) | 5.6 ms | **2.5 ms** |
 
-**Read these numbers with their limitation.** Every figure comes from a
-synthetic, physically parameterised corpus; real recordings (HumBugDB, Abuzz)
-were not available to the build. They are an upper bound until the detector is
-re-measured on real phone recordings — see *Validation on real data* in the
-evaluation document. Known weak spots: hummed notes, pop-music pads, AC units,
-traffic and small fans still produce false alarms; non-biting midges and male
-mosquitoes are detected as mosquitoes; loud TV or speech masks a mosquito.
+**On real recordings** ([`docs/REAL_DATA.md`](docs/REAL_DATA.md); HumBug/MozzBNN
+phone recordings from CDC cultures, Tanzania and the DRC, plus the ESC-50
+everyday-sound benchmark as a held-out test):
+
+- Everyday sounds (ESC-50, 49 classes, never used for tuning): **1.84 false
+  alarms/h** at the default sensitivity, versus 7.35/h for the previous engine.
+- Real mosquito flight is mostly audible in **sub-second bursts**; the previous
+  engine detected none of 53 min of CDC culture recordings. A burst-accumulation
+  path trained on the real recordings (learned plausibility model, out-of-fold
+  AUC 0.78) gives sensitivities 1–2 **2–3× more detections in real field
+  recordings**; brief culture-cup bursts remain largely missed.
+- The synthetic figures above are an upper bound; real-world performance must be
+  re-measured on phone recordings of free-flying mosquitoes in bedrooms.
+- Known weak spots: hummed notes, pop-music pads, AC units, traffic and small
+  fans still produce false alarms (church bells and snoring occasionally, in
+  ESC-50); non-biting midges and male mosquitoes are detected as mosquitoes;
+  loud TV or speech masks a mosquito.
 
 ## Privacy
 

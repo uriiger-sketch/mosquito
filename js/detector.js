@@ -26,6 +26,8 @@
  *    voteFraction:0…1,
  *    range:       'near' | 'far',
  *    posterior:   [{ id, p }]  species probabilities, sorted desc, Σp ≤ 1,
+ *    mode:        'burst' when accumulated from repeated short passes (see
+ *                 _burstDetection; confidence then NOT calibrated), else absent,
  *    // extensions (additive):
  *    genusPosterior: [{ genus, p }] sorted desc,
  *    taxonLevel:  'species' | 'genus'. 'species' when the top species posterior
@@ -114,12 +116,19 @@ const MN_DSP = {
 };
 
 // Sensitivity levels 1 (most sensitive) … 5 (strictest).
+// BURST_*: the burst-accumulation path (see _burstDetection), operating points
+// measured on REAL recordings (tools/real; docs/REAL_DATA.md), held-out test
+// split. At the default level the strict intermittency rule (0.3 s of silence
+// at the pitch before a burst) keeps synthetic held notes/tones out and leaves
+// false alarms unchanged; levels 1–2 relax it to 0.1 s, which doubled
+// detections in real field recordings (29.8 → 64.6 events/h) for +1.8 false
+// alarms/h on real street/construction/speech audio.
 const MN_LEVELS = [
-  { VOTE_S: 1.2, VOTE_ON: 0.55, Z_MOD: 1.5 },
-  { VOTE_S: 1.5, VOTE_ON: 0.6, Z_MOD: 2.0 },
-  { VOTE_S: 2.0, VOTE_ON: 0.7, Z_MOD: 2.0 },
-  { VOTE_S: 2.5, VOTE_ON: 0.75, Z_MOD: 3.0 },
-  { VOTE_S: 3.0, VOTE_ON: 0.8, Z_MOD: 4.0 },
+  { VOTE_S: 1.2, VOTE_ON: 0.55, Z_MOD: 1.5, BURST_THETA: 0.6, BURST_K: 3, BURST_W_S: 30, BURST_TOL: 0.06, BURST_GAP_S: 0.1 },
+  { VOTE_S: 1.5, VOTE_ON: 0.6,  Z_MOD: 2.0, BURST_THETA: 0.6, BURST_K: 3, BURST_W_S: 15, BURST_TOL: 0.03, BURST_GAP_S: 0.1 },
+  { VOTE_S: 2.0, VOTE_ON: 0.7,  Z_MOD: 2.0, BURST_THETA: 0.7, BURST_K: 4, BURST_W_S: 30, BURST_TOL: 0.06, BURST_GAP_S: 0.3 },
+  { VOTE_S: 2.5, VOTE_ON: 0.75, Z_MOD: 3.0, BURST_THETA: 0.8, BURST_K: 4, BURST_W_S: 30, BURST_TOL: 0.06, BURST_GAP_S: 0.3 },
+  { VOTE_S: 3.0, VOTE_ON: 0.8,  Z_MOD: 4.0, BURST_K: 0 },      // strictest: lock path only
 ];
 
 // Plausibility thresholds (see MosquitoClassifier._plausibility; measured on
@@ -139,6 +148,24 @@ const MN_PL = {
   // margin weight is constrained ≥ 0 so more evidence never lowers P(real)).
   CONF: [3.054, 0.374, 0, 0, -2.603, 0],
   Z_MOD: 2.0,                // modulation significance needed (pitch OR level) before voting
+  STEADY_MIN_SNR: 8,         // in-bin SNR a frame needs to enter the modulation/steadiness test
+  STEADY_MIN_N: 8,           // … and how many such frames the test needs
+  // ── Burst accumulation (real recordings: flight is audible in short bursts) ──
+  // Real phone recordings of mosquitoes (HumBug/MozzBNN: CDC cultures, Ifakara,
+  // DRC) show audible flight in EPISODES of median 0.1–0.4 s (90th pct ≈ 0.4–1.5 s),
+  // far shorter than the lock path's ≥ 1.1 s track + 2 s vote. A short track
+  // that the learned plausibility model scores ≥ BURST_THETA is a BURST; K
+  // bursts within BURST_W_S whose f0 agree within ±BURST_TOL make a detection
+  // (a mosquito makes repeated passes at nearly the same wingbeat; tonal
+  // transients of streets, voices and machines come at scattered pitches).
+  BURST_MIN_AGE_S: 0.35, BURST_MIN_SNR: 4, BURST_MIN_N: 5, BURST_HOLD_S: 3,
+  BURST_GAP_S: 0.3,          // silence at the pitch required before a burst (0 = off)
+  BURST_THETA: 0.7, BURST_K: 4, BURST_W_S: 30, BURST_TOL: 0.06,
+  // Logistic flight-plausibility model on MosquitoClassifier.plausVector(feat),
+  // fitted by tools/real/train.js on the DEV split of real recordings (HumBug
+  // mosquito tracks vs. real street/construction/speech tracks and synthetic
+  // adversaries); out-of-fold track AUC 0.78 (0.80 vs real backgrounds).
+  PLAUS_MODEL: {"mu": [0.429614, 1.876362, 0.006685, 0.027241, 1.224724, 0.105342, -0.623028, 0.341956, 1.213729, 0.630242, -0.700905, 1.195243, 0.028581], "sd": [0.286537, 0.683323, 0.031958, 0.057512, 2.063817, 0.188532, 1.244465, 0.474365, 1.865457, 1.172836, 0.978731, 1.903854, 0.507013], "w": [0.063466, 0.964352, 0.177164, 0.063274, -0.16207, -0.806463, 0.191022, -0.744899, -0.134505, 0.652881, 0.481277, 0.165588, -0.33902, 0.419324]},
   STEADY_PITCH: 6e-4,        // detrended relative pitch s.d. below which a tone is "exact"
   STEADY_LEVEL_MACHINE: 0.5, // dB: … and level this steady → machine / electronic tone
   DECAY_DB_S: -5,            // exact pitch + steady decay → struck/plucked resonator
@@ -567,6 +594,8 @@ class MosquitoClassifier {
 
     this.model = new SpeciesModel();
     this.cfg = Object.assign({}, MN_DSP, MN_PL);      // per-instance copy (tools may _tune it)
+    this._burstList = []; this._burstLock = null; this._burstSeq = 0;   // burst-accumulation state
+    this._toneLog = [];
     this.ff = null; this._cfgKey = '';
     this._configure(null);
     this.setSensitivity(3);
@@ -589,6 +618,7 @@ class MosquitoClassifier {
     const fr = (s) => Math.max(1, Math.round(s / this.hopSec));
     this.WIN = fr(this.cfg.WIN_S);
     this.MIN_TRACK = fr(this.cfg.MIN_TRACK_S);
+    this.BURST_MIN_AGE = fr(this.cfg.BURST_MIN_AGE_S);
     this.VOTE_FRAMES = fr(this.cfg.VOTE_S);
     if (this.level) this.ff.setSensitivity(this.level);
   }
@@ -611,6 +641,7 @@ class MosquitoClassifier {
   beginCalibration() { this._fastCalib = true; this._calFrames = 0; if (this.ff) { this.ff.forceCal = true; this.ff.calCount = 0; } }
   endCalibration() {
     this._fastCalib = false;
+    this._burstList = []; this._burstLock = null; this._toneLog = [];
     if (this.ff) { this.ff.forceCal = false; this.ff.tracks = []; }
     this.resetVotes();
   }
@@ -633,6 +664,34 @@ class MosquitoClassifier {
       // Vote windows may have shrunk: keep each track's most recent votes.
       for (const t of this.ff.tracks) if (t.votes && t.votes.length > this.VOTE_FRAMES) t.votes.splice(0, t.votes.length - this.VOTE_FRAMES);
     }
+  }
+
+  // Feature vector of the learned flight-plausibility model (tools/real/train.js
+  // fits it on real recordings; the SAME function is used for training and in
+  // the app, so the two can never drift apart). Shape and dynamics only — no f0
+  // and no absolute level, so the model cannot learn "this lab's mosquitoes sit
+  // at 700 Hz" or "loud means mosquito".
+  static plausVector(f) {
+    // Missing values (a track with no live frame in the window omits them) take a
+    // neutral default INSIDE the clamp, so no log() ever sees 0.
+    const cl = (v, a, b, d = 0) => Math.max(a, Math.min(b, Number.isFinite(v) ? v : d));
+    const sl = (z) => (Number.isFinite(z) ? Math.sign(z) * Math.log1p(Math.abs(z)) : 0);
+    const st = Number.isFinite(f.zf) ? 1 : 0;
+    return [
+      cl(f.pres, 0, 1),                                   // continuity of the fundamental
+      Math.log1p(cl(f.dfRate, 0, 2000) / 10),             // pitch rate
+      cl(f.subFrac, 0, 1),                                // sub-harmonic evidence
+      cl(f.combFrac, 0, 1),                               // comb of a lower source
+      Math.log(cl(f.dom, 0.01, 1000, 1)),                 // H1 dominance
+      cl(f.spread, 0, 2),                                 // line broadening / vibrato
+      Math.log10(cl(f.hRatio, 0, 100) + 1e-4),            // harmonic richness
+      st,                                                 // modulation measurable?
+      st ? cl(sl(f.zf), -3, 8) : 0,                       // pitch modulation significance
+      st ? cl(sl(f.zl), -3, 8) : 0,                       // level modulation significance
+      st ? Math.log10(cl(f.ubf, 0, 1) + 1e-5) : 0,        // pitch steadiness bound
+      st ? cl(f.ubl, 0, 12) : 0,                          // level steadiness bound
+      st ? cl(f.slope, -60, 60) / 10 : 0,                 // level trend (decay = struck note)
+    ];
   }
 
   // Human-readable text for a raw gate string (raw text stays in .debug).
@@ -675,7 +734,7 @@ class MosquitoClassifier {
   //                H2/H3 at all is a whistle / phone beep, not a wingbeat
   //  not machine — a flying insect's level and harmonic balance fluctuate
   //                as it moves/turns; a fan or transformer line is steady
-  _plausibility(t) {
+  _plausibility(t, o = {}) {
     const H = t.hist, n = H.length, w = Math.min(n, this.WIN);
     const recent = [];
     for (let i = n - w; i < n; i++) recent.push(H[i]);
@@ -722,14 +781,18 @@ class MosquitoClassifier {
     // estimator variance is subtracted:
     //   pitch  σ_f ≈ 0.47·binHz/√SNR  (measured, parabolic interpolation)
     //   level  σ_L ≈ 4.34·√(2/SNR) dB
-    const st = this._steadiness(t.hist);
+    // o.minSnr/o.minN: steadiness gating for the burst path's model features;
+    // o.dry: evaluate only — no sticky machine flag, no notch (side effects).
+    const st = this._steadiness(t.hist, o.minSnr, o.minN);
     if (st) Object.assign(f, st);
     if (t.machine) fails.push('machine:sticky');
     else if (st) {
       const steadyPitch = st.ubf < P.STEADY_PITCH;
       if (steadyPitch && st.ubl < P.STEADY_LEVEL_MACHINE) {
-        t.machine = true;                         // confidently steady: a machine for good
-        this.ff.notch(t.k, 10);
+        if (!o.dry) {
+          t.machine = true;                       // confidently steady: a machine for good
+          this.ff.notch(t.k, 10);
+        }
         fails.push(`machine:${(st.ubf * 1e4).toFixed(1)}bp,${st.ubl.toFixed(2)}dB`);
       }
       if (steadyPitch && st.slope < P.DECAY_DB_S) fails.push(`machine-decay:${st.slope.toFixed(0)}dB/s`);
@@ -748,18 +811,18 @@ class MosquitoClassifier {
   //   var(f)  ≈ binHz²·(0.5/snr + 3/snr²)        var(level) ≈ 62/(snr + 3) dB²
   // z  = (Σr² − E₀[Σr²]) / √(2Σσ⁴): significance of modulation (H0: steady)
   // ub = one-sided upper bound (≈97.5 %) on the modulation s.d.
-  _steadiness(hist) {
+  _steadiness(hist, minSnr = this.cfg.STEADY_MIN_SNR, minN = this.cfg.STEADY_MIN_N) {
     const xs = [], lf = [], lv = [], vf = [], vl = [];
     for (let i = 0; i < hist.length; i++) {
       const h = hist[i];
       if (!h) continue;
       const snr = h.s1 / (h.n1 + 1e-30);
-      if (snr < 8) continue;                       // below ≈ 8 the f0 estimate has outliers (not Gaussian)
+      if (snr < minSnr) continue;                  // below ≈ 8 the f0 estimate has outliers (not Gaussian)
       xs.push(i); lf.push(Math.log(h.f)); lv.push(h.lv);
       vf.push((this.binHz / h.f) ** 2 * (0.5 / snr + 3 / (snr * snr))); vl.push(62 / (snr + 3));
     }
     const n = xs.length;
-    if (n < 8) return null;
+    if (n < minN) return null;
     const one = (ys, vs) => {
       let sx = 0, sy = 0, sxx = 0, sxy = 0;
       for (let i = 0; i < n; i++) { sx += xs[i]; sy += ys[i]; sxx += xs[i] * xs[i]; sxy += xs[i] * ys[i]; }
@@ -826,6 +889,27 @@ class MosquitoClassifier {
         post = this.model.posterior(f0, ctx);
         if (!post || !post.post.length || post.zMin > 3.5) res = { ok: false, reason: `range:${f0.toFixed(0)}Hz`, feat: res.feat };
       }
+      // Burst path: score each sufficiently strong short track once.
+      if (this.cfg.BURST_K > 0 && !calibrating && !gated && !t.burst && res.reason !== 'harmonic' &&
+          t.age >= this.BURST_MIN_AGE && t.T >= this.ff.TAU) {
+        const pb = this._plausibility(t, { minSnr: this.cfg.BURST_MIN_SNR, minN: this.cfg.BURST_MIN_N, dry: true });
+        const h = t.hist[t.hist.length - 1], fNow = h ? h.f : f0;
+        // Intermittency (decided once, when the track first becomes eligible): a
+        // burst is a NEW episode only if no other strong track held this pitch in
+        // the 0.3 s before this track was born. A continuous tone that the
+        // tracker fragments into successive tracks is not a series of passes.
+        if (t.burstCont === undefined) {
+          const birth = this.ff.frames - t.age, gap = Math.round(this.cfg.BURST_GAP_S / this.hopSec);
+          t.burstCont = gap > 0 && this._toneLog.some(e => e.fr >= birth - gap && e.fr <= birth &&
+            e.items.some(q => q.id !== t.id && Math.abs(q.f - fNow) <= this.cfg.BURST_TOL * fNow));
+        }
+        if (t.burstCont) t.burst = true;
+        else if (!(pb.fails || []).some(q => /^(sub|harmonic-comb|machine|pure)/.test(q))) {
+          // Scored on every frame until it qualifies (evidence grows as it lives).
+          const pr = this._plausP(pb.feat);
+          if (pr >= this.cfg.BURST_THETA) { t.burst = true; this._burstList.push({ fr: this.ff.frames, f: fNow, p: pr }); }
+        }
+      }
       t.votes.push(res.ok ? 1 : 0);
       if (t.votes.length > V) t.votes.shift();
       const vf = t.votes.reduce((s, x) => s + x, 0) / V;
@@ -847,6 +931,18 @@ class MosquitoClassifier {
         else t.locked = false;
       }
       if (!best || vf > best.voteFraction || (vf === best.voteFraction && t.T > best.T)) best = t;
+    }
+
+    if (this.cfg.BURST_K > 0) {
+      // Pitch occupancy of strong tracks over the last ~1 s (intermittency test).
+      this._toneLog.push({ fr: this.ff.frames, items: tracks.filter(q => q.T >= 0.5 * this.ff.TAU)
+        .map(q => { const h = q.hist[q.hist.length - 1]; return { id: q.id, f: h ? h.f : q.k * this.binHz }; }) });
+      const keep = Math.round(1 / this.hopSec);
+      if (this._toneLog.length > keep) this._toneLog.splice(0, this._toneLog.length - keep);
+      if (!calibrating) {
+        const bd = this._burstDetection(ctx, out);
+        if (bd) out.push(bd);
+      }
     }
 
     // Legacy per-species levels: mosquito vote level × species probability.
@@ -895,6 +991,49 @@ class MosquitoClassifier {
       genusPosterior: post.genus.filter(g => g.p >= 0.01).map(g => ({ genus: g.genus, p: g.p })),
       taxonLevel, genusP, trackId: t.id,
     };
+  }
+
+  // Learned flight-plausibility probability (PLAUS_MODEL) of a feature set.
+  _plausP(feat) {
+    const m = this.cfg.PLAUS_MODEL, x = MosquitoClassifier.plausVector(feat || {});
+    let z = m.w[0];
+    for (let j = 0; j < x.length; j++) z += m.w[j + 1] * (x[j] - m.mu[j]) / m.sd[j];
+    return 1 / (1 + Math.exp(-z));
+  }
+
+  // Burst accumulation: K bursts within W whose f0 agree within ±TOL fire a
+  // detection that is held for BURST_HOLD_S after the last agreeing burst.
+  // Not emitted when the lock path already reports the same insect.
+  _burstDetection(ctx, out) {
+    const now = this.ff.frames, W = Math.round(this.cfg.BURST_W_S / this.hopSec);
+    const L = this._burstList;
+    while (L.length && now - L[0].fr > W) L.shift();
+    if (L.length > 64) L.splice(0, L.length - 64);
+    const last = L[L.length - 1];
+    if (last && last.fr === now) {
+      const agree = L.filter(b => Math.abs(b.f - last.f) <= this.cfg.BURST_TOL * last.f);
+      if (agree.length >= this.cfg.BURST_K) {
+        const fs = agree.map(b => b.f).sort((a, b) => a - b), f0 = fs[fs.length >> 1];
+        const pMean = agree.reduce((s, b) => s + b.p, 0) / agree.length;
+        const bl = this._burstLock;
+        if (bl && Math.abs(bl.f - f0) <= 0.1 * f0 && now <= bl.until + W) Object.assign(bl, { f: f0, p: Math.max(bl.p, pMean), n: agree.length });
+        else this._burstLock = { id: `b${++this._burstSeq}`, f: f0, p: pMean, n: agree.length, first: now };
+        this._burstLock.until = now + Math.round(this.cfg.BURST_HOLD_S / this.hopSec);
+      }
+    }
+    const bl = this._burstLock;
+    if (!bl || now > bl.until) return null;
+    if (out.some(d => Math.abs(d.f0 - bl.f) <= 0.1 * bl.f)) return null;   // the lock path has it
+    const post = this.model.posterior(bl.f, ctx);
+    if (!post || !post.post.length || post.zMin > 3.5) return null;
+    // Pseudo-track for _detection(): f0 history = the cluster's f0.
+    const pseudo = { id: bl.id, hist: [], voteFraction: 1, T: this.ff.TAU, feat: {}, lockedFrames: now - bl.first, busy: 0 };
+    const d = this._detection(pseudo, bl.f, post);
+    // Burst confidence: mean model score of the agreeing bursts, discounted.
+    // NOT calibrated like the lock path's (too little labelled real data yet).
+    d.confidence = Math.max(0.01, Math.min(0.9, 0.9 * bl.p));
+    d.range = 'far'; d.mode = 'burst'; d.snr = 0; d.snrLinear = 1; d.voteFraction = Math.min(1, bl.n / this.cfg.BURST_K);
+    return d;
   }
 
   // Calibrated P(real mosquito | track evidence): logistic model on the

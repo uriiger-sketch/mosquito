@@ -89,3 +89,40 @@ test('changing sensitivity mid-session keeps the noise floor and the lock', () =
   assert.ok(dropped <= 1, `lock dropped for ${dropped} frames after setSensitivity`);
   assert.ok(after.some(f => f.dets.some(d => d.trackId === trackBefore)), 'the same track did not survive');
 });
+
+// ── Burst accumulation (real recordings: flight audible in short episodes) ──
+// Intermittent passes: `n` bursts of `dur` s every `every` s at f0 (±1 %).
+function passes(seconds, f0, { dur = 0.7, every = 3, amp = 0.02, jitter = 0.01, seed = 5 } = {}) {
+  const R = H.rng(seed), len = Math.round(seconds * H.SR), x = new Float32Array(len);
+  for (let t0 = 3; t0 + dur < seconds; t0 += every) {
+    const f = f0 * (1 + jitter * (2 * R.u() - 1)), seg = H.mosquitoTone(Math.round(dur * H.SR), f, amp, R);
+    const s0 = Math.round(t0 * H.SR);
+    for (let i = 0; i < seg.length; i++) x[s0 + i] += seg[i] * Math.sin(Math.PI * i / seg.length);   // fade in/out
+  }
+  return H.mix(H.whiteNoise(len, 0.003, H.rng(seed + 1)), x);
+}
+
+test('burst path: repeated short passes at one wingbeat are detected (sensitivity 2)', () => {
+  const frames = drive(passes(40, 600), { level: 2 });
+  const burst = frames.flatMap(f => f.dets).filter(d => d.mode === 'burst');
+  assert.ok(burst.length > 0, 'repeated 0.7 s passes at 600 Hz never produced a burst detection');
+  assert.ok(Math.abs(burst[0].f0 - 600) < 15, `burst f0 ${burst[0].f0}`);
+  assert.equal(burst[0].genus, burst[0].species.genus);
+  assert.ok(burst[0].confidence <= 0.9, 'burst confidence must stay below the lock path ceiling');
+});
+
+test('burst path: short tones at scattered pitches are not accumulated', () => {
+  const R = H.rng(31), len = 40 * H.SR, x = new Float32Array(len);
+  for (let t0 = 3; t0 + 0.7 < 40; t0 += 3) {                     // same timing, random pitch 350–800 Hz
+    const seg = H.mosquitoTone(Math.round(0.7 * H.SR), 350 + 450 * R.u(), 0.02, R);
+    const s0 = Math.round(t0 * H.SR);
+    for (let i = 0; i < seg.length; i++) x[s0 + i] += seg[i] * Math.sin(Math.PI * i / seg.length);
+  }
+  const frames = drive(H.mix(H.whiteNoise(len, 0.003, H.rng(32)), x), { level: 2 });
+  assert.equal(frames.flatMap(f => f.dets).filter(d => d.mode === 'burst').length, 0);
+});
+
+test('burst path is off at the strictest sensitivity', () => {
+  const frames = drive(passes(40, 600), { level: 5 });
+  assert.equal(frames.flatMap(f => f.dets).filter(d => d.mode === 'burst').length, 0);
+});

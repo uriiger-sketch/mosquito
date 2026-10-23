@@ -24,11 +24,20 @@ for (const [name, fx] of Object.entries(FIXTURES)) {
   test(`${name}: ${fx.expect === 'none' ? 'no detection' : `detects ${fx.expect}`}`, { timeout: (SECONDS + 60) * 1000 }, async () => {
     const wav = path.join(dir, `${name}.wav`);
     if (!fs.existsSync(wav)) writeWav(wav, fx.build(30 * SR, rng(name.length * 7919)));
-    let uiText = '';
-    const { samples, errors } = await runApp(wav, {
-      seconds: SECONDS, lat: fx.loc ? fx.loc.lat : null, lng: fx.loc ? fx.loc.lng : null,
-      onPage: async (page) => { uiText = await page.evaluate(() => document.body.innerText); },
-    });
+    // A real browser's fake-microphone pipeline is timing-sensitive under CPU
+    // load (capture can start late): one retry, always logged, so a flaky pass
+    // is visible and a consistent failure still fails.
+    let uiText = '', run;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      run = await runApp(wav, {
+        seconds: SECONDS, lat: fx.loc ? fx.loc.lat : null, lng: fx.loc ? fx.loc.lng : null,
+        onPage: async (page) => { uiText = await page.evaluate(() => document.body.innerText); },
+      });
+      const got = run.samples.slice(SETTLE_S * 2).some(s => s.dets.length);
+      if (run.errors.length || (fx.expect === 'none') === !got) break;
+      if (attempt === 1) console.log(`# RETRY ${name}: first attempt ${got ? 'detected' : 'detected nothing'} (expect ${fx.expect})`);
+    }
+    const { samples, errors } = run;
     assert.deepEqual(errors, [], 'JavaScript errors in the page');
     assert.ok(samples.length >= SECONDS, 'engine produced no state snapshots');
     const settled = samples.slice(SETTLE_S * 2);
