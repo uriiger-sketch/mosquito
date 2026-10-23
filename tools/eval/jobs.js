@@ -150,7 +150,7 @@ function runTrial(job, eng) {
   const confs = [];
   drive(clf, scene, {
     sr: job.sr, N: job.N, seconds: job.onset + job.bout + job.tail,
-    onFrame: (i, t, dets) => {
+    onFrame: (i, t, dets, c) => {
       const inBout = t > t1 && t <= t2;
       if (inBout) nBout++;
       if (!dets.length) return;
@@ -160,7 +160,7 @@ function runTrial(job, eng) {
       if (dets.some(d => Math.abs((d.f0 ?? d.frequency) / f0 - 1) < 0.05)) { if (matchT === null) matchT = t; }
       else otherFrames++;
       multi = Math.max(multi, new Set(dets.map(d => d.species.id)).size);
-      if (!first) { first = summarize(top); firstT = t; }
+      if (!first) { first = summarize(top, c); firstT = t; }
       last = summarize(top);
       peakConf = Math.max(peakConf, top.confidence);
       if (confs.length < 200) confs.push(+(+top.confidence).toFixed(4));
@@ -196,7 +196,7 @@ function runFA(job, eng) {
       locked++;
       if (t <= 2.25) calLocked++;
       for (const d of dets) perSpecies[d.species.id] = (perSpecies[d.species.id] || 0) + 1;
-      ev.push(t, dets);
+      ev.push(t, dets, c);
     },
   });
   return { exp: job.exp, cls: job.cls, run: job.run, level: job.level, seconds: job.minutes * 60, frames, locked, calLocked,

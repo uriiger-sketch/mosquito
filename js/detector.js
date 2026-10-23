@@ -21,14 +21,18 @@
  *    frequency:   measured fundamental f0 in Hz (alias: f0),
  *    f0:          same as frequency,
  *    snr:         dB, snrLinear: linear power ratio,
- *    confidence:  0…1 (calibrated: P(real mosquito | evidence) as well as we can),
+ *    confidence:  0…1 calibrated P(real flying mosquito | track evidence) — NOT species
+ *                 certainty (that is `posterior` / `taxonLevel`),
  *    voteFraction:0…1,
  *    range:       'near' | 'far',
  *    posterior:   [{ id, p }]  species probabilities, sorted desc, Σp ≤ 1,
  *    // extensions (additive):
  *    genusPosterior: [{ genus, p }] sorted desc,
- *    idLevel:     'species' | 'genus' | 'mosquito'  — how specific the ID is
- *                 (UI: show "Aedes sp." when 'genus', "Mosquito" when 'mosquito'),
+ *    taxonLevel:  'species' | 'genus'. 'species' when the top species posterior
+ *                 ≥ 0.6; otherwise 'genus', and then `species` is the most probable
+ *                 species WITHIN the most probable genus (species.genus === genus),
+ *                 so the UI can render "Aedes sp. — species uncertain",
+ *    genusP:      posterior probability of `genus`,
  *    trackId:     integer, stable while the same flight track stays locked,
  *  }
  *
@@ -39,6 +43,14 @@
  *    detections: Detection[] (last analyze() result),
  *    perSpecies: { [id]: { level 0…1, status: 'off'|'idle'|'building'|'locked',
  *                          reason: short human-readable text, debug: raw gate string } },
+ *    // extensions (additive):
+ *    calibration:   0…1 progress of the startup calibration (1 when not calibrating),
+ *    ambientGateDb: the hard "loud room" gate (phase 'gated') in AnalyserNode dB,
+ *    bandNoiseDb:   per-bin noise floor in 300-800 Hz (AnalyserNode dB),
+ *    noiseMarginDb: how far (dB) a typical mosquito at 30 cm would sit above the
+ *                   lock threshold in this noise (MN_DSP.REF_MOSQ_PEAK_DB),
+ *    noisy:         noiseMarginDb < 0 — "too noisy to hear a mosquito at ~30 cm"
+ *                   (may be true while phase is 'listening'),
  *  }
  *
  *  Additive API: clf.setTimeOfDay('day'|'dusk'|'night'|'none'|null)  (null = device clock)
@@ -86,9 +98,28 @@ const MN_DSP = {
   WIN_S: 2.0,             // plausibility window
   MIN_TRACK_S: 1.1,       // a track must exist this long before it may vote
   VOTE_S: 1.5,            // lock vote window
+  // "Room too noisy" reference (EngineState.noisy): a typical female mosquito's
+  // fundamental at 30 cm, as it appears in the AnalyserNode peak bin, versus
+  // the per-bin noise floor in 300-800 Hz plus the in-bin SNR the tracker needs
+  // to lock (≈ +7 dB at SNR50 in tools/eval). Assumptions (docs/EVALUATION.md):
+  // 30 dB SPL at 10 cm (audible to people at ~0.5-1 m in a quiet room) → 20.5 dB
+  // SPL at 30 cm by 1/r; phone MEMS mic −38 dBFS at 94 dB SPL; Blackman peak
+  // bin of a sinusoid of RMS a is 20·log10(a) − 10.5 dB  ⇒  ≈ −122 dB.
+  REF_MOSQ_PEAK_DB: -122,
+  LOCK_INBIN_SNR_DB: 7,
+  CAL_EXPECTED_S: 2.0,    // the app's startup calibration length (progress indicator)
   VOTE_ON: 0.6,           // fraction of the vote window that must pass to lock …
   VOTE_OFF: 0.3,          // … and below which a lock is released (hysteresis)
 };
+
+// Sensitivity levels 1 (most sensitive) … 5 (strictest).
+const MN_LEVELS = [
+  { VOTE_S: 1.5, VOTE_ON: 0.6, Z_MOD: 2.0 },
+  { VOTE_S: 1.5, VOTE_ON: 0.6, Z_MOD: 2.0 },
+  { VOTE_S: 2.0, VOTE_ON: 0.7, Z_MOD: 2.0 },
+  { VOTE_S: 2.5, VOTE_ON: 0.75, Z_MOD: 3.0 },
+  { VOTE_S: 3.0, VOTE_ON: 0.8, Z_MOD: 4.0 },
+];
 
 // Plausibility thresholds (see MosquitoClassifier._plausibility; measured on
 // the dev split of tools/eval — never on the reported test split).
@@ -100,6 +131,12 @@ const MN_PL = {
   SPREAD: 0.12,              // median line-width excess (vibrato)
   PURE_SNR: 600, PURE_RATIO: 0.003,   // loud (≥ 28 dB) yet H2+H3 ≤ −25 dB → pure tone
   COMB_FRAC: 0.2,            // fraction of frames with ≥2 comparable neighbouring lines (mosquito p99 ≈ 0.14)
+  SPECIES_P: 0.6,            // posterior needed to name a species (else genus level)
+  // Confidence logistic weights [bias, margin, snr, modulation, busyness, harmonicity],
+  // fitted on the dev split by tools/eval/fit-confidence.js --mask 1,0,0,1,0
+  // (margin + busyness; SNR/modulation/harmonicity added nothing on dev, and the
+  // margin weight is constrained ≥ 0 so more evidence never lowers P(real)).
+  CONF: [3.054, 0.374, 0, 0, -2.603, 0],
   Z_MOD: 2.0,                // modulation significance needed (pitch OR level) before voting
   STEADY_PITCH: 6e-4,        // detrended relative pitch s.d. below which a tone is "exact"
   STEADY_LEVEL_MACHINE: 0.5, // dB: … and level this steady → machine / electronic tone
@@ -176,7 +213,7 @@ class FarFieldTracker {
 
   setSensitivity(level) {
     const scale = [0.70, 0.85, 1.0, 1.3, 1.7][Math.max(0, Math.min(4, (level | 0) - 1))];
-    this.TAU = 30 * scale;
+    this.TAU = (this.cfg.TAU_BASE || 30) * scale;
   }
 
   _max3(k) { const W = this.W; return Math.max(W[k - 1], W[k], W[k + 1]); }
@@ -281,6 +318,7 @@ class FarFieldTracker {
       P[k] = p; L[k] = Number.isFinite(v) ? v : -300;
       W[k] = p / (noise[k] + 1e-30);
     }
+    if (cal) this._capFloor();
     for (const n of this.notches) n.frames--;
     if (this.notches.length) this.notches = this.notches.filter(n => n.frames > 0);
     if (cal) { this.blanked = false; return { calibrating: true, tracks: this.tracks }; }
@@ -357,6 +395,28 @@ class FarFieldTracker {
     }
     this._prune();
     return { tracks: this.tracks };
+  }
+
+  // During calibration the floor is a plain mean, so a tone that is already
+  // sounding (a mosquito buzzing at start-up, a fridge) would be learned as
+  // "noise" and become invisible. Cap each bin at 4× (6 dB) the local median
+  // floor (~210 Hz blocks, interpolated): the noise COLOUR is still learned,
+  // narrow lines are not. Steady machines kept this way are rejected by the
+  // plausibility tests and absorbed/notched later.
+  _capFloor() {
+    const { kMin, kMax, noise, BLK: B, nBlk, _zb: zb, _med: md } = this;
+    for (let b = 0; b < nBlk; b++) {
+      const k0 = kMin - 1 + b * B, k1 = Math.min(kMax + 1, k0 + B - 1);
+      let n = 0;
+      for (let k = k0; k <= k1; k++) md[n++] = noise[k];
+      zb[b] = md.subarray(0, n).sort()[n >> 1];
+    }
+    for (let k = kMin - 1; k <= kMax + 1; k++) {
+      const x = (k - (kMin - 1)) / B - 0.5, b0 = Math.max(0, Math.min(nBlk - 1, Math.floor(x)));
+      const b1 = Math.min(nBlk - 1, b0 + 1), fr = Math.max(0, Math.min(1, x - b0));
+      const cap = 4 * (zb[b0] * (1 - fr) + zb[b1] * fr);
+      if (noise[k] > cap) noise[k] = cap;
+    }
   }
 
   _update(t, pk) {
@@ -495,7 +555,7 @@ class MosquitoClassifier {
     if (this.level) this.ff.setSensitivity(this.level);
   }
   // Tools only (tools/eval): override configuration constants, then rebuild.
-  _tune(o) { Object.assign(this.cfg, o || {}); this._cfgKey = ''; this.ff = null; this._configure(this.fftSize / 2); }
+  _tune(o) { this._tuned = true; Object.assign(this.cfg, o || {}); this._cfgKey = ''; this.ff = null; this._configure(this.fftSize / 2); }
 
   // Optional: tell the engine the real analysis hop (samples) if it is not fftSize/2.
   setHop(samples) { this._hopSamples = samples > 0 ? samples : null; this._cfgKey = ''; this._configure(this.fftSize / 2); }
@@ -510,7 +570,7 @@ class MosquitoClassifier {
   setTimeOfDay(tod) { this._tod = tod === undefined ? null : tod; }
 
   // Startup calibration: learn the noise floor fast; no detections until done.
-  beginCalibration() { this._fastCalib = true; if (this.ff) { this.ff.forceCal = true; this.ff.calCount = 0; } }
+  beginCalibration() { this._fastCalib = true; this._calFrames = 0; if (this.ff) { this.ff.forceCal = true; this.ff.calCount = 0; } }
   endCalibration() {
     this._fastCalib = false;
     if (this.ff) { this.ff.forceCal = false; this.ff.tracks = []; }
@@ -521,8 +581,15 @@ class MosquitoClassifier {
     if (this.ff) for (const t of this.ff.tracks) { t.votes = []; t.locked = false; }
   }
 
+  // Sensitivity = operating point on the detection/false-alarm trade-off.
+  // Each level scales the CUSUM threshold τ, the vote window/quorum and the
+  // flight-modulation evidence required (MN_LEVELS; measured operating points
+  // in docs/EVALUATION.md).
   setSensitivity(level) {
     this.level = Math.max(1, Math.min(5, Math.round(level) || 3));
+    if (!this._tuned) Object.assign(this.cfg, MN_LEVELS[this.level - 1]);
+    this._cfgKey = '';
+    if (this.fftSize) this._configure(this.fftSize / 2);
     if (this.ff) this.ff.setSensitivity(this.level);
   }
 
@@ -679,6 +746,10 @@ class MosquitoClassifier {
     this.ambientRMS     = this.computeAmbientRMS(rawFreqData);
 
     const fr = this.ff.process(rawFreqData);
+    if (!this._busy) this._busy = new Map();
+    const busyHorizon = this.ff.frames - Math.round(30 / this.hopSec);
+    for (const [id, f] of this._busy) if (f < busyHorizon) this._busy.delete(id);
+    if (this._fastCalib) this._calFrames = (this._calFrames || 0) + 1;
     const gated = this.ambientRMS > this.AMBIENT_GATE_DB;
     const calibrating = this._fastCalib || !fr || fr.calibrating;
     const ctx = { disabled: this._disabled, lat: this._lat, lng: this._lng, tod: this._timeOfDay() };
@@ -717,11 +788,15 @@ class MosquitoClassifier {
       if (t.votes.length > V) t.votes.shift();
       const vf = t.votes.reduce((s, x) => s + x, 0) / V;
       t.voteFraction = vf; t.reason = res.reason; t.feat = res.feat; t.fails = res.fails;
+      // Acoustic "busyness": strong tonal tracks judged NOT to be a mosquito
+      // (voices, music, machines) seen in the last 30 s — context for confidence.
+      if (!calibrating && !res.ok && !t.locked && t.T >= this.ff.TAU && t.age >= this.MIN_TRACK) this._busy.set(t.id, this.ff.frames);
       if (!t.locked && vf >= this.cfg.VOTE_ON && res.ok) t.locked = true;
       else if (t.locked && vf < this.cfg.VOTE_OFF) t.locked = false;
       if (calibrating) t.locked = false;
       if (t.locked) {
         t.lockedFrames++;
+        t.busy = 0; for (const id of this._busy.keys()) if (id !== t.id) t.busy++;
         if (!post) post = this.model.posterior(f0, ctx);
         if (post && post.post.length) out.push(this._detection(t, f0, post));
         else t.locked = false;
@@ -756,19 +831,45 @@ class MosquitoClassifier {
     let s1 = 0, n1 = 0;
     for (const h of recent) { s1 += h.s1; n1 += h.n1; }
     const snrLinear = s1 / (n1 + 1e-30);
-    const margin = Math.log(Math.max(1e-6, t.T / this.ff.TAU));
-    const confidence = Math.max(0.01, Math.min(0.99, 1 / (1 + Math.exp(-(0.5 + 1.2 * margin)))));
+    const confidence = this._confidence(t);
+    // Taxonomic level: 'species' when one species is confident enough,
+    // otherwise 'genus' — and then Detection.species is the most probable
+    // species WITHIN the most probable genus, so species.genus === genus and
+    // the UI can show "Aedes sp." with the posterior candidates.
     const gTop = post.genus[0];
-    const idLevel = top.p >= 0.6 ? 'species' : (gTop && gTop.p >= 0.6) ? 'genus' : 'mosquito';
+    const taxonLevel = top.p >= this.cfg.SPECIES_P ? 'species' : 'genus';
+    let spOut = sp;
+    if (taxonLevel === 'genus' && gTop && gTop.genus !== sp.genus) spOut = post.post.find(o => o.sp.genus === gTop.genus).sp;
+    const genusP = (post.genus.find(g => g.genus === spOut.genus) || { p: 0 }).p;
     return {
-      species: sp, genus: sp.genus, frequency: f0, f0,
+      species: spOut, genus: spOut.genus, frequency: f0, f0,
       snr: 10 * Math.log10(Math.max(1, snrLinear)), snrLinear,
       confidence, voteFraction: t.voteFraction,
       range: snrLinear >= 100 ? 'near' : 'far',
       posterior: post.post.filter(o => o.p >= 0.01).map(o => ({ id: o.id, p: o.p })),
       genusPosterior: post.genus.filter(g => g.p >= 0.01).map(g => ({ genus: g.genus, p: g.p })),
-      idLevel, trackId: t.id,
+      taxonLevel, genusP, trackId: t.id,
     };
+  }
+
+  // Calibrated P(real mosquito | track evidence): logistic model on the
+  // track's evidence at this frame, fitted on the DEV split of tools/eval
+  // (tools/eval/fit-confidence.js; reliability in docs/EVALUATION.md).
+  _confidence(t) {
+    const x = MosquitoClassifier.confFeatures(t, this.ff.TAU), w = this.cfg.CONF;
+    let z = w[0];
+    for (let i = 0; i < x.length; i++) z += w[i + 1] * x[i];
+    return Math.max(0.01, Math.min(0.99, 1 / (1 + Math.exp(-z))));
+  }
+  static confFeatures(t, tau) {
+    const f = t.feat || {};
+    return [
+      Math.log(Math.max(1e-3, t.T / tau)),                       // CUSUM margin over threshold
+      10 * Math.log10(Math.max(1, f.snr1 || 1)) / 10,              // in-bin SNR (dB/10)
+      Math.log1p(Math.max(0, f.zf || 0, f.zl || 0)) / 3,          // flight-modulation evidence
+      Math.log1p(t.busy || 0),                                     // rejected strong tones in the last 30 s
+      Math.log10(Math.max(1e-3, f.hRatio || 1e-3)),                // harmonic richness (H2+H3)/H1
+    ];
   }
 
   getState() {
@@ -794,7 +895,26 @@ class MosquitoClassifier {
                 : dets.length     ? 'detected'
                 : candidate && candidate.level >= 0.25 ? 'candidate'
                 : 'listening';
-    return { phase, noiseFloorDb: st.noiseFloor, ambientDb: st.ambientRMS, candidate, detections: dets, perSpecies };
+    const band = this._bandNoiseDb();
+    const noiseMarginDb = band === null ? null : this.cfg.REF_MOSQ_PEAK_DB - (band + this.cfg.LOCK_INBIN_SNR_DB);
+    return { phase, noiseFloorDb: st.noiseFloor, ambientDb: st.ambientRMS, candidate, detections: dets, perSpecies,
+             // extensions
+             calibration: this._fastCalib ? Math.min(1, (this._calFrames || 0) * this.hopSec / this.cfg.CAL_EXPECTED_S) : 1,
+             ambientGateDb: this.AMBIENT_GATE_DB,
+             bandNoiseDb: band, noiseMarginDb,
+             noisy: noiseMarginDb !== null && noiseMarginDb < 0 };
+  }
+
+  // Median per-bin noise floor over 300-800 Hz in AnalyserNode dB (incl. the
+  // fast local normaliser), or null before the first frame.
+  _bandNoiseDb() {
+    const ff = this.ff;
+    if (!ff || !ff.frames) return null;
+    const lo = Math.max(ff.kMin, Math.round(300 / this.binHz)), hi = Math.min(ff.kMax, Math.round(800 / this.binHz));
+    const v = [];
+    for (let k = lo; k <= hi; k++) v.push(ff.noise[k] * (ff.Z[k] || 1));
+    v.sort((a, b) => a - b);
+    return 10 * Math.log10(v[v.length >> 1] + 1e-30);
   }
 
   estimateNoiseFloor(data) {

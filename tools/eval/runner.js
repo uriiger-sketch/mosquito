@@ -59,15 +59,22 @@ function drive(clf, scene, o) {
   return { frames: fi, times, hopSec: hop / sr };
 }
 
+// Confidence-model features of the track behind a Detection (new engines only).
+function confX(d, clf) {
+  if (!clf || d.trackId === undefined || !clf.ff || !clf.constructor.confFeatures) return undefined;
+  const t = clf.ff.tracks.find(x => x.id === d.trackId);
+  return t ? clf.constructor.confFeatures(t, clf.ff.TAU, clf.hopSec).map(v => +v.toFixed(4)) : undefined;
+}
+
 // Compact, engine-agnostic view of a Detection.
-function summarize(d) {
+function summarize(d, clf) {
   const post = (d.posterior || []).map(p => [p.id, +p.p.toFixed(5)]);
   let gpost = null;
   if (Array.isArray(d.genusPosterior)) gpost = d.genusPosterior.map(g => [g.genus, +g.p.toFixed(5)]);
   return {
     sp: d.species.id, genus: d.genus || d.species.genus,
     f0: +(d.f0 ?? d.frequency).toFixed(2), conf: +(+d.confidence).toFixed(4),
-    snr: +(+d.snr).toFixed(2), range: d.range, post, gpost,
+    snr: +(+d.snr).toFixed(2), range: d.range, post, gpost, taxonLevel: d.taxonLevel, x: confX(d, clf),
   };
 }
 
@@ -75,12 +82,12 @@ function summarize(d) {
 // event when its last event was ≥ 60 s ago (continuous locks re-fire every 60 s).
 class EventCounter {
   constructor(cooldownSec = 60) { this.cd = cooldownSec; this.last = {}; this.events = []; }
-  push(tSec, dets) {
+  push(tSec, dets, clf) {
     for (const d of dets) {
       const id = d.species.id;
       if (this.last[id] === undefined || tSec - this.last[id] >= this.cd) {
         this.last[id] = tSec;
-        this.events.push({ t: +tSec.toFixed(2), ...summarize(d) });
+        this.events.push({ t: +tSec.toFixed(2), ...summarize(d, clf) });
       }
     }
   }

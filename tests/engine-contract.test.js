@@ -70,3 +70,48 @@ test('disabled species are never reported', () => {
   const { frames } = H.runClassifier(sig, { disabled });
   assert.equal(frames.flat().filter(d => d.species.id === 'aedes_aegypti').length, 0);
 });
+
+test('contract extensions: taxonLevel / genusP / trackId on every Detection', () => {
+  const R = H.rng(3);
+  const len = 10 * H.SR;
+  const sig = H.mix(H.whiteNoise(len, 0.003, R), H.mosquitoTone(len, 560, 0.03, R, 3 * H.SR));
+  const { frames } = H.runClassifier(sig);
+  const dets = frames.flat();
+  assert.ok(dets.length > 0);
+  for (const d of dets) {
+    assert.ok(['species', 'genus'].includes(d.taxonLevel));
+    assert.equal(d.genus, d.species.genus, 'species.genus must equal genus');
+    assert.ok(d.genusP > 0 && d.genusP <= 1);
+    assert.ok(Number.isInteger(d.trackId));
+    const top = d.posterior[0];
+    if (d.taxonLevel === 'species') { assert.equal(d.species.id, top.id); assert.ok(top.p >= 0.6); }
+    else assert.ok(top.p < 0.6);
+  }
+});
+
+test('EngineState extensions: calibration progress, noisy, ambientGateDb', () => {
+  const mk = () => new eng.MosquitoClassifier({ binHz: H.BIN_HZ, sampleRate: H.SR, fftSize: H.N, freqToBin: hz => Math.round(hz / H.BIN_HZ) });
+  const run = (rms) => {
+    const clf = mk(); clf.setTimeOfDay('none'); clf.beginCalibration();
+    const R = H.rng(1), x = H.whiteNoise(6 * H.SR, rms, R);
+    const cal = [];
+    for (let end = H.N, i = 0; end <= x.length; end += H.HOP, i++) {
+      if (i === 22) clf.endCalibration();
+      const fr = x.subarray(end - H.N, end);
+      clf.analyze(H.analyserDb(fr), Float32Array.from(fr));
+      const st = clf.getState();
+      if (st.phase === 'calibrating') cal.push(st.calibration);
+    }
+    return { st: clf.getState(), cal };
+  };
+  // Absolute level matters here: 1.6e-5 RMS white noise ≈ a quiet bedroom on a
+  // typical phone mic; 0.01 RMS (−40 dBFS) is a loud room.
+  const quiet = run(1.6e-5), loud = run(0.01);
+  assert.equal(typeof quiet.st.ambientGateDb, 'number');
+  assert.equal(quiet.st.noisy, false, `quiet room flagged noisy (margin ${quiet.st.noiseMarginDb})`);
+  assert.equal(loud.st.noisy, true, `loud room not flagged (margin ${loud.st.noiseMarginDb})`);
+  assert.equal(loud.st.phase, 'listening', 'noisy is a hint, not the hard gate');
+  assert.ok(quiet.cal.length > 10 && quiet.cal.every(c => c >= 0 && c <= 1));
+  assert.ok(quiet.cal[quiet.cal.length - 1] > 0.9, 'calibration progress should approach 1 by 2 s');
+  assert.equal(quiet.st.calibration, 1);
+});
