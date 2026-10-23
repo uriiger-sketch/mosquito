@@ -1,0 +1,15 @@
+{
+  "_comment": "Regression limits for `npm run eval:quick` (tools/eval/eval.js --quick --check). Runs are fully seeded, so a failure means the code changed the result. Reference values (final engine, quick mode): meanSNR50 -20.5 dB, pDetectLoud 1.0, 5 FA events, genus top-1 0.83, species top-1 0.63, confidence Brier 0.045 / ECE 0.07, 2.6 ms/analyze. Baseline e46de8d on the same quick corpus: 25 FA events. Margins: ~2 dB SNR50, ~2x FA events, ~0.15 accuracy; compute is machine-dependent, so its limit is generous.",
+  "quick": {
+    "detection.meanSNR50": { "max": -18.5 },
+    "detection.pDetectLoud": { "min": 0.95 },
+    "detection.preOnsetFalseFrames": { "max": 0 },
+    "falseAlarms.pooled.events": { "max": 10 },
+    "identification.none.first.genusTop1": { "min": 0.65 },
+    "identification.none.first.speciesTop1": { "min": 0.45 },
+    "confidence.brier": { "max": 0.10 },
+    "confidence.ece": { "max": 0.15 },
+    "mixtures.none.p": { "min": 0.5 },
+    "compute.meanMs": { "max": 8 }
+  }
+}

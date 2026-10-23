@@ -144,6 +144,24 @@ const SPECIES_DB = [
 // Genus, derived once from the binomial name ("Aedes (Ochlerotatus) caspius" → Aedes).
 SPECIES_DB.forEach(sp => { if (!sp.genus) sp.genus = sp.name.split(' ')[0]; });
 
+// ── Wingbeat-frequency population model (used by the Bayesian identifier) ─────
+// `freq` is read as the population-mean female f0 at T_REF. Individuals differ
+// (body size, age, nutrition): coefficient of variation ≈ 4–8 % within a
+// species (Brogdon 1994, J Med Entomol 31:700; Villarreal et al. 2017, J Med
+// Entomol 54:1116; Kiskin et al. 2021, HumBugDB). Wingbeat frequency rises
+// ≈ 1–2 %/°C (Unwin & Corbet 1984, Physiol Entomol 9:115; Villarreal et al.
+// 2017). No species-specific CVs are well established, so every species gets
+// the mid-range values; per-species overrides can be set on the entries.
+//   freqSigma    between-individual SD of f0 at T_REF (Hz)
+//   freqTempCoef fractional f0 change per °C
+// The identifier also marginalises over the unknown room temperature
+// (N(T_MEAN, T_SD²)), which adds ≈ 5 % spread on top of freqSigma.
+const WINGBEAT_MODEL = { T_REF: 26, T_MEAN: 26, T_SD: 3.5, CV: 0.06, TEMP_COEF: 0.015 };
+SPECIES_DB.forEach(sp => {
+  if (sp.freqSigma === undefined) sp.freqSigma = Math.round(sp.freq * WINGBEAT_MODEL.CV * 10) / 10;
+  if (sp.freqTempCoef === undefined) sp.freqTempCoef = WINGBEAT_MODEL.TEMP_COEF;
+});
+
 // ── Native species by GPS region (WHO/ECDC/CDC distribution 2024) ────────────
 function getNativeSpecies(lat, lng) {
   // ══════════════════════════════════════════════════════════════════════════
@@ -409,6 +427,65 @@ function getLocalDisease(speciesId, lat, lng) {
   }
 }
 
+// ── getLocalTaxon(speciesId, lat, lng) → { name, common, note, standIn } ─────
+// Several SPECIES_DB entries are acoustic STAND-INS: one wingbeat profile that
+// getNativeSpecies() enables wherever ANY member of the group occurs. Showing
+// the stand-in's binomial outside its true range is factually wrong (a user in
+// Bangkok must not be told "Anopheles gambiae — African Malaria Mosquito").
+// This returns the label to DISPLAY at a location; the id (and everything keyed
+// on it: server, federated model, map) is unchanged. Unknown location, or a
+// location where the catalogue species itself is the right name, returns the
+// SPECIES_DB defaults with standIn = false. Unknown id → null.
+// Sources: Sinka et al. 2012 (Parasit Vectors 5:69) dominant Anopheles vectors;
+// WRBU / Harbach "Mosquito Taxonomic Inventory" for Toxorhynchites and Mansonia
+// distributions; Farajollahi et al. 2011 (Infect Genet Evol 11:1577) for the
+// Culex pipiens complex.
+function getLocalTaxon(speciesId, lat, lng) {
+  const sp = SPECIES_DB.find(s => s.id === speciesId);
+  if (!sp) return null;
+  const def = { name: sp.name, common: sp.common, note: '', standIn: false };
+  if (lat === null || lat === undefined || !Number.isFinite(lat) || !Number.isFinite(lng)) return def;
+  const IN = (la0, la1, lo0, lo1) => lat >= la0 && lat <= la1 && lng >= lo0 && lng <= lo1;
+  const afrotropical = IN(-35, 17, -18, 52);
+  const local = (name, common, note) => ({ name, common, note, standIn: true });
+
+  switch (speciesId) {
+    case 'anopheles':
+      if (afrotropical) return { name: 'Anopheles gambiae s.l.', common: sp.common, standIn: false,
+        note: 'An. gambiae complex (An. gambiae s.s., An. coluzzii, An. arabiensis); An. funestus flies in the same band — sound identifies the genus, not the sibling species.' };
+      if (IN(28, 46, -10, 50)) return local('Anopheles sp.', 'Local malaria mosquito',
+        'Mediterranean / Middle East vectors: An. labranchiae, An. sacharovi, An. superpictus, An. maculipennis complex — not An. gambiae.');
+      if (IN(12, 28, 36, 62)) return local('Anopheles sp.', 'Local malaria mosquito',
+        'Arabian Peninsula vectors: An. arabiensis, An. sergentii, An. culicifacies, An. stephensi — not An. gambiae.');
+      if (IN(5, 36, 60, 95)) return local('Anopheles sp.', 'Local malaria mosquito',
+        'South Asian vectors: An. culicifacies, An. stephensi, An. fluviatilis, An. minimus — not An. gambiae.');
+      if (IN(-12, 30, 95, 155)) return local('Anopheles sp.', 'Local malaria mosquito',
+        'South-East Asian / Pacific vectors: An. dirus complex, An. minimus, An. maculatus, An. balabacensis, An. farauti — not An. gambiae.');
+      if (IN(-56, 50, -170, -30)) return local('Anopheles sp.', 'Local Anopheles mosquito',
+        'Americas: An. darlingi, An. albimanus, An. pseudopunctipennis, An. quadrimaculatus — not An. gambiae.');
+      return local('Anopheles sp.', 'Local Anopheles mosquito', 'Regional Anopheles species — not An. gambiae (Afrotropical).');
+
+    case 'toxorhynchites':
+      if (afrotropical) return def;
+      if (IN(-12, 35, 60, 155)) return local('Toxorhynchites sp.', 'Elephant mosquito', 'Asian species, e.g. Tx. splendens, Tx. amboinensis (Tx. brevipalpis is African).');
+      if (IN(-45, -10, 110, 180)) return local('Toxorhynchites sp.', 'Elephant mosquito', 'Australasian species, e.g. Tx. speciosus (Tx. brevipalpis is African).');
+      if (IN(-56, 50, -170, -30)) return local('Toxorhynchites sp.', 'Elephant mosquito', 'American species, e.g. Tx. rutilus, Tx. theobaldi (Tx. brevipalpis is African).');
+      return local('Toxorhynchites sp.', 'Elephant mosquito', 'Non-biting predatory genus; Tx. brevipalpis itself is African.');
+
+    case 'culex_pipiens':
+      if (IN(-12, 12, -180, 180)) return local('Culex pipiens complex', 'House mosquito (pipiens complex)',
+        'In the tropics the complex is mostly Cx. quinquefasciatus; the molestus form occurs in cities.');
+      return def;
+
+    case 'mansonia_uniformis':
+      if (afrotropical) return { ...def, note: 'Ma. africana co-occurs in Africa and flies in the same band.' };
+      return def;
+
+    default:
+      return def;
+  }
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { SPECIES_DB, getNativeSpecies, getLocalDisease, solarTimes, timeOfDayCategory };
+  module.exports = { SPECIES_DB, WINGBEAT_MODEL, getNativeSpecies, getLocalDisease, getLocalTaxon, solarTimes, timeOfDayCategory };
 }

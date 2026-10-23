@@ -1,0 +1,4782 @@
+{
+ "meta": {
+  "mode": "full",
+  "split": "test",
+  "root": "/home/user/mosquito/.claude/worktrees/agent-a7f8541190f21e490",
+  "commit": "d79f1de",
+  "date": "2026-10-23T12:27:37.226Z",
+  "node": "v22.22.0",
+  "jobs": 3417,
+  "sampleRate": 44100,
+  "fftSize": 8192,
+  "wallSeconds": 1060.2
+ },
+ "detection": {
+  "perSpecies": {
+   "anopheles": {
+    "snr50": -19.336,
+    "bound": "",
+    "logisticSNR50": -19.368,
+    "logisticSE": 0.623,
+    "rangeFactor": 9.264,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 5,
+      "p": 0.417,
+      "ci": [
+       0.193,
+       0.68
+      ],
+      "latencyMedian": 4.245,
+      "lockedFrac": 0.102,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.482,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.99,
+      "lockedFrac": 0.681,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.729,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.897,
+      "lockedFrac": 0.735,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.897,
+      "lockedFrac": 0.735,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.805,
+      "lockedFrac": 0.735,
+      "genusCorrect": 1
+     }
+    ]
+   },
+   "anopheles_stephensi": {
+    "snr50": -15.336,
+    "bound": "",
+    "logisticSNR50": -16,
+    "logisticSE": 0.772,
+    "rangeFactor": 5.845,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 2,
+      "p": 0.167,
+      "ci": [
+       0.047,
+       0.448
+      ],
+      "latencyMedian": 4.152,
+      "lockedFrac": 0.091,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 5,
+      "p": 0.417,
+      "ci": [
+       0.193,
+       0.68
+      ],
+      "latencyMedian": 3.502,
+      "lockedFrac": 0.183,
+      "genusCorrect": 0.4
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 3.13,
+      "lockedFrac": 0.527,
+      "genusCorrect": 0.636
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.723,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.898,
+      "lockedFrac": 0.727,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.712,
+      "lockedFrac": 0.732,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.666,
+      "lockedFrac": 0.743,
+      "genusCorrect": 0.667
+     }
+    ]
+   },
+   "aedes_aegypti": {
+    "snr50": -21.001,
+    "bound": "",
+    "logisticSNR50": -20.259,
+    "logisticSE": 0.92,
+    "rangeFactor": 11.222,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 8,
+      "p": 0.667,
+      "ci": [
+       0.391,
+       0.862
+      ],
+      "latencyMedian": 5.963,
+      "lockedFrac": 0.171,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.409,
+      "lockedFrac": 0.589,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.692,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.722,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.733,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.735,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.732,
+      "genusCorrect": 1
+     }
+    ]
+   },
+   "aedes_albopictus": {
+    "snr50": -21.144,
+    "bound": "",
+    "logisticSNR50": -20.949,
+    "logisticSE": 0.62,
+    "rangeFactor": 11.408,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 1,
+      "p": 0.083,
+      "ci": [
+       0.015,
+       0.354
+      ],
+      "latencyMedian": 3.13,
+      "lockedFrac": 0.044,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 8,
+      "p": 0.667,
+      "ci": [
+       0.391,
+       0.862
+      ],
+      "latencyMedian": 4.245,
+      "lockedFrac": 0.234,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.362,
+      "lockedFrac": 0.58,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.223,
+      "lockedFrac": 0.712,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.72,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.726,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.73,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.666,
+      "lockedFrac": 0.747,
+      "genusCorrect": 1
+     }
+    ]
+   },
+   "culex": {
+    "snr50": -19.003,
+    "bound": "",
+    "logisticSNR50": -17.676,
+    "logisticSE": 1.122,
+    "rangeFactor": 8.916,
+    "monotone": false,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 5,
+      "p": 0.417,
+      "ci": [
+       0.193,
+       0.68
+      ],
+      "latencyMedian": 4.245,
+      "lockedFrac": 0.112,
+      "genusCorrect": 0.6
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 9,
+      "p": 0.75,
+      "ci": [
+       0.468,
+       0.911
+      ],
+      "latencyMedian": 3.502,
+      "lockedFrac": 0.434,
+      "genusCorrect": 0.444
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.362,
+      "lockedFrac": 0.63,
+      "genusCorrect": 0.333
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.718,
+      "genusCorrect": 0.5
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.664,
+      "genusCorrect": 0.545
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.667,
+      "genusCorrect": 0.545
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.668,
+      "genusCorrect": 0.545
+     }
+    ]
+   },
+   "aedes_japonicus": {
+    "snr50": -22.401,
+    "bound": "",
+    "logisticSNR50": -23.435,
+    "logisticSE": 1.802,
+    "rangeFactor": 13.184,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 2,
+      "p": 0.167,
+      "ci": [
+       0.047,
+       0.448
+      ],
+      "latencyMedian": 3.873,
+      "lockedFrac": 0.046,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.502,
+      "lockedFrac": 0.542,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.083,
+      "lockedFrac": 0.7,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.037,
+      "lockedFrac": 0.718,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.99,
+      "lockedFrac": 0.717,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.727,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.732,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.897,
+      "lockedFrac": 0.732,
+      "genusCorrect": 1
+     }
+    ]
+   },
+   "aedes_vexans": {
+    "snr50": -20.569,
+    "bound": "",
+    "logisticSNR50": -20,
+    "logisticSE": 0.627,
+    "rangeFactor": 10.678,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 7,
+      "p": 0.583,
+      "ci": [
+       0.32,
+       0.807
+      ],
+      "latencyMedian": 4.059,
+      "lockedFrac": 0.216,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 3.687,
+      "lockedFrac": 0.494,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.223,
+      "lockedFrac": 0.702,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.99,
+      "lockedFrac": 0.722,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.728,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.805,
+      "lockedFrac": 0.731,
+      "genusCorrect": 1
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.805,
+      "lockedFrac": 0.733,
+      "genusCorrect": 1
+     }
+    ]
+   },
+   "mansonia_uniformis": {
+    "snr50": -21.333,
+    "bound": "",
+    "logisticSNR50": -20.4,
+    "logisticSE": 1.353,
+    "rangeFactor": 11.659,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 9,
+      "p": 0.75,
+      "ci": [
+       0.468,
+       0.911
+      ],
+      "latencyMedian": 5.081,
+      "lockedFrac": 0.224,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.619,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.99,
+      "lockedFrac": 0.704,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.735,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.736,
+      "genusCorrect": 0
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.736,
+      "genusCorrect": 0
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.739,
+      "genusCorrect": 0
+     }
+    ]
+   },
+   "culex_pipiens": {
+    "snr50": -20.569,
+    "bound": "",
+    "logisticSNR50": -20.127,
+    "logisticSE": 0.5,
+    "rangeFactor": 10.678,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 7,
+      "p": 0.583,
+      "ci": [
+       0.32,
+       0.807
+      ],
+      "latencyMedian": 4.523,
+      "lockedFrac": 0.194,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.409,
+      "lockedFrac": 0.572,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.037,
+      "lockedFrac": 0.706,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.897,
+      "lockedFrac": 0.719,
+      "genusCorrect": 0
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.728,
+      "genusCorrect": 0
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.805,
+      "lockedFrac": 0.735,
+      "genusCorrect": 0
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.666,
+      "lockedFrac": 0.741,
+      "genusCorrect": 0
+     }
+    ]
+   },
+   "culiseta_annulata": {
+    "snr50": -18.285,
+    "bound": "",
+    "logisticSNR50": -18,
+    "logisticSE": 0.875,
+    "rangeFactor": 8.208,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 1,
+      "p": 0.083,
+      "ci": [
+       0.015,
+       0.354
+      ],
+      "latencyMedian": 4.43,
+      "lockedFrac": 0.012,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 3,
+      "p": 0.25,
+      "ci": [
+       0.089,
+       0.532
+      ],
+      "latencyMedian": 3.966,
+      "lockedFrac": 0.072,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 10,
+      "p": 0.833,
+      "ci": [
+       0.552,
+       0.953
+      ],
+      "latencyMedian": 3.687,
+      "lockedFrac": 0.396,
+      "genusCorrect": 0.7
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 10,
+      "p": 0.833,
+      "ci": [
+       0.552,
+       0.953
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.553,
+      "genusCorrect": 0.7
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.99,
+      "lockedFrac": 0.726,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.037,
+      "lockedFrac": 0.722,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.737,
+      "genusCorrect": 0.667
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.805,
+      "lockedFrac": 0.739,
+      "genusCorrect": 0.667
+     }
+    ]
+   },
+   "ochlerotatus_caspius": {
+    "snr50": -21.001,
+    "bound": "",
+    "logisticSNR50": -20.259,
+    "logisticSE": 0.92,
+    "rangeFactor": 11.222,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 8,
+      "p": 0.667,
+      "ci": [
+       0.391,
+       0.862
+      ],
+      "latencyMedian": 6.985,
+      "lockedFrac": 0.204,
+      "genusCorrect": 0.875
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.626,
+      "genusCorrect": 0.917
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.718,
+      "genusCorrect": 0.917
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.726,
+      "genusCorrect": 0.917
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.851,
+      "lockedFrac": 0.734,
+      "genusCorrect": 0.917
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.759,
+      "lockedFrac": 0.736,
+      "genusCorrect": 0.917
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 12,
+      "p": 1,
+      "ci": [
+       0.758,
+       1
+      ],
+      "latencyMedian": 2.759,
+      "lockedFrac": 0.743,
+      "genusCorrect": 0.917
+     }
+    ]
+   },
+   "toxorhynchites": {
+    "snr50": -16.798,
+    "bound": "",
+    "logisticSNR50": -14.993,
+    "logisticSE": 1.151,
+    "rangeFactor": 6.917,
+    "monotone": true,
+    "curve": [
+     {
+      "snr": -36,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -32,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -28,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -24,
+      "n": 12,
+      "k": 0,
+      "p": 0,
+      "ci": [
+       0,
+       0.242
+      ],
+      "latencyMedian": null,
+      "lockedFrac": 0,
+      "genusCorrect": null
+     },
+     {
+      "snr": -20,
+      "n": 12,
+      "k": 2,
+      "p": 0.167,
+      "ci": [
+       0.047,
+       0.448
+      ],
+      "latencyMedian": 4.198,
+      "lockedFrac": 0.041,
+      "genusCorrect": 1
+     },
+     {
+      "snr": -16,
+      "n": 12,
+      "k": 7,
+      "p": 0.583,
+      "ci": [
+       0.32,
+       0.807
+      ],
+      "latencyMedian": 3.316,
+      "lockedFrac": 0.262,
+      "genusCorrect": 0.857
+     },
+     {
+      "snr": -12,
+      "n": 12,
+      "k": 10,
+      "p": 0.833,
+      "ci": [
+       0.552,
+       0.953
+      ],
+      "latencyMedian": 3.362,
+      "lockedFrac": 0.53,
+      "genusCorrect": 0.8
+     },
+     {
+      "snr": -8,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 3.223,
+      "lockedFrac": 0.575,
+      "genusCorrect": 0.727
+     },
+     {
+      "snr": -4,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 3.13,
+      "lockedFrac": 0.651,
+      "genusCorrect": 0.818
+     },
+     {
+      "snr": 0,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.666,
+      "genusCorrect": 0.909
+     },
+     {
+      "snr": 4,
+      "n": 12,
+      "k": 11,
+      "p": 0.917,
+      "ci": [
+       0.646,
+       0.985
+      ],
+      "latencyMedian": 2.944,
+      "lockedFrac": 0.664,
+      "genusCorrect": 0.909
+     }
+    ]
+   }
+  },
+  "meanSNR50": -19.731,
+  "worstSNR50": -15.336,
+  "bestSNR50": -22.401,
+  "meanRangeFactor": 9.696,
+  "pDetectLoud": 0.988,
+  "nLoud": 576,
+  "latencyMedianAtSNRge12": 2.944,
+  "lockedFracAtSNRge12": 0.707,
+  "preOnsetFalseFrames": 0,
+  "trialsWithPreOnsetFA": 0,
+  "nTrials": 1584,
+  "multiSpeciesLockTrials": 0
+ },
+ "identification": {
+  "none": {
+   "first": {
+    "n": 144,
+    "detected": 142,
+    "speciesTop1": 0.514,
+    "speciesTop3": 0.908,
+    "genusTop1": 0.704,
+    "genusOfSpeciesTop1": 0.704,
+    "speciesBrier": 0.61,
+    "speciesECE": 0.11,
+    "speciesLogLoss": 1.2,
+    "genusBrier": 0.398,
+    "genusECE": 0.091,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 1,
+      "meanP": 0.19,
+      "freq": 0
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 37,
+      "meanP": 0.253,
+      "freq": 0.324
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 40,
+      "meanP": 0.367,
+      "freq": 0.475
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 27,
+      "meanP": 0.431,
+      "freq": 0.593
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 14,
+      "meanP": 0.54,
+      "freq": 0.429
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 10,
+      "meanP": 0.666,
+      "freq": 0.9
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 4,
+      "meanP": 0.743,
+      "freq": 0.75
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 6,
+      "meanP": 0.844,
+      "freq": 0.833
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 3,
+      "meanP": 0.95,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 6,
+      "meanP": 0.468,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 45,
+      "meanP": 0.541,
+      "freq": 0.444
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 42,
+      "meanP": 0.653,
+      "freq": 0.786
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 20,
+      "meanP": 0.741,
+      "freq": 0.75
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 13,
+      "meanP": 0.849,
+      "freq": 0.923
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 16,
+      "meanP": 0.962,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "anopheles_stephensi": 3,
+      "anopheles": 9
+     },
+     "anopheles_stephensi": {
+      "anopheles_stephensi": 6,
+      "anopheles": 3,
+      "culiseta_annulata": 1,
+      "culex": 2
+     },
+     "aedes_aegypti": {
+      "aedes_aegypti": 7,
+      "aedes_vexans": 1,
+      "ochlerotatus_caspius": 2,
+      "aedes_albopictus": 2
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 6,
+      "aedes_japonicus": 4,
+      "aedes_aegypti": 2
+     },
+     "culex": {
+      "culex": 6,
+      "anopheles": 3,
+      "aedes_vexans": 3
+     },
+     "aedes_japonicus": {
+      "aedes_japonicus": 8,
+      "aedes_albopictus": 4
+     },
+     "aedes_vexans": {
+      "aedes_vexans": 10,
+      "ochlerotatus_caspius": 1,
+      "culex": 1
+     },
+     "mansonia_uniformis": {
+      "aedes_aegypti": 6,
+      "ochlerotatus_caspius": 4,
+      "aedes_vexans": 2
+     },
+     "culex_pipiens": {
+      "aedes_aegypti": 7,
+      "aedes_vexans": 2,
+      "aedes_albopictus": 3
+     },
+     "culiseta_annulata": {
+      "culiseta_annulata": 7,
+      "toxorhynchites": 3,
+      "anopheles_stephensi": 1,
+      "none": 1
+     },
+     "ochlerotatus_caspius": {
+      "aedes_vexans": 4,
+      "culex": 3,
+      "ochlerotatus_caspius": 4,
+      "aedes_aegypti": 1
+     },
+     "toxorhynchites": {
+      "toxorhynchites": 10,
+      "none": 1,
+      "culiseta_annulata": 1
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Anopheles": 21,
+      "Culiseta": 1,
+      "Culex": 2
+     },
+     "Aedes": {
+      "Aedes": 56,
+      "Culex": 4
+     },
+     "Culex": {
+      "Culex": 6,
+      "Anopheles": 3,
+      "Aedes": 15
+     },
+     "Mansonia": {
+      "Aedes": 12
+     },
+     "Culiseta": {
+      "Culiseta": 7,
+      "Toxorhynchites": 3,
+      "Anopheles": 1,
+      "none": 1
+     },
+     "Toxorhynchites": {
+      "Toxorhynchites": 10,
+      "none": 1,
+      "Culiseta": 1
+     }
+    }
+   },
+   "last": {
+    "n": 144,
+    "detected": 142,
+    "speciesTop1": 0.514,
+    "speciesTop3": 0.908,
+    "genusTop1": 0.704,
+    "genusOfSpeciesTop1": 0.704,
+    "speciesBrier": 0.607,
+    "speciesECE": 0.13,
+    "speciesLogLoss": 1.199,
+    "genusBrier": 0.398,
+    "genusECE": 0.062,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 39,
+      "meanP": 0.253,
+      "freq": 0.333
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 42,
+      "meanP": 0.369,
+      "freq": 0.476
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 26,
+      "meanP": 0.432,
+      "freq": 0.615
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 13,
+      "meanP": 0.539,
+      "freq": 0.308
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 11,
+      "meanP": 0.672,
+      "freq": 0.909
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 1,
+      "meanP": 0.795,
+      "freq": 1
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 6,
+      "meanP": 0.835,
+      "freq": 0.833
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 4,
+      "meanP": 0.937,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 9,
+      "meanP": 0.476,
+      "freq": 0.444
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 44,
+      "meanP": 0.542,
+      "freq": 0.5
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 41,
+      "meanP": 0.653,
+      "freq": 0.756
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 18,
+      "meanP": 0.744,
+      "freq": 0.778
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 12,
+      "meanP": 0.839,
+      "freq": 0.917
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 18,
+      "meanP": 0.953,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "anopheles_stephensi": 3,
+      "anopheles": 9
+     },
+     "anopheles_stephensi": {
+      "anopheles_stephensi": 6,
+      "anopheles": 3,
+      "culiseta_annulata": 1,
+      "culex": 2
+     },
+     "aedes_aegypti": {
+      "aedes_aegypti": 7,
+      "aedes_vexans": 1,
+      "ochlerotatus_caspius": 2,
+      "aedes_albopictus": 2
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 6,
+      "aedes_japonicus": 4,
+      "aedes_aegypti": 2
+     },
+     "culex": {
+      "culex": 5,
+      "anopheles": 3,
+      "aedes_vexans": 4
+     },
+     "aedes_japonicus": {
+      "aedes_japonicus": 8,
+      "aedes_albopictus": 4
+     },
+     "aedes_vexans": {
+      "aedes_vexans": 11,
+      "ochlerotatus_caspius": 1
+     },
+     "mansonia_uniformis": {
+      "aedes_aegypti": 6,
+      "ochlerotatus_caspius": 5,
+      "aedes_vexans": 1
+     },
+     "culex_pipiens": {
+      "aedes_aegypti": 7,
+      "aedes_vexans": 2,
+      "aedes_albopictus": 3
+     },
+     "culiseta_annulata": {
+      "culiseta_annulata": 7,
+      "toxorhynchites": 3,
+      "anopheles_stephensi": 1,
+      "none": 1
+     },
+     "ochlerotatus_caspius": {
+      "aedes_vexans": 4,
+      "culex": 3,
+      "ochlerotatus_caspius": 4,
+      "aedes_aegypti": 1
+     },
+     "toxorhynchites": {
+      "toxorhynchites": 10,
+      "none": 1,
+      "culiseta_annulata": 1
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Anopheles": 21,
+      "Culiseta": 1,
+      "Culex": 2
+     },
+     "Aedes": {
+      "Aedes": 57,
+      "Culex": 3
+     },
+     "Culex": {
+      "Culex": 5,
+      "Anopheles": 3,
+      "Aedes": 16
+     },
+     "Mansonia": {
+      "Aedes": 12
+     },
+     "Culiseta": {
+      "Culiseta": 7,
+      "Toxorhynchites": 3,
+      "Anopheles": 1,
+      "none": 1
+     },
+     "Toxorhynchites": {
+      "Toxorhynchites": 10,
+      "none": 1,
+      "Culiseta": 1
+     }
+    }
+   }
+  },
+  "accra": {
+   "first": {
+    "n": 84,
+    "detected": 81,
+    "speciesTop1": 0.617,
+    "speciesTop3": 0.963,
+    "genusTop1": 0.704,
+    "genusOfSpeciesTop1": 0.704,
+    "speciesBrier": 0.453,
+    "speciesECE": 0.086,
+    "speciesLogLoss": 0.811,
+    "genusBrier": 0.382,
+    "genusECE": 0.115,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 7,
+      "meanP": 0.281,
+      "freq": 0.286
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 21,
+      "meanP": 0.34,
+      "freq": 0.333
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 14,
+      "meanP": 0.447,
+      "freq": 0.571
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 7,
+      "meanP": 0.54,
+      "freq": 0.571
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 6,
+      "meanP": 0.649,
+      "freq": 0.5
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 14,
+      "meanP": 0.754,
+      "freq": 1
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 3,
+      "meanP": 0.84,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 9,
+      "meanP": 0.996,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 12,
+      "meanP": 0.366,
+      "freq": 0.333
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 15,
+      "meanP": 0.46,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 6,
+      "meanP": 0.547,
+      "freq": 0.333
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 9,
+      "meanP": 0.653,
+      "freq": 0.556
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 22,
+      "meanP": 0.753,
+      "freq": 0.864
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 7,
+      "meanP": 0.834,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 10,
+      "meanP": 0.989,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "culex": 3,
+      "anopheles": 9
+     },
+     "aedes_aegypti": {
+      "aedes_albopictus": 4,
+      "mansonia_uniformis": 3,
+      "aedes_aegypti": 5
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 9,
+      "aedes_aegypti": 3
+     },
+     "culex": {
+      "culex": 10,
+      "anopheles": 2
+     },
+     "mansonia_uniformis": {
+      "mansonia_uniformis": 8,
+      "aedes_aegypti": 3,
+      "aedes_albopictus": 1
+     },
+     "culex_pipiens": {
+      "aedes_aegypti": 6,
+      "aedes_albopictus": 3,
+      "mansonia_uniformis": 3
+     },
+     "toxorhynchites": {
+      "toxorhynchites": 9,
+      "none": 3
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Culex": 3,
+      "Anopheles": 9
+     },
+     "Aedes": {
+      "Aedes": 21,
+      "Mansonia": 3
+     },
+     "Culex": {
+      "Culex": 10,
+      "Anopheles": 2,
+      "Aedes": 9,
+      "Mansonia": 3
+     },
+     "Mansonia": {
+      "Mansonia": 8,
+      "Aedes": 4
+     },
+     "Toxorhynchites": {
+      "Toxorhynchites": 9,
+      "none": 3
+     }
+    }
+   },
+   "last": {
+    "n": 84,
+    "detected": 81,
+    "speciesTop1": 0.617,
+    "speciesTop3": 0.963,
+    "genusTop1": 0.704,
+    "genusOfSpeciesTop1": 0.704,
+    "speciesBrier": 0.452,
+    "speciesECE": 0.141,
+    "speciesLogLoss": 0.808,
+    "genusBrier": 0.378,
+    "genusECE": 0.119,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 6,
+      "meanP": 0.278,
+      "freq": 0.333
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 25,
+      "meanP": 0.346,
+      "freq": 0.28
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 11,
+      "meanP": 0.45,
+      "freq": 0.727
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 6,
+      "meanP": 0.526,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 7,
+      "meanP": 0.638,
+      "freq": 0.429
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 15,
+      "meanP": 0.752,
+      "freq": 1
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 2,
+      "meanP": 0.865,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 9,
+      "meanP": 0.991,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 13,
+      "meanP": 0.363,
+      "freq": 0.385
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 12,
+      "meanP": 0.46,
+      "freq": 0.583
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 8,
+      "meanP": 0.542,
+      "freq": 0.5
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 11,
+      "meanP": 0.656,
+      "freq": 0.455
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 21,
+      "meanP": 0.75,
+      "freq": 0.952
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 6,
+      "meanP": 0.845,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 10,
+      "meanP": 0.985,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "culex": 3,
+      "anopheles": 9
+     },
+     "aedes_aegypti": {
+      "aedes_albopictus": 4,
+      "mansonia_uniformis": 3,
+      "aedes_aegypti": 5
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 9,
+      "aedes_aegypti": 3
+     },
+     "culex": {
+      "culex": 10,
+      "anopheles": 2
+     },
+     "mansonia_uniformis": {
+      "mansonia_uniformis": 8,
+      "aedes_aegypti": 3,
+      "aedes_albopictus": 1
+     },
+     "culex_pipiens": {
+      "mansonia_uniformis": 4,
+      "aedes_albopictus": 3,
+      "aedes_aegypti": 5
+     },
+     "toxorhynchites": {
+      "toxorhynchites": 9,
+      "none": 3
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Culex": 3,
+      "Anopheles": 9
+     },
+     "Aedes": {
+      "Aedes": 21,
+      "Mansonia": 3
+     },
+     "Culex": {
+      "Culex": 10,
+      "Anopheles": 2,
+      "Mansonia": 4,
+      "Aedes": 8
+     },
+     "Mansonia": {
+      "Mansonia": 8,
+      "Aedes": 4
+     },
+     "Toxorhynchites": {
+      "Toxorhynchites": 9,
+      "none": 3
+     }
+    }
+   },
+   "nonNative": {
+    "n": 15,
+    "detected": 13,
+    "speciesCorrect": 0,
+    "genusCorrect": 6
+   }
+  },
+  "rome": {
+   "first": {
+    "n": 72,
+    "detected": 70,
+    "speciesTop1": 0.7,
+    "speciesTop3": 1,
+    "genusTop1": 0.786,
+    "genusOfSpeciesTop1": 0.786,
+    "speciesBrier": 0.395,
+    "speciesECE": 0.118,
+    "speciesLogLoss": 0.695,
+    "genusBrier": 0.283,
+    "genusECE": 0.097,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 4,
+      "meanP": 0.263,
+      "freq": 0.5
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 15,
+      "meanP": 0.364,
+      "freq": 0.4
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 17,
+      "meanP": 0.432,
+      "freq": 0.588
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 2,
+      "meanP": 0.543,
+      "freq": 1
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 7,
+      "meanP": 0.636,
+      "freq": 0.714
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 6,
+      "meanP": 0.745,
+      "freq": 0.833
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 12,
+      "meanP": 0.864,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 7,
+      "meanP": 0.929,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 13,
+      "meanP": 0.553,
+      "freq": 0.385
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 14,
+      "meanP": 0.639,
+      "freq": 0.786
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 10,
+      "meanP": 0.752,
+      "freq": 0.8
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 23,
+      "meanP": 0.856,
+      "freq": 0.913
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 10,
+      "meanP": 0.925,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "aedes_vexans": 2,
+      "anopheles": 8,
+      "none": 2
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 12
+     },
+     "aedes_vexans": {
+      "aedes_vexans": 8,
+      "ochlerotatus_caspius": 4
+     },
+     "culex_pipiens": {
+      "ochlerotatus_caspius": 9,
+      "aedes_albopictus": 3
+     },
+     "culiseta_annulata": {
+      "culiseta_annulata": 11,
+      "anopheles": 1
+     },
+     "ochlerotatus_caspius": {
+      "ochlerotatus_caspius": 10,
+      "aedes_vexans": 1,
+      "aedes_albopictus": 1
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Aedes": 2,
+      "Anopheles": 8,
+      "none": 2
+     },
+     "Aedes": {
+      "Aedes": 36
+     },
+     "Culex": {
+      "Aedes": 12
+     },
+     "Culiseta": {
+      "Culiseta": 11,
+      "Anopheles": 1
+     }
+    }
+   },
+   "last": {
+    "n": 72,
+    "detected": 70,
+    "speciesTop1": 0.686,
+    "speciesTop3": 1,
+    "genusTop1": 0.786,
+    "genusOfSpeciesTop1": 0.786,
+    "speciesBrier": 0.389,
+    "speciesECE": 0.103,
+    "speciesLogLoss": 0.684,
+    "genusBrier": 0.276,
+    "genusECE": 0.081,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 4,
+      "meanP": 0.259,
+      "freq": 0.5
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 15,
+      "meanP": 0.374,
+      "freq": 0.4
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 17,
+      "meanP": 0.434,
+      "freq": 0.529
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 2,
+      "meanP": 0.549,
+      "freq": 1
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 8,
+      "meanP": 0.63,
+      "freq": 0.625
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 5,
+      "meanP": 0.749,
+      "freq": 1
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 10,
+      "meanP": 0.862,
+      "freq": 1
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 9,
+      "meanP": 0.924,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 12,
+      "meanP": 0.552,
+      "freq": 0.417
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 15,
+      "meanP": 0.642,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 12,
+      "meanP": 0.752,
+      "freq": 0.833
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 19,
+      "meanP": 0.855,
+      "freq": 0.947
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 12,
+      "meanP": 0.923,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "aedes_vexans": 2,
+      "anopheles": 8,
+      "none": 2
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 12
+     },
+     "aedes_vexans": {
+      "ochlerotatus_caspius": 5,
+      "aedes_vexans": 7
+     },
+     "culex_pipiens": {
+      "ochlerotatus_caspius": 9,
+      "aedes_albopictus": 3
+     },
+     "culiseta_annulata": {
+      "culiseta_annulata": 11,
+      "anopheles": 1
+     },
+     "ochlerotatus_caspius": {
+      "ochlerotatus_caspius": 10,
+      "aedes_vexans": 1,
+      "aedes_albopictus": 1
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Aedes": 2,
+      "Anopheles": 8,
+      "none": 2
+     },
+     "Aedes": {
+      "Aedes": 36
+     },
+     "Culex": {
+      "Aedes": 12
+     },
+     "Culiseta": {
+      "Culiseta": 11,
+      "Anopheles": 1
+     }
+    }
+   },
+   "nonNative": {
+    "n": 18,
+    "detected": 17,
+    "speciesCorrect": 0,
+    "genusCorrect": 9
+   }
+  },
+  "mumbai": {
+   "first": {
+    "n": 96,
+    "detected": 90,
+    "speciesTop1": 0.533,
+    "speciesTop3": 0.922,
+    "genusTop1": 0.722,
+    "genusOfSpeciesTop1": 0.722,
+    "speciesBrier": 0.568,
+    "speciesECE": 0.08,
+    "speciesLogLoss": 1.02,
+    "genusBrier": 0.407,
+    "genusECE": 0.105,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 5,
+      "meanP": 0.283,
+      "freq": 0.6
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 19,
+      "meanP": 0.345,
+      "freq": 0.263
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 28,
+      "meanP": 0.444,
+      "freq": 0.464
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 12,
+      "meanP": 0.556,
+      "freq": 0.417
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 13,
+      "meanP": 0.637,
+      "freq": 0.769
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 4,
+      "meanP": 0.735,
+      "freq": 0.75
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 9,
+      "meanP": 0.995,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 5,
+      "meanP": 0.369,
+      "freq": 0.6
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 13,
+      "meanP": 0.453,
+      "freq": 0.692
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 9,
+      "meanP": 0.554,
+      "freq": 0.444
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 15,
+      "meanP": 0.661,
+      "freq": 0.467
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 14,
+      "meanP": 0.752,
+      "freq": 0.786
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 18,
+      "meanP": 0.855,
+      "freq": 0.833
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 16,
+      "meanP": 0.974,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "culex": 2,
+      "anopheles_stephensi": 4,
+      "none": 1,
+      "anopheles": 5
+     },
+     "anopheles_stephensi": {
+      "anopheles_stephensi": 7,
+      "anopheles": 5
+     },
+     "aedes_aegypti": {
+      "aedes_aegypti": 5,
+      "aedes_albopictus": 3,
+      "culex": 1,
+      "mansonia_uniformis": 3
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 10,
+      "aedes_aegypti": 2
+     },
+     "culex": {
+      "culex": 7,
+      "anopheles_stephensi": 1,
+      "anopheles": 3,
+      "none": 1
+     },
+     "mansonia_uniformis": {
+      "aedes_aegypti": 3,
+      "culex": 3,
+      "mansonia_uniformis": 5,
+      "aedes_albopictus": 1
+     },
+     "culex_pipiens": {
+      "aedes_aegypti": 3,
+      "none": 1,
+      "culex": 3,
+      "mansonia_uniformis": 2,
+      "aedes_albopictus": 3
+     },
+     "toxorhynchites": {
+      "none": 3,
+      "toxorhynchites": 9
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Culex": 2,
+      "Anopheles": 21,
+      "none": 1
+     },
+     "Aedes": {
+      "Aedes": 20,
+      "Culex": 1,
+      "Mansonia": 3
+     },
+     "Culex": {
+      "Culex": 10,
+      "Anopheles": 4,
+      "none": 2,
+      "Aedes": 6,
+      "Mansonia": 2
+     },
+     "Mansonia": {
+      "Aedes": 4,
+      "Culex": 3,
+      "Mansonia": 5
+     },
+     "Toxorhynchites": {
+      "none": 3,
+      "Toxorhynchites": 9
+     }
+    }
+   },
+   "last": {
+    "n": 96,
+    "detected": 90,
+    "speciesTop1": 0.511,
+    "speciesTop3": 0.933,
+    "genusTop1": 0.7,
+    "genusOfSpeciesTop1": 0.7,
+    "speciesBrier": 0.564,
+    "speciesECE": 0.158,
+    "speciesLogLoss": 1.01,
+    "genusBrier": 0.403,
+    "genusECE": 0.096,
+    "speciesReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 3,
+      "meanP": 0.28,
+      "freq": 1
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 19,
+      "meanP": 0.345,
+      "freq": 0.211
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 31,
+      "meanP": 0.45,
+      "freq": 0.387
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 11,
+      "meanP": 0.562,
+      "freq": 0.273
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 14,
+      "meanP": 0.63,
+      "freq": 0.929
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 3,
+      "meanP": 0.724,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 9,
+      "meanP": 0.995,
+      "freq": 1
+     }
+    ],
+    "genusReliability": [
+     {
+      "lo": 0,
+      "hi": 0.1,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.1,
+      "hi": 0.2,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.2,
+      "hi": 0.3,
+      "n": 0,
+      "meanP": null,
+      "freq": null
+     },
+     {
+      "lo": 0.3,
+      "hi": 0.4,
+      "n": 6,
+      "meanP": 0.374,
+      "freq": 0.667
+     },
+     {
+      "lo": 0.4,
+      "hi": 0.5,
+      "n": 10,
+      "meanP": 0.454,
+      "freq": 0.6
+     },
+     {
+      "lo": 0.5,
+      "hi": 0.6,
+      "n": 13,
+      "meanP": 0.546,
+      "freq": 0.308
+     },
+     {
+      "lo": 0.6,
+      "hi": 0.7,
+      "n": 10,
+      "meanP": 0.654,
+      "freq": 0.6
+     },
+     {
+      "lo": 0.7,
+      "hi": 0.8,
+      "n": 17,
+      "meanP": 0.751,
+      "freq": 0.706
+     },
+     {
+      "lo": 0.8,
+      "hi": 0.9,
+      "n": 17,
+      "meanP": 0.852,
+      "freq": 0.824
+     },
+     {
+      "lo": 0.9,
+      "hi": 1,
+      "n": 17,
+      "meanP": 0.97,
+      "freq": 1
+     }
+    ],
+    "speciesConfusion": {
+     "anopheles": {
+      "culex": 3,
+      "anopheles_stephensi": 5,
+      "none": 1,
+      "anopheles": 3
+     },
+     "anopheles_stephensi": {
+      "anopheles_stephensi": 7,
+      "anopheles": 5
+     },
+     "aedes_aegypti": {
+      "aedes_aegypti": 5,
+      "aedes_albopictus": 3,
+      "culex": 1,
+      "mansonia_uniformis": 3
+     },
+     "aedes_albopictus": {
+      "aedes_albopictus": 10,
+      "aedes_aegypti": 2
+     },
+     "culex": {
+      "culex": 7,
+      "anopheles": 4,
+      "none": 1
+     },
+     "mansonia_uniformis": {
+      "aedes_aegypti": 3,
+      "culex": 3,
+      "mansonia_uniformis": 5,
+      "aedes_albopictus": 1
+     },
+     "culex_pipiens": {
+      "aedes_aegypti": 3,
+      "none": 1,
+      "mansonia_uniformis": 3,
+      "culex": 2,
+      "aedes_albopictus": 3
+     },
+     "toxorhynchites": {
+      "none": 3,
+      "toxorhynchites": 9
+     }
+    },
+    "genusConfusion": {
+     "Anopheles": {
+      "Culex": 3,
+      "Anopheles": 20,
+      "none": 1
+     },
+     "Aedes": {
+      "Aedes": 20,
+      "Culex": 1,
+      "Mansonia": 3
+     },
+     "Culex": {
+      "Culex": 9,
+      "Anopheles": 4,
+      "none": 2,
+      "Aedes": 6,
+      "Mansonia": 3
+     },
+     "Mansonia": {
+      "Aedes": 4,
+      "Culex": 3,
+      "Mansonia": 5
+     },
+     "Toxorhynchites": {
+      "none": 3,
+      "Toxorhynchites": 9
+     }
+    }
+   },
+   "nonNative": {
+    "n": 12,
+    "detected": 12,
+    "speciesCorrect": 0,
+    "genusCorrect": 5
+   }
+  }
+ },
+ "falseAlarms": {
+  "perClass": {
+   "quiet_room": {
+    "group": "noise",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "noise_white": {
+    "group": "noise",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "noise_pink": {
+    "group": "noise",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "noise_brown": {
+    "group": "noise",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "fan_desk": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 3,
+    "perHour": 9,
+    "ci": [
+     1.856,
+     26.302
+    ],
+    "lockedFrac": 0.00674,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_vexans": 1,
+     "toxorhynchites": 2
+    },
+    "maxLevel": 0.955,
+    "fracLevel30": 0.00999
+   },
+   "fan_ceiling": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "fan_small": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 14,
+    "perHour": 42,
+    "ci": [
+     22.962,
+     70.469
+    ],
+    "lockedFrac": 0.11625,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "culiseta_annulata": 1,
+     "aedes_aegypti": 2,
+     "aedes_japonicus": 6,
+     "ochlerotatus_caspius": 1,
+     "aedes_albopictus": 4
+    },
+    "maxLevel": 0.955,
+    "fracLevel30": 0.11191
+   },
+   "hum_fridge": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 5,
+    "perHour": 15,
+    "ci": [
+     4.87,
+     35.005
+    ],
+    "lockedFrac": 0.06056,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_aegypti": 1,
+     "aedes_japonicus": 1,
+     "toxorhynchites": 1,
+     "anopheles_stephensi": 2
+    },
+    "maxLevel": 0.864,
+    "fracLevel30": 0.0577
+   },
+   "hum_ac": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 16,
+    "perHour": 48,
+    "ci": [
+     27.436,
+     77.949
+    ],
+    "lockedFrac": 0.04515,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "anopheles_stephensi": 1,
+     "ochlerotatus_caspius": 5,
+     "aedes_albopictus": 2,
+     "anopheles": 2,
+     "culex": 3,
+     "aedes_vexans": 2,
+     "aedes_aegypti": 1
+    },
+    "maxLevel": 0.5,
+    "fracLevel30": 0.02261
+   },
+   "whine_electrical": {
+    "group": "machine",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 2,
+    "perHour": 6,
+    "ci": [
+     0.727,
+     21.674
+    ],
+    "lockedFrac": 0.00565,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "anopheles": 1,
+     "culiseta_annulata": 1
+    },
+    "maxLevel": 0.545,
+    "fracLevel30": 0.00488
+   },
+   "speech_male": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "speech_female": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.091,
+    "fracLevel30": 0
+   },
+   "speech_child": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.091,
+    "fracLevel30": 0
+   },
+   "humming": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 15,
+    "perHour": 45,
+    "ci": [
+     25.186,
+     74.221
+    ],
+    "lockedFrac": 0.02571,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "culiseta_annulata": 2,
+     "anopheles": 3,
+     "anopheles_stephensi": 3,
+     "culex": 1,
+     "toxorhynchites": 1,
+     "aedes_albopictus": 4,
+     "aedes_vexans": 1
+    },
+    "maxLevel": 1,
+    "fracLevel30": 0.02509
+   },
+   "singing": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 3,
+    "perHour": 9,
+    "ci": [
+     1.856,
+     26.302
+    ],
+    "lockedFrac": 0.00364,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_vexans": 1,
+     "aedes_aegypti": 1,
+     "anopheles": 1
+    },
+    "maxLevel": 0.636,
+    "fracLevel30": 0.00984
+   },
+   "whistling": {
+    "group": "voice",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.182,
+    "fracLevel30": 0
+   },
+   "music_violin": {
+    "group": "music",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 5,
+    "perHour": 15,
+    "ci": [
+     4.87,
+     35.005
+    ],
+    "lockedFrac": 0.00627,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "toxorhynchites": 2,
+     "culex": 1,
+     "aedes_japonicus": 1,
+     "ochlerotatus_caspius": 1
+    },
+    "maxLevel": 0.636,
+    "fracLevel30": 0.00945
+   },
+   "music_flute": {
+    "group": "music",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 6,
+    "perHour": 18,
+    "ci": [
+     6.606,
+     39.178
+    ],
+    "lockedFrac": 0.00713,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "toxorhynchites": 1,
+     "anopheles": 1,
+     "aedes_vexans": 1,
+     "aedes_japonicus": 2,
+     "anopheles_stephensi": 1
+    },
+    "maxLevel": 0.864,
+    "fracLevel30": 0.01123
+   },
+   "music_piano": {
+    "group": "music",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 15,
+    "perHour": 45,
+    "ci": [
+     25.186,
+     74.221
+    ],
+    "lockedFrac": 0.02153,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "toxorhynchites": 1,
+     "aedes_vexans": 1,
+     "culex": 2,
+     "anopheles_stephensi": 5,
+     "culiseta_annulata": 4,
+     "anopheles": 1,
+     "aedes_japonicus": 1
+    },
+    "maxLevel": 0.682,
+    "fracLevel30": 0.02439
+   },
+   "music_pop": {
+    "group": "music",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 36,
+    "perHour": 108,
+    "ci": [
+     75.642,
+     149.518
+    ],
+    "lockedFrac": 0.13925,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "anopheles_stephensi": 10,
+     "anopheles": 11,
+     "toxorhynchites": 8,
+     "aedes_japonicus": 1,
+     "aedes_vexans": 4,
+     "culex": 1,
+     "culiseta_annulata": 1
+    },
+    "maxLevel": 0.955,
+    "fracLevel30": 0.12857
+   },
+   "tv": {
+    "group": "music",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 6,
+    "perHour": 18,
+    "ci": [
+     6.606,
+     39.178
+    ],
+    "lockedFrac": 0.00736,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "culex": 1,
+     "aedes_japonicus": 1,
+     "aedes_albopictus": 1,
+     "ochlerotatus_caspius": 1,
+     "culiseta_annulata": 1,
+     "aedes_vexans": 1
+    },
+    "maxLevel": 0.682,
+    "fracLevel30": 0.0062
+   },
+   "insect_housefly": {
+    "group": "insect",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 2,
+    "perHour": 6,
+    "ci": [
+     0.727,
+     21.674
+    ],
+    "lockedFrac": 0.00294,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_aegypti": 1,
+     "anopheles_stephensi": 1
+    },
+    "maxLevel": 0.318,
+    "fracLevel30": 0.00054
+   },
+   "insect_honeybee": {
+    "group": "insect",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 4,
+    "perHour": 12,
+    "ci": [
+     3.27,
+     30.725
+    ],
+    "lockedFrac": 0.00651,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_vexans": 2,
+     "aedes_japonicus": 2
+    },
+    "maxLevel": 0.455,
+    "fracLevel30": 0.00449
+   },
+   "insect_bumblebee": {
+    "group": "insect",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 4,
+    "perHour": 12,
+    "ci": [
+     3.27,
+     30.725
+    ],
+    "lockedFrac": 0.00743,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_japonicus": 3,
+     "ochlerotatus_caspius": 1
+    },
+    "maxLevel": 0.864,
+    "fracLevel30": 0.00751
+   },
+   "insect_fruitfly": {
+    "group": "insect",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 4,
+    "perHour": 12,
+    "ci": [
+     3.27,
+     30.725
+    ],
+    "lockedFrac": 0.00604,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_japonicus": 1,
+     "aedes_vexans": 2,
+     "culex": 1
+    },
+    "maxLevel": 0.727,
+    "fracLevel30": 0.00651
+   },
+   "insect_midge": {
+    "group": "insect",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 23,
+    "perHour": 69,
+    "ci": [
+     43.74,
+     103.534
+    ],
+    "lockedFrac": 0.18773,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "anopheles": 3,
+     "aedes_japonicus": 5,
+     "aedes_aegypti": 5,
+     "aedes_vexans": 3,
+     "culex": 4,
+     "ochlerotatus_caspius": 2,
+     "aedes_albopictus": 1
+    },
+    "maxLevel": 0.909,
+    "fracLevel30": 0.12988
+   },
+   "crickets": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "birds_song": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "birds_low": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.136,
+    "fracLevel30": 0
+   },
+   "traffic": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 29,
+    "perHour": 87,
+    "ci": [
+     58.265,
+     124.947
+    ],
+    "lockedFrac": 0.03973,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "anopheles": 4,
+     "aedes_vexans": 5,
+     "culex": 2,
+     "anopheles_stephensi": 6,
+     "culiseta_annulata": 5,
+     "aedes_aegypti": 1,
+     "ochlerotatus_caspius": 2,
+     "toxorhynchites": 3,
+     "aedes_japonicus": 1
+    },
+    "maxLevel": 0.727,
+    "fracLevel30": 0.03601
+   },
+   "rain": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0,
+    "fracLevel30": 0
+   },
+   "impulsive": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.091,
+    "fracLevel30": 0
+   },
+   "phone_tones": {
+    "group": "environment",
+    "countsAsFA": true,
+    "hours": 0.333,
+    "events": 0,
+    "perHour": 0,
+    "ci": [
+     0,
+     11.067
+    ],
+    "lockedFrac": 0,
+    "calLockedFrames": 0,
+    "eventSpecies": {},
+    "maxLevel": 0.045,
+    "fracLevel30": 0
+   },
+   "mosquito_male": {
+    "group": "mosquito",
+    "countsAsFA": false,
+    "hours": 0.333,
+    "events": 22,
+    "perHour": 66,
+    "ci": [
+     41.362,
+     99.925
+    ],
+    "lockedFrac": 0.15009,
+    "calLockedFrames": 0,
+    "eventSpecies": {
+     "aedes_japonicus": 9,
+     "aedes_aegypti": 2,
+     "aedes_albopictus": 1,
+     "ochlerotatus_caspius": 4,
+     "aedes_vexans": 3,
+     "culex": 2,
+     "anopheles": 1
+    },
+    "maxLevel": 0.955,
+    "fracLevel30": 0.11439
+   }
+  },
+  "pooled": {
+   "events": 192,
+   "hours": 11,
+   "perHour": 17.455,
+   "ci": [
+    15.073,
+    20.106
+   ]
+  },
+  "classesOverTarget": [
+   "fan_desk",
+   "fan_small",
+   "hum_fridge",
+   "hum_ac",
+   "whine_electrical",
+   "humming",
+   "singing",
+   "music_violin",
+   "music_flute",
+   "music_piano",
+   "music_pop",
+   "tv",
+   "insect_housefly",
+   "insect_honeybee",
+   "insect_bumblebee",
+   "insect_fruitfly",
+   "insect_midge",
+   "traffic"
+  ],
+  "classesWithAnyEvent": [
+   "fan_desk",
+   "fan_small",
+   "hum_fridge",
+   "hum_ac",
+   "whine_electrical",
+   "humming",
+   "singing",
+   "music_violin",
+   "music_flute",
+   "music_piano",
+   "music_pop",
+   "tv",
+   "insect_housefly",
+   "insect_honeybee",
+   "insect_bumblebee",
+   "insect_fruitfly",
+   "insect_midge",
+   "traffic"
+  ]
+ },
+ "confidence": {
+  "n": 1698,
+  "positives": 1506,
+  "negatives": 192,
+  "brier": 0.044,
+  "ece": 0.058,
+  "meanConfPositive": 0.906,
+  "meanConfNegative": 0.243,
+  "reliability": [
+   {
+    "lo": 0,
+    "hi": 0.1,
+    "n": 107,
+    "meanP": 0.045,
+    "freq": 0.112
+   },
+   {
+    "lo": 0.1,
+    "hi": 0.2,
+    "n": 44,
+    "meanP": 0.14,
+    "freq": 0.273
+   },
+   {
+    "lo": 0.2,
+    "hi": 0.3,
+    "n": 22,
+    "meanP": 0.243,
+    "freq": 0.409
+   },
+   {
+    "lo": 0.3,
+    "hi": 0.4,
+    "n": 10,
+    "meanP": 0.349,
+    "freq": 0.4
+   },
+   {
+    "lo": 0.4,
+    "hi": 0.5,
+    "n": 20,
+    "meanP": 0.459,
+    "freq": 0.4
+   },
+   {
+    "lo": 0.5,
+    "hi": 0.6,
+    "n": 17,
+    "meanP": 0.559,
+    "freq": 0.647
+   },
+   {
+    "lo": 0.6,
+    "hi": 0.7,
+    "n": 42,
+    "meanP": 0.643,
+    "freq": 0.905
+   },
+   {
+    "lo": 0.7,
+    "hi": 0.8,
+    "n": 67,
+    "meanP": 0.758,
+    "freq": 0.97
+   },
+   {
+    "lo": 0.8,
+    "hi": 0.9,
+    "n": 237,
+    "meanP": 0.86,
+    "freq": 0.958
+   },
+   {
+    "lo": 0.9,
+    "hi": 1,
+    "n": 1132,
+    "meanP": 0.963,
+    "freq": 0.989
+   }
+  ]
+ },
+ "mixtures": {
+  "none": {
+   "n": 20,
+   "k": 20,
+   "p": 1,
+   "ci": [
+    0.839,
+    1
+   ],
+   "retainedOfRef": 1,
+   "anyLock": 20,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.8,
+   "latencyMedian": 3.019,
+   "preOnsetFalseFrames": 0
+  },
+  "fan_desk": {
+   "n": 20,
+   "k": 15,
+   "p": 0.75,
+   "ci": [
+    0.531,
+    0.888
+   ],
+   "retainedOfRef": 0.75,
+   "anyLock": 15,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.733,
+   "latencyMedian": 3.019,
+   "preOnsetFalseFrames": 0
+  },
+  "fan_small": {
+   "n": 20,
+   "k": 16,
+   "p": 0.8,
+   "ci": [
+    0.584,
+    0.919
+   ],
+   "retainedOfRef": 0.8,
+   "anyLock": 16,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.75,
+   "latencyMedian": 3.066,
+   "preOnsetFalseFrames": 0
+  },
+  "hum_ac": {
+   "n": 20,
+   "k": 11,
+   "p": 0.55,
+   "ci": [
+    0.342,
+    0.742
+   ],
+   "retainedOfRef": 0.55,
+   "anyLock": 11,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.818,
+   "latencyMedian": 2.926,
+   "preOnsetFalseFrames": 0
+  },
+  "hum_fridge": {
+   "n": 20,
+   "k": 12,
+   "p": 0.6,
+   "ci": [
+    0.387,
+    0.781
+   ],
+   "retainedOfRef": 0.6,
+   "anyLock": 13,
+   "otherLockFrames": 25,
+   "genusCorrect": 0.769,
+   "latencyMedian": 3.066,
+   "preOnsetFalseFrames": 0
+  },
+  "tv": {
+   "n": 20,
+   "k": 4,
+   "p": 0.2,
+   "ci": [
+    0.081,
+    0.416
+   ],
+   "retainedOfRef": 0.2,
+   "anyLock": 8,
+   "otherLockFrames": 134,
+   "genusCorrect": 0.375,
+   "latencyMedian": 4.179,
+   "preOnsetFalseFrames": 69
+  },
+  "speech_female": {
+   "n": 20,
+   "k": 5,
+   "p": 0.25,
+   "ci": [
+    0.112,
+    0.469
+   ],
+   "retainedOfRef": 0.25,
+   "anyLock": 5,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.8,
+   "latencyMedian": 6.177,
+   "preOnsetFalseFrames": 0
+  },
+  "speech_child": {
+   "n": 20,
+   "k": 2,
+   "p": 0.1,
+   "ci": [
+    0.028,
+    0.301
+   ],
+   "retainedOfRef": 0.1,
+   "anyLock": 2,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.5,
+   "latencyMedian": 8.174,
+   "preOnsetFalseFrames": 0
+  },
+  "music_pop": {
+   "n": 20,
+   "k": 1,
+   "p": 0.05,
+   "ci": [
+    0.009,
+    0.236
+   ],
+   "retainedOfRef": 0.05,
+   "anyLock": 11,
+   "otherLockFrames": 296,
+   "genusCorrect": 0.182,
+   "latencyMedian": 5.526,
+   "preOnsetFalseFrames": 300
+  },
+  "traffic": {
+   "n": 20,
+   "k": 12,
+   "p": 0.6,
+   "ci": [
+    0.387,
+    0.781
+   ],
+   "retainedOfRef": 0.6,
+   "anyLock": 12,
+   "otherLockFrames": 23,
+   "genusCorrect": 0.833,
+   "latencyMedian": 4.272,
+   "preOnsetFalseFrames": 0
+  },
+  "rain": {
+   "n": 20,
+   "k": 16,
+   "p": 0.8,
+   "ci": [
+    0.584,
+    0.919
+   ],
+   "retainedOfRef": 0.8,
+   "anyLock": 16,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.813,
+   "latencyMedian": 3.297,
+   "preOnsetFalseFrames": 0
+  },
+  "whine_electrical": {
+   "n": 20,
+   "k": 17,
+   "p": 0.85,
+   "ci": [
+    0.64,
+    0.948
+   ],
+   "retainedOfRef": 0.85,
+   "anyLock": 17,
+   "otherLockFrames": 0,
+   "genusCorrect": 0.824,
+   "latencyMedian": 3.019,
+   "preOnsetFalseFrames": 0
+  }
+ },
+ "levels": {
+  "1": {
+   "meanSNR50": -19.667,
+   "worstSNR50": -16,
+   "pDetectLoud": 0.979,
+   "faPooled": {
+    "events": 54,
+    "hours": 1.167,
+    "perHour": 46.286,
+    "ci": [
+     34.771,
+     60.393
+    ]
+   },
+   "faClassesWithEvents": [
+    "fan_small",
+    "whine_electrical",
+    "humming",
+    "singing",
+    "music_violin",
+    "music_flute",
+    "birds_low",
+    "insect_midge",
+    "insect_housefly",
+    "tv"
+   ],
+   "latencyMedianAtSNRge12": 2.201
+  },
+  "2": {
+   "meanSNR50": -19.333,
+   "worstSNR50": -16,
+   "pDetectLoud": 0.979,
+   "faPooled": {
+    "events": 43,
+    "hours": 1.167,
+    "perHour": 36.857,
+    "ci": [
+     26.674,
+     49.646
+    ]
+   },
+   "faClassesWithEvents": [
+    "fan_small",
+    "whine_electrical",
+    "humming",
+    "singing",
+    "music_violin",
+    "music_flute",
+    "insect_midge",
+    "insect_housefly",
+    "tv"
+   ],
+   "latencyMedianAtSNRge12": 2.387
+  },
+  "3": {
+   "meanSNR50": -19.111,
+   "worstSNR50": -16,
+   "pDetectLoud": 0.979,
+   "faPooled": {
+    "events": 21,
+    "hours": 1.167,
+    "perHour": 18,
+    "ci": [
+     11.142,
+     27.515
+    ]
+   },
+   "faClassesWithEvents": [
+    "fan_small",
+    "whine_electrical",
+    "humming",
+    "singing",
+    "music_violin",
+    "tv",
+    "insect_housefly",
+    "insect_midge"
+   ],
+   "latencyMedianAtSNRge12": 2.851
+  },
+  "4": {
+   "meanSNR50": -18,
+   "worstSNR50": -13.333,
+   "pDetectLoud": 0.979,
+   "faPooled": {
+    "events": 13,
+    "hours": 1.167,
+    "perHour": 11.143,
+    "ci": [
+     5.933,
+     19.055
+    ]
+   },
+   "faClassesWithEvents": [
+    "fan_small",
+    "whine_electrical",
+    "humming",
+    "insect_midge",
+    "tv"
+   ],
+   "latencyMedianAtSNRge12": 3.316
+  },
+  "5": {
+   "meanSNR50": -17,
+   "worstSNR50": -12,
+   "pDetectLoud": 0.979,
+   "faPooled": {
+    "events": 6,
+    "hours": 1.167,
+    "perHour": 5.143,
+    "ci": [
+     1.887,
+     11.194
+    ]
+   },
+   "faClassesWithEvents": [
+    "whine_electrical",
+    "insect_midge"
+   ],
+   "latencyMedianAtSNRge12": 3.687
+  }
+ },
+ "compute": {
+  "calls": 639,
+  "meanMs": 2.458,
+  "p50Ms": 2.079,
+  "p95Ms": 4.189,
+  "maxMs": 6.72
+ }
+}

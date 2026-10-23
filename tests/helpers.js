@@ -57,15 +57,20 @@ function whiteNoise(len, rms, R) {
   return x;
 }
 
-// Flying-mosquito tone: f0 with slow wander, harmonics at -6/-12 dB.
-function mosquitoTone(len, f0, amp, R, start = 0) {
+// Flying-mosquito tone: f0 with slow wander, harmonics at -6/-12 dB, and the
+// level fluctuation of a moving source (1/r distance changes, ±2-3 dB). A
+// perfectly constant-level tone is NOT a free-flying insect — the engine
+// treats it as a machine / held note by design (see engine-contract tests).
+function mosquitoTone(len, f0, amp, R, start = 0, sr = SR, { am = true } = {}) {
   const x = new Float32Array(len);
   let ph = 0, walk = 0;
   for (let i = start; i < len; i++) {
+    const t = i / sr;
     walk += R.g() * 0.02; walk *= 0.9999;
-    const f = f0 + 4 * Math.sin(2 * Math.PI * 0.6 * i / SR) + walk;
-    ph += 2 * Math.PI * f / SR;
-    x[i] = amp * (Math.sin(ph) + 0.5 * Math.sin(2 * ph + 0.3) + 0.25 * Math.sin(3 * ph + 1.1));
+    const f = f0 + 4 * Math.sin(2 * Math.PI * 0.6 * t) + walk;
+    ph += 2 * Math.PI * f / sr;
+    const a = am ? amp * (1 + 0.3 * Math.sin(2 * Math.PI * 0.7 * t) + 0.15 * Math.sin(2 * Math.PI * 1.9 * t + 1)) : amp;
+    x[i] = a * (Math.sin(ph) + 0.5 * Math.sin(2 * ph + 0.3) + 0.25 * Math.sin(3 * ph + 1.1));
   }
   return x;
 }
@@ -77,24 +82,28 @@ function mix(...xs) {
 }
 
 // Drive a classifier over a signal the way the app does (2 s calibration).
-function runClassifier(signal, { level = 3, lat = null, lng = null, disabled } = {}) {
+// sr: sample rate of `signal` (the engine is told the real rate, as the app does).
+function runClassifier(signal, { level = 3, lat = null, lng = null, disabled, sr = SR, onFrame } = {}) {
   const eng = loadEngine();
+  const binHz = sr / N;
   const clf = new eng.MosquitoClassifier({
-    binHz: BIN_HZ, sampleRate: SR,
-    freqToBin: hz => Math.min(Math.round(hz / BIN_HZ), N / 2 - 1),
+    binHz, sampleRate: sr, fftSize: N,
+    freqToBin: hz => Math.min(Math.round(hz / binHz), N / 2 - 1),
   });
-  clf.getActivityFactor = () => 1.0;
+  clf.getActivityFactor = () => 1.0;                       // legacy engines
+  if (typeof clf.setTimeOfDay === 'function') clf.setTimeOfDay('none');   // tests must not depend on the clock
   clf.setSensitivity(level);
   clf.setLocation(lat, lng);
   if (disabled) clf.setDisabledSpecies(disabled);
   clf.beginCalibration();
-  const calibFrames = Math.round(2 * SR / HOP);
+  const calibFrames = Math.round(2 * sr / HOP);
   const frames = [];
   let i = 0;
   for (let end = N; end <= signal.length; end += HOP, i++) {
     if (i === calibFrames) clf.endCalibration();
     const fr = signal.subarray(end - N, end);
     frames.push(clf.analyze(analyserDb(fr), Float32Array.from(fr)));
+    if (onFrame) onFrame(i, end / sr, frames[frames.length - 1], clf);
   }
   return { clf, frames, eng };
 }
