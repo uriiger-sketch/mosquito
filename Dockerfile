@@ -56,9 +56,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY federated_server.py .
 
-# Declared after /data is created app-owned: a new named volume is initialised
-# from the image, so it starts out writable by `app`.
-VOLUME /data
+# Persistence: Railway does not support the Dockerfile VOLUME instruction.
+# Attach a Railway Volume to the service with mount path /data.
 EXPOSE 8080
 
 # Liveness: /health has its own generous rate-limit bucket, so busy traffic
