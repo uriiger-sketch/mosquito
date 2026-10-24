@@ -91,6 +91,16 @@ jobs:
         with:
           node-version: 22
 
+      # tests/e2e/server.e2e.js runs the real backend for the app to connect to.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
       - name: Install Playwright
         run: npm install --no-save --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
 
@@ -105,7 +115,8 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      # The tests block the page's calls to the production API, so no secrets
+      # The tests never call the production API (the detection suite blocks
+      # it; the connectivity suite starts its own local backend), so no secrets
       # or network access to the backend are needed.
       - name: End-to-end tests
         run: npm run test:e2e

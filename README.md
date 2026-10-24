@@ -100,7 +100,7 @@ sw.js                    service worker (network-first app code, cached tiles)
 vendor/, assets/fonts/   self-hosted Leaflet and fonts (no third-party CDNs)
 federated_server.py      Flask backend: detections, map hotspots, federated model
 tools/eval/              accuracy evaluation harness + regression thresholds
-tests/                   unit/contract tests, tests/server (pytest), tests/e2e (Playwright)
+tests/                   unit/contract tests, tests/server (pytest), tests/e2e (Playwright: detection + app↔server)
 docs/EVALUATION.md       evaluation method and results
 docs/REAL_DATA.md        real recordings: sources, held-out results, findings
 tools/real/              real-data fetch, tuning, training and held-out evaluators
@@ -129,4 +129,7 @@ only the static site.
 
 See [`DEPLOY.md`](DEPLOY.md). In short: the PWA deploys to GitHub Pages from
 `main`; the backend runs anywhere Docker or a Python 3.12 buildpack runs, with
-`DATA_DIR` on a persistent volume.
+`DATA_DIR` on a persistent volume. The app calls the backend endpoints in
+`SERVER_URLS` in order (overridable with the repository variable `SERVER_URLS`,
+no code change); if it shows "Offline", see *The app shows "Offline"* in
+`DEPLOY.md`.

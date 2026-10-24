@@ -22,9 +22,11 @@ The server prints a loud banner at startup when it detects this, and
 2. Service → **Environment** → add `DATA_DIR = /data`
 3. Redeploy and check `/health` as above.
 
-**Docker / VPS / Fly** — already correct: the `Dockerfile` sets `DATA_DIR=/data`
-and declares `VOLUME /data`. Just make sure you actually mount it:
-`docker run -v mosquitonet_data:/data ...`
+**Docker / VPS / Fly** — the `Dockerfile` sets `DATA_DIR=/data` but does **not**
+declare `VOLUME /data` (Railway refuses to build an image that does — that broke
+every Railway deploy from June to October 2026). So mount a volume yourself:
+`docker run -v mosquitonet_data:/data ...` — without one, data lives in the
+container's writable layer and is lost when the container is recreated.
 
 The container runs the server as an unprivileged user (uid/gid **10001**). It
 starts as root only long enough to `chown` the data directory — platform volumes
@@ -142,8 +144,9 @@ mosquito/
 ├── requirements.txt          ← Python deps (fully pinned)
 ├── requirements-dev.txt      ← test deps (pytest, pytest-cov)
 ├── pytest.ini                ← pytest config → tests/server/
-├── Procfile                  ← Railway/Heroku start command
+├── Procfile                  ← Heroku/Render start command (Railway uses the Dockerfile)
 ├── Dockerfile                ← Docker deployment (VPS / fly.io / GCP / Railway)
+├── railway.json              ← Railway build/deploy settings (health check, restarts)
 ├── runtime.txt               ← Python 3.12
 ├── tests/server/             ← server test suite (pytest)
 ├── .github/workflows/        ← ci.yml (tests) + deploy-pages.yml (gated deploy)
@@ -159,6 +162,24 @@ automatically).
 The server adds: global detection map, federated model, live device count.
 
 ---
+
+## The app shows "Offline"
+
+In the app: **Settings → Advanced → Test server connection**. It probes
+`/health` on every endpoint in `SERVER_URLS` and names the failure:
+
+| Result | Meaning | Fix |
+|---|---|---|
+| `OK (MosquitoNet v13)` | That endpoint works; the app switches to it on its next heartbeat (≤ 10 s). | If the pill still says Offline, reload the page (an old cached build may be running). |
+| `unreachable — DNS, TLS or network failure` | The domain doesn't resolve, has no valid certificate, or nothing is deployed. | Railway → Networking: is the custom domain verified and the certificate issued? Does the DNS record match what Railway shows? Did the last deploy succeed? |
+| `HTTP 404 — answered, but not the MosquitoNet server` | Something answers, but not this app: typically Railway's "Application not found" (domain not attached to this service, or a wrong target port) or a parked domain. | Attach the domain to the service (Step 3) and check the port matches the `Listening at:` log line. |
+| `HTTP 502` / `503` | The platform reached the service, but it isn't serving: still booting, crashed, or failing its health check. | Railway → Deployments → deploy and runtime logs. |
+| `no answer within 8 s` | A firewall or a hung server. | As for 502. |
+
+From a computer, `curl -sS https://mosquito.charity/health` gives the same
+information. Railway build failures (`BUILD_IMAGE`, e.g. the Dockerfile
+`VOLUME` rejection) leave the **previous** deployment running — or nothing, on a
+new service — so always check the latest deploy actually went live.
 
 ## Diagnosing "Server Down" (403 / 502 / timeout)
 
@@ -262,7 +283,7 @@ test gate, so do switch.
 |---|---|
 | **JS unit tests + detector benchmark** | `npm test`, then `npm run bench:quick` (Node 22) |
 | **Server tests (Python 3.12)** | `pytest` over `tests/server/` with coverage (fails under 85 %) |
-| **End-to-end (Playwright, Chromium)** | `npm run test:e2e` — the real app in a headless browser (production API calls are blocked; no secrets needed) |
+| **End-to-end (Playwright, Chromium)** | `npm run test:e2e` — the real app in a headless browser: detection with WAV files as the mic, and connectivity against a locally started backend (endpoint failover, heartbeat, upload, diagnostics, outage recovery). Production is never called; no secrets needed |
 | **Backend image smoke test** | builds the Dockerfile, starts it on a root-owned volume holding legacy data, checks it runs as uid 10001, accepts a detection, turns Docker-healthy and flushes state on `docker stop` |
 
 `deploy-pages.yml` calls the same workflow and publishes **only if the JS, server
@@ -355,18 +376,33 @@ Go to [railway.app](https://railway.app) → sign up with GitHub (takes 30 secon
 1. Click **"New Project"**
 2. Click **"Deploy from GitHub repo"**
 3. Select your `mosquito` repo
-4. Railway finds the `Dockerfile` at the repo root and builds the image from it
-   (a root `Dockerfile` takes precedence over `requirements.txt` + `Procfile`)
+4. Railway reads `railway.json` at the repo root: build from the `Dockerfile`,
+   go live only once `GET /health` answers 200 (a broken build or a crash at boot
+   never replaces a working deployment), restart on failure. Values in
+   `railway.json` override the dashboard for each deploy.
 5. Click **"Deploy"**
 
-Wait ~2 minutes. Railway will show a deployment log.
+Wait ~2 minutes. Railway will show a deployment log. A good boot logs
+`Listening at: http://0.0.0.0:<PORT>` — note that port for Step 3.
 
-### Step 3: Get your server URL
+### Step 3: Give the service a public address
 
-1. In Railway, click your deployment
-2. Click **"Settings"** → **"Domains"**
-3. Click **"Generate Domain"**
-4. You get a URL like: `https://mosquito-production.up.railway.app`
+Railway → your service → **Settings → Networking**:
+
+1. **Generate Domain** — you get e.g. `https://mosquito-production.up.railway.app`.
+   If it asks for a port, use the one from the `Listening at:` log line (8080
+   unless Railway injected its own `PORT`). A wrong port shows up as a Railway
+   error page instead of `/health`.
+2. **Custom Domain** → add `mosquito.charity` (the address the app calls by
+   default). Railway shows the DNS record to create (a `CNAME`, or `ALIAS`/
+   flattened `CNAME` at the apex, plus a `TXT` verification record) — add it at
+   your domain registrar/DNS host and wait until Railway shows the domain as
+   verified and the certificate as issued. If the DNS is proxied through
+   Cloudflare, set `TRUSTED_PROXY_HOPS = 2`.
+
+Check both from any machine: `curl https://mosquito.charity/health` and
+`curl https://mosquito-production.up.railway.app/health` must return
+`"service":"MosquitoNet v13"`.
 
 ### Step 4: Variables (DATA_DIR, and ALLOWED_ORIGINS only if needed)
 
@@ -389,29 +425,27 @@ to everyone.
 If you put Cloudflare in front of Railway, also set `TRUSTED_PROXY_HOPS = 2`
 (see *Server configuration*).
 
-### Step 5: Update index.html with the server URL
+### Step 5: Point the app at the server (no code change)
 
-Open `index.html` and find this line near the top of the `<script>`:
+The app calls the endpoints in `SERVER_URLS` (top of the `<script>` in
+`index.html`; default `['https://mosquito.charity']`) **in order**, fails over
+to the next one when an endpoint doesn't answer as MosquitoNet, and remembers
+the one that worked on each device.
 
-```javascript
-const SERVER_URL = '';   // ← PASTE YOUR SERVER URL HERE AFTER DEPLOYING
-```
+To change the list without editing code, set a repository variable:
 
-Change it to:
+1. GitHub repo → **Settings → Secrets and variables → Actions → Variables →
+   New repository variable**
+2. Name `SERVER_URLS`, value — comma-separated origins (`https://host`, no path):
+   ```
+   https://mosquito.charity,https://mosquito-production.up.railway.app
+   ```
+3. **Actions → Deploy to GitHub Pages → Run workflow** (or push to `main`).
 
-```javascript
-const SERVER_URL = 'https://mosquito-production.up.railway.app';
-```
-
-Then push:
-
-```bash
-git add index.html
-git commit -m "Connect app to federated server"
-git push origin main
-```
-
-GitHub Pages redeploys in ~30 seconds. Done.
+Listing both the custom domain and the Railway domain is recommended: the app
+then stays online while the custom domain's DNS or certificate is being set up,
+and moves back to it by itself once it works. The deploy refuses anything that
+isn't a plain origin, so the variable can only ever put a URL into the page.
 
 ---
 

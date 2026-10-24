@@ -54,6 +54,12 @@ jobs:
       # folders (js/, vendor/, assets/, …) ship automatically, while server
       # code, tests, tooling, CI and docs never do.
       - name: Build _site (repo minus non-site paths)
+        env:
+          # Optional repository variable (Settings → Secrets and variables →
+          # Actions → Variables): comma-separated backend origins, tried in
+          # order — e.g. the Railway domain while a custom domain's DNS isn't
+          # live. Unset = keep the SERVER_URLS list in index.html.
+          SERVER_URLS: ${{ vars.SERVER_URLS }}
         run: |
           set -euo pipefail
           mkdir _site
@@ -61,7 +67,7 @@ jobs:
           cd _site
           # top-level, non-site paths
           rm -rf .github .claude tests tools docs \
-                 federated_server.py requirements*.txt Dockerfile Procfile runtime.txt \
+                 federated_server.py requirements*.txt Dockerfile Procfile runtime.txt railway.json \
                  netlify.toml package.json package-lock.json pyproject.toml pytest.ini \
                  .pytest_cache htmlcov .coverage .venv
           # anywhere in the tree
@@ -75,7 +81,11 @@ jobs:
           # run against a cached copy of the previous js/*.js (version skew).
           sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${GITHUB_SHA::12}"'"#g' index.html
           grep -q "js/detector.js?v=${GITHUB_SHA::12}\"" index.html || { echo "::error::app-code version stamp failed"; exit 1; }
-          for p in federated_server.py Dockerfile Procfile requirements.txt package.json tests tools .github; do
+          if [ -n "${SERVER_URLS:-}" ]; then
+            node ../tools/set-server-urls.js index.html "$SERVER_URLS"
+          fi
+          grep -m1 '^const SERVER_URLS = ' index.html
+          for p in federated_server.py Dockerfile Procfile railway.json requirements.txt package.json tests tools .github; do
             if [ -e "$p" ]; then echo "::error::$p leaked into _site"; exit 1; fi
           done
           leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' \) -print)

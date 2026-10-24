@@ -839,7 +839,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .kv dt { color: var(--text-3); }
 .kv dd { color: var(--text-1); font-family: var(--font-mono); font-size: 0.75rem; overflow-wrap: anywhere; }
 .fed-bar { margin: var(--sp-2) 0; }
-.server-result { font-family: var(--font-mono); font-size: 0.75rem; padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); word-break: break-word; }
+.server-result { font-family: var(--font-mono); font-size: 0.75rem; padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); word-break: break-word; white-space: pre-line; }
 .server-result[data-tone="ok"] { color: var(--ok); }
 .server-result[data-tone="warn"] { color: var(--warn); }
 .server-result[data-tone="err"] { color: var(--danger); }
@@ -1755,9 +1755,12 @@ legend { padding: 0; }
 /* global SPECIES_DB, getNativeSpecies, getLocalDisease, getLocalTaxon, timeOfDayCategory,
           MosquitoAudioEngine, MosquitoClassifier, L */
 
-const SERVER_URL  = 'https://mosquito.charity';
+// Backend endpoints, tried in order until one answers (see useNextServer). The
+// Pages deploy replaces this list with the repository variable SERVER_URLS when
+// it is set, so the app can be pointed at another backend — e.g. the Railway
+// domain while a custom domain's DNS is not live — without a code change.
+const SERVER_URLS = ['https://mosquito.charity'];
 const APP_VERSION = '3.0.0';
-window.SERVER_URL = SERVER_URL;
 
 /* ════════════════════════════════════════════════════════════
    Small helpers
@@ -1806,6 +1809,21 @@ const store = {
   getJSON(k, fb)     { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch (e) { return fb; } },
   setJSON(k, v)      { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
 };
+
+// The endpoint in use. Every request reads window.SERVER_URL at call time, so a
+// switch applies to heartbeats, uploads, the stats poll and the map alike. The
+// device starts on the endpoint that last answered, if it is still listed.
+const SERVER_KEY = 'mosquitonet_server';
+window.SERVER_URL = SERVER_URLS.includes(store.get(SERVER_KEY)) ? store.get(SERVER_KEY) : SERVER_URLS[0];
+
+// A heartbeat to `failed` got no answer from MosquitoNet: move to the next
+// endpoint. A late failure from an endpoint we already left is ignored, so a
+// slow timeout can't push the app off one that works.
+function useNextServer(failed) {
+  if (SERVER_URLS.length < 2 || window.SERVER_URL !== failed) return;
+  window.SERVER_URL = SERVER_URLS[(SERVER_URLS.indexOf(failed) + 1) % SERVER_URLS.length];
+  setText($('#dbg-server'), window.SERVER_URL);
+}
 
 function detectPlatform() {
   const ua = navigator.userAgent || '';
@@ -1932,36 +1950,50 @@ function loadLeaflet() {
 }
 
 // ── Advanced → "Test server connection" ─────────────────────────────────────
-function testServerConnection() {
+// Probes /health on every endpoint and says WHY one fails: a network error
+// (DNS, TLS, offline) looks very different from a host that answers but isn't
+// MosquitoNet (a domain not attached to the backend, a platform error page).
+function probeServer(url) {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url + '/health', true);
+    xhr.timeout = 8000;
+    xhr.onload = () => {
+      let d = null;
+      try { d = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+      if (xhr.status >= 200 && xhr.status < 300 && d && /^MosquitoNet/.test(d.service || '')) {
+        resolve({ ok: true, tone: d.status === 'ok' ? 'ok' : 'warn',
+                  msg: [`${url}: OK (${d.service}${d.status === 'ok' ? '' : ', ' + d.status})`,
+                        'active: ' + d.active_now, 'total detections: ' + d.total_detections,
+                        'uptime: ' + Math.round((d.uptime_seconds || 0) / 60) + ' min'].join(' · ') });
+      } else {
+        resolve({ ok: false, tone: 'warn',
+                  msg: `${url}: HTTP ${xhr.status} — answered, but not the MosquitoNet server ` +
+                       `(domain not attached to the backend, or the backend is down)` });
+      }
+    };
+    xhr.onerror   = () => resolve({ ok: false, tone: 'err',
+      msg: `${url}: unreachable — DNS, TLS or network failure (or this device is offline)` });
+    xhr.ontimeout = () => resolve({ ok: false, tone: 'err', msg: `${url}: no answer within 8 s` });
+    xhr.send();
+  });
+}
+
+async function testServerConnection() {
   const btn = $('#btn-test-server'), lbl = $('#btn-test-label'), res = $('#dbg-server-result');
-  const url = window.SERVER_URL || SERVER_URL;
-  const show = (tone, msg) => { if (res) { res.hidden = false; res.dataset.tone = tone; res.textContent = msg; } };
-  const reset = () => setTimeout(() => { if (lbl) lbl.textContent = 'Test server connection'; if (btn) btn.disabled = false; }, 4000);
   if (lbl) lbl.textContent = 'Testing…';
   if (btn) btn.disabled = true;
   if (res) { res.hidden = true; res.textContent = ''; }
 
-  const xhr = new XMLHttpRequest();
-  xhr.open('GET', url + '/health', true);
-  xhr.timeout = 8000;
-  xhr.onload = function () {
-    try {
-      const d = JSON.parse(xhr.responseText);
-      show('ok', ['Server OK', 'active: ' + d.active_now, 'total detections: ' + d.total_detections,
-                  'log size: ' + d.log_size, 'uptime: ' + Math.round((d.uptime_seconds || 0) / 60) + ' min'].join(' · '));
-      if (lbl) lbl.textContent = 'Connected';
-    } catch (e) {
-      show('warn', 'Unexpected response: ' + String(xhr.responseText).slice(0, 100));
-      if (lbl) lbl.textContent = 'Bad response';
-    }
-    reset();
-  };
-  xhr.onerror = xhr.ontimeout = function () {
-    show('err', 'Cannot reach ' + url);
-    if (lbl) lbl.textContent = 'Unreachable';
-    reset();
-  };
-  xhr.send();
+  const results = await Promise.all(SERVER_URLS.map(probeServer));
+  const ok = results.find(r => r.ok);
+  if (res) {
+    res.hidden = false;
+    res.dataset.tone = ok ? ok.tone : (results.some(r => r.tone === 'warn') ? 'warn' : 'err');
+    res.textContent = results.map(r => r.msg).join('\n');
+  }
+  if (lbl) lbl.textContent = ok ? 'Connected' : 'Unreachable';
+  setTimeout(() => { if (lbl) lbl.textContent = 'Test server connection'; if (btn) btn.disabled = false; }, 4000);
 }
 
 // ── Map → "Find me" ─────────────────────────────────────────────────────────
@@ -2405,7 +2437,10 @@ class FederatedLearningClient {
       }
       // 4xx = server rejected this payload as invalid → it will NEVER succeed on
       // retry, so drop it rather than block the whole queue behind a poison item.
-      if (xhr.status >= 400 && xhr.status < 500) {
+      // Only the server's own verdict counts ({received: false}): a platform's
+      // 404 "application not found" for an unattached domain is an outage, and
+      // dropping on it would delete every find made while the backend is away.
+      if (xhr.status >= 400 && xhr.status < 500 && data && data.received === false) {
         const rest = this._loadQueue();
         const idx = rest.findIndex(p => p.eventId === payload.eventId);
         if (idx >= 0) rest.splice(idx, 1);
@@ -3108,7 +3143,7 @@ class App {
     try { $('#map-legend').innerHTML = MapController.legendHTML(); } catch (e) { console.warn('legend:', e); }
     setText($('#about-version'), 'v' + APP_VERSION);
     setText($('#dbg-version'), APP_VERSION);
-    setText($('#dbg-server'), SERVER_URL);
+    setText($('#dbg-server'), window.SERVER_URL);
     setText($('#about-detection-sub'), `${SPECIES_DB.length} species · two detectors`);
 
     this.wireTabs();
@@ -3799,48 +3834,68 @@ class App {
     };
 
     // Heartbeat via XHR — bypasses the service worker, no CORS preflight, works in iOS PWAs.
+    // It also owns endpoint failover: when an endpoint gives no MosquitoNet
+    // answer, the next one is tried at once, until each has had a try. Every
+    // scheduled beat starts a fresh sweep, so a backend that comes back is
+    // found within one interval wherever the rotation stopped.
+    let misses = 0;
+    const heartbeat = () => { misses = 0; sendHeartbeat(); };
     const sendHeartbeat = () => {
-      if (!SERVER_URL) { this.setNet('offline'); return; }
+      const url = window.SERVER_URL;
+      if (!url) { this.setNet('offline'); return; }
       // POST, not GET: the raw device id must never appear in a URL — URLs are
       // kept in hosting/CDN access logs next to the client IP. text/plain keeps
       // it a "simple" CORS request (no preflight).
       const body = JSON.stringify({ deviceId: this.fedClient.getAnonymousId(),
                                     listening: this.running ? 1 : 0, sess: this.sessionStart || 0 });
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${SERVER_URL}/heartbeat`, true);
+      xhr.open('POST', `${url}/heartbeat`, true);
       xhr.setRequestHeader('Content-Type', 'text/plain');
       xhr.timeout = 8000;
+      const fail = () => {
+        this.setNet('offline');
+        useNextServer(url);
+        if (window.SERVER_URL !== url && ++misses < SERVER_URLS.length) sendHeartbeat();
+      };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try { applyStats(JSON.parse(xhr.responseText)); } catch (e) {}
+        let data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && data && typeof data === 'object') {
+          misses = 0;
+          store.set(SERVER_KEY, url);
+          applyStats(data);
           // Connectivity confirmed — good moment to drain any queued finds.
           try { this.fedClient.flushDetectionQueue(); } catch (e) {}
+        } else if (xhr.status === 429) {
+          // Throttled: the server is up and answering, so it is not "offline".
+          if ($('#net-pill').dataset.net !== 'online') this.setNet('online');
         } else {
-          this.setNet('offline');
+          // A platform error page, a parked domain or a 5xx: not a MosquitoNet answer.
+          fail();
         }
       };
-      xhr.onerror   = () => this.setNet('offline');
-      xhr.ontimeout = () => this.setNet('offline');
+      xhr.onerror   = fail;
+      xhr.ontimeout = fail;
       xhr.send(body);
     };
     const fetchStats = async () => {
-      if (!SERVER_URL) return;
+      if (!window.SERVER_URL) return;
       try {
-        const resp = await fetchWithTimeout(`${SERVER_URL}/federated/stats`, { mode: 'cors', cache: 'no-store' }, 6000);
+        const resp = await fetchWithTimeout(`${window.SERVER_URL}/federated/stats`, { mode: 'cors', cache: 'no-store' }, 6000);
         if (resp.ok) applyStats(await resp.json());
       } catch (e) { /* the heartbeat owns the offline state */ }
     };
 
     if (navigator.onLine === false) this.setNet('offline');
     // Guarded: a network/storage failure here must never abort init().
-    try { sendHeartbeat(); } catch (e) { console.warn('heartbeat:', e); }
-    try { fetchStats(); }    catch (e) { console.warn('stats:', e); }
+    try { heartbeat(); }  catch (e) { console.warn('heartbeat:', e); }
+    try { fetchStats(); } catch (e) { console.warn('stats:', e); }
     try { this.fedClient.flushDetectionQueue(); } catch (e) {}
     window.addEventListener('online', () => {
-      try { sendHeartbeat(); this.fedClient.flushDetectionQueue(); } catch (e) {}
+      try { heartbeat(); this.fedClient.flushDetectionQueue(); } catch (e) {}
     });
     window.addEventListener('offline', () => this.setNet('offline'));
-    setInterval(sendHeartbeat, 10000);   // real-time online count
+    setInterval(heartbeat, 10000);   // real-time online count
     setInterval(fetchStats, 15000);
     setInterval(() => { try { this.fedClient.flushDetectionQueue(); } catch (e) {} }, 30000);
   }
