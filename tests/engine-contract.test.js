@@ -71,7 +71,7 @@ test('disabled species are never reported', () => {
   assert.equal(frames.flat().filter(d => d.species.id === 'aedes_aegypti').length, 0);
 });
 
-test('contract extensions: taxonLevel / genusP / trackId on every Detection', () => {
+test('contract extensions: taxonLevel / genusP / trackId / maleP on every Detection', () => {
   const R = H.rng(3);
   const len = 10 * H.SR;
   const sig = H.mix(H.whiteNoise(len, 0.003, R), H.mosquitoTone(len, 560, 0.03, R, 3 * H.SR));
@@ -83,6 +83,7 @@ test('contract extensions: taxonLevel / genusP / trackId on every Detection', ()
     assert.equal(d.genus, d.species.genus, 'species.genus must equal genus');
     assert.ok(d.genusP > 0 && d.genusP <= 1);
     assert.ok(Number.isInteger(d.trackId));
+    assert.ok(Number.isFinite(d.maleP) && d.maleP >= 0 && d.maleP <= 1, `maleP ${d.maleP}`);
     const top = d.posterior[0];
     if (d.taxonLevel === 'species') { assert.equal(d.species.id, top.id); assert.ok(top.p >= 0.6); }
     else assert.ok(top.p < 0.6);

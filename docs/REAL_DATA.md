@@ -142,6 +142,69 @@ level.
   split (48 % → 6.5 % at the most permissive simulated point). The small,
   intermittent cup data does not support a confident CDC-recall claim.
 
+## Second round: crawling for more real data (independent, human-labelled)
+
+**What exists and where.** A web search and a crawl of every public repository
+named in the mosquito-acoustics literature found these labelled datasets:
+
+| Dataset | Content | Hosted on | Reachable from the build environment |
+|---|---|---|---|
+| HumBugDB (Kiskin et al., NeurIPS 2021) | 20 h, 36 species | Zenodo 4904800 | no (network policy) |
+| BioDCASE 2026 Task 5 (cross-domain species) | 271,380 clips, 9 species, 60.7 h | Zenodo 19095788 | no |
+| Abuzz (Mukundarajan et al., eLife 2017) | 1,285 phone recordings, 20 species | Dryad 10.5061/dryad.98d7s (Zenodo mirror 4964774) | no |
+| Tiny MosquitoSong (Supratak et al., PLOS ONE 2024) | 1,324 recordings, 4 species, **sexed** | Google Drive | no |
+| Funchal bioacoustic set (Vasconcelos et al., Sci Data 2020) | Ae. aegypti, Culex, Culiseta | figshare | no |
+| **HumBug `MFCC_features`** (Oxford) | **57 Culex phone recordings, 49.9 min, 8 kHz, 5,824 human 1-s presence labels** (HumBug Zooniverse) | GitHub | **yes** |
+| **HumBug `classification-platform`** (Oxford) | An. arabiensis (30.7 s, 44.1 kHz), presence/no-presence test clips | GitHub | **yes** |
+
+Allowing `zenodo.org` in the environment's network settings would unlock
+HumBugDB, BioDCASE and the Abuzz mirror — over 80 h of labelled audio.
+
+**Independence check.** The new Culex recordings were cross-correlated
+against the MozzBNN CDC Culex recording used for tuning: maximum normalised
+cross-correlation 0.24 (a shared recording scores ≈ 1). They are a genuinely
+independent, human-labelled **held-out test set** and were used for no choice.
+
+### Held-out results against human labels (94 labelled Culex flight episodes, 49.9 min)
+
+| Engine | Episodes detected | Detection events with no human label within ±2 s (upper bound on FA) |
+|---|---|---|
+| Previous production engine | 4 / 94 (**4.3 %**) | 9.6 /h |
+| This engine, sensitivity 3 (default) | 12 / 94 (**12.8 %**, 3×) | 16.8 /h |
+| This engine, sensitivity 2 | 35 / 94 (**37.2 %**, 8.7×) | 25.3 /h |
+| This engine, sensitivity 1 | 36 / 94 (38.3 %) | 30.1 /h |
+
+Crowd labels miss faint insects, so the second column over-counts false alarms.
+
+### Male mosquitoes explain the identification failures
+
+On these Culex recordings the engine called most detections *Aedes* (and some
+*Culiseta*). The wingbeat inside the human-labelled seconds is bimodal —
+300–350 Hz and, dominant, **600–700 Hz** (median 641 Hz), matching the MozzBNN
+CDC Culex (638 Hz). Published Cx. quinquefasciatus wingbeats: **females
+≈ 365–500 Hz** (means 415–455 Hz), **males ≈ 485–720 Hz** (means 534–717 Hz)
+(Sci Rep 2025, doi:10.1038/s41598-025-89608-7; J R Soc Interface 2022,
+doi:10.1098/rsif.2022.0285). Culture-cage recordings are dominated by flying
+males; a male Culex at ≈ 640 Hz is indistinguishable by wingbeat from a female
+*Aedes*. (A missing-fundamental explanation was tested and largely rejected:
+power at f/2 is only 1.7–3 dB above an unrelated control frequency.)
+
+The species model now carries a **male component for every species**
+(≈ 1.42× the female wingbeat, low prior 0.25 because males do not seek hosts),
+and every detection reports `maleP`; the app says "could be a male mosquito —
+males don't bite" when it matters. On the held-out Culex set (no location),
+Culex is now a ≥ 20 % candidate in 30 % of detected labelled frames; the
+top-1 genus remains mostly wrong — wingbeat alone cannot separate these, and
+the app now shows that uncertainty instead of a confident wrong answer. The
+synthetic regression gate still passes.
+
+### A real recording through the real app
+
+The HumBug An. arabiensis clip, played as the microphone into the app in
+headless Chromium with an Ifakara (Tanzania) location: detected as
+**Anopheles**, measured **423–425 Hz** (An. arabiensis females ≈ 400–450 Hz),
+zero JS errors.
+
 ## Bottom line
 
 On real recordings the engine still detects only a minority of mosquito flight
@@ -152,7 +215,10 @@ alarms for 2–3× more detections in real field recordings. Closing the gap nee
 what these public sources lack: **phone recordings of free-flying, sexed,
 temperature-logged mosquitoes at measured distances in real bedrooms**, plus
 tens of hours of real night-time household audio — and access to the full
-HumBugDB audio on Zenodo.
+HumBugDB audio and the BioDCASE 2026 set on Zenodo. On the one independent,
+human-labelled test set reachable, the default sensitivity finds 3× and
+sensitivity 2 finds 8.7× more labelled flight episodes than the previous
+engine.
 
 ## Reproduce
 
@@ -164,4 +230,6 @@ node tools/real/train.js /tmp/rows-dev.jsonl --out /tmp/model.json
 echo '[{"level":1},{"level":2},{"level":3},{"level":4},{"level":5}]' > /tmp/levels.json
 REAL_CACHE=/tmp/mn-real node tools/real/tune.js sweep /tmp/levels.json --split test
 node tools/real/realdata.js --only esc50 --level 3          # held-out household false alarms
+node tools/real/labelled.js --levels 1,2,3                  # held-out human-labelled Culex
+node tools/real/labelled.js --root <previous checkout> --levels 3   # same test, previous engine
 ```

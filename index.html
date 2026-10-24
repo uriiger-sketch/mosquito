@@ -2983,7 +2983,7 @@ class HistoryStore {
   clear() { this._events = []; this._sessions = []; store.del(this.KEY); store.del(this.SKEY); }
 
   static CSV_COLUMNS = ['timestamp', 'species_id', 'species', 'common_name', 'genus', 'risk',
-                        'confidence', 'f0_hz', 'range', 'snr_db', 'lat', 'lng', 'taxon_level', 'species_probability'];
+                        'confidence', 'f0_hz', 'range', 'snr_db', 'lat', 'lng', 'taxon_level', 'species_probability', 'male_probability'];
   toCSV() {
     const q = (v) => {
       if (v === null || v === undefined) return '';
@@ -2992,7 +2992,7 @@ class HistoryStore {
     };
     const rows = this._events.map(e => [new Date(e.t).toISOString(), e.sp, e.name, e.common, e.genus, e.risk,
                                         e.conf, e.f0, e.range, e.snr, e.lat, e.lng,
-                                        e.level || (e.sp ? 'species' : 'genus'), e.pSp].map(q).join(','));
+                                        e.level || (e.sp ? 'species' : 'genus'), e.pSp, e.maleP].map(q).join(','));
     return [HistoryStore.CSV_COLUMNS.join(','), ...rows].join('\r\n') + '\r\n';
   }
   toJSON() {
@@ -4292,7 +4292,7 @@ class App {
         ev.rec = this.history.add({
           t: now, sp: null, name: `${genus} sp.`, common: '', genus, risk: null, level: 'genus', pSp: null,
           conf: r1(conf, 3), f0: r1(f0, 1), range: det.range || null, snr: r1(det.snr, 1),
-          lat: r1(this.deviceLat, 2), lng: r1(this.deviceLng, 2),
+          lat: r1(this.deviceLat, 2), lng: r1(this.deviceLng, 2), maleP: r1(det.maleP, 2),
         });
         this._applyIdentification(ev.rec, sp, genus, speciesLevel, pSp);
         if (i === 0) this.onNewEvent(det, conf, now);
@@ -4307,6 +4307,7 @@ class App {
             this._applyIdentification(rec, sp, genus, true, pSp); dirty = true;
           } else if (speciesLevel && rec.sp === sp.id && pSp > (rec.pSp || 0)) { rec.pSp = r1(pSp, 3); dirty = true; }
           if (Number.isFinite(f0)) { rec.f0 = r1(f0, 1); dirty = true; }
+          if (Number.isFinite(det.maleP)) { rec.maleP = r1(det.maleP, 2); dirty = true; }
           if (dirty) this.history.markDirty();
         }
       }
@@ -4516,7 +4517,7 @@ class App {
     const det = lock.det, sp = det.species;
     const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
     const post = Array.isArray(det.posterior) ? det.posterior : [];
-    const key = [lock.key, det.species ? det.species.id : '', det.taxonLevel || '', Math.round(lock.conf * 100), Math.round(f0 || 0), det.range, post.slice(0, 3).map(p => p.id + Math.round(p.p * 100)).join(),
+    const key = [lock.key, det.species ? det.species.id : '', det.taxonLevel || '', Math.round((det.maleP || 0) * 10), Math.round(lock.conf * 100), Math.round(f0 || 0), det.range, post.slice(0, 3).map(p => p.id + Math.round(p.p * 100)).join(),
                  this.settings.diag, Math.round(det.snr || 0)].join('|');
     if (key === this._detKey) return;
     this._detKey = key;
@@ -4570,9 +4571,14 @@ class App {
     const shownId = uncertain ? null : sp.id;
     const alts = post.filter(p => p.id !== shownId && p.p >= 0.08 && SPECIES_BY_ID[p.id]).slice(0, uncertain ? 3 : 2);
     const altEl = $('#det-alts');
-    if (alts.length) {
-      altEl.innerHTML = `${uncertain ? 'Candidates' : 'Also possible'}: ` + alts.map(p =>
-        `<span class="sci">${esc(shortSci(this.taxonOf(SPECIES_BY_ID[p.id]).name))}</span> <span class="num">${Math.round(p.p * 100)}%</span>`).join(', ');
+    // Males beat ≈ 1.4× faster than females and do not bite (engine maleP).
+    const male = Number.isFinite(det.maleP) ? det.maleP : 0;
+    const maleNote = male >= 0.5 ? 'Probably a <strong>male</strong> mosquito — males don’t bite.'
+                   : male >= 0.25 ? `Could be a male mosquito (${Math.round(male * 100)}%) — males don’t bite.` : '';
+    if (alts.length || maleNote) {
+      altEl.innerHTML = (alts.length ? `${uncertain ? 'Candidates' : 'Also possible'}: ` + alts.map(p =>
+        `<span class="sci">${esc(shortSci(this.taxonOf(SPECIES_BY_ID[p.id]).name))}</span> <span class="num">${Math.round(p.p * 100)}%</span>`).join(', ') : '') +
+        (maleNote ? `${alts.length ? '<br>' : ''}${maleNote}` : '');
       altEl.hidden = false;
     } else altEl.hidden = true;
 

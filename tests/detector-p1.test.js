@@ -115,3 +115,19 @@ test('f0 estimator: parabolic interpolation on the Blackman dB spectrum is unbia
   }
   assert.ok(worst < 0.02, `bias ${worst.toFixed(4)} bin`);
 });
+
+test('posterior: male wingbeat components (males ≈ 1.42× the female f0, low prior)', () => {
+  const m = new eng.SpeciesModel();
+  const onlyCulex = new Set(eng.SPECIES_DB.filter(s => s.id !== 'culex').map(s => s.id));
+  const ctx = { disabled: onlyCulex, lat: null, lng: null, tod: null };
+  const female = m.posterior(453, ctx), male = m.posterior(453 * 1.42, ctx);
+  assert.ok(female.maleP < 0.1, `female-range f0 called male (${female.maleP})`);
+  assert.ok(male.maleP > 0.9, `male-range f0 not called male (${male.maleP})`);
+  assert.ok(male.post[0].pMale > 0.9);
+  // All species enabled: an Aedes-range tone stays mostly female; maleP is a probability
+  const all = m.posterior(617, { disabled: new Set(), lat: null, lng: null, tod: null });
+  assert.ok(all.maleP >= 0 && all.maleP < 0.5, `617 Hz maleP ${all.maleP}`);
+  // A 640 Hz tone at a Culex-only location is explained by a male Culex
+  const cx = m.posterior(640, ctx);
+  assert.ok(cx.maleP > 0.5, `640 Hz Culex-only maleP ${cx.maleP}`);
+});

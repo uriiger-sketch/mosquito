@@ -36,12 +36,17 @@ function readWav(file) {
     const id = b.toString('ascii', off, off + 4), sz = b.readUInt32LE(off + 4), body = off + 8;
     if (id === 'fmt ') fmt = { format: b.readUInt16LE(body), ch: b.readUInt16LE(body + 2), sr: b.readUInt32LE(body + 4), bits: b.readUInt16LE(body + 14) };
     if (id === 'data') {
-      if (!fmt || fmt.format !== 1 || fmt.bits !== 16) throw new Error(`unsupported WAV format in ${file}`);
-      const n = Math.floor(Math.min(sz, b.length - body) / (2 * fmt.ch)), x = new Float32Array(n);
+      // PCM 16- or 24-bit (WAVE_FORMAT_EXTENSIBLE 0xFFFE carries PCM too).
+      if (!fmt || (fmt.format !== 1 && fmt.format !== 0xFFFE) || (fmt.bits !== 16 && fmt.bits !== 24)) {
+        throw new Error(`unsupported WAV format in ${file}`);
+      }
+      const bps = fmt.bits / 8, full = fmt.bits === 16 ? 32768 : 8388608;
+      const rd = fmt.bits === 16 ? (o) => b.readInt16LE(o) : (o) => b.readIntLE(o, 3);
+      const n = Math.floor(Math.min(sz, b.length - body) / (bps * fmt.ch)), x = new Float32Array(n);
       for (let i = 0; i < n; i++) {
         let s = 0;
-        for (let c = 0; c < fmt.ch; c++) s += b.readInt16LE(body + 2 * (i * fmt.ch + c));
-        x[i] = s / fmt.ch / 32768;
+        for (let c = 0; c < fmt.ch; c++) s += rd(body + bps * (i * fmt.ch + c));
+        x[i] = s / fmt.ch / full;
       }
       return { x, sr: fmt.sr };
     }
@@ -111,7 +116,8 @@ function analyse(x, { level = 3, lat = null, lng = null, exclude = [], eng }) {
     frames.push({ t, excl: inExcl(t) || inExcl(t - N / SR), cal: i < calib,
                   dets: dets.map(d => ({ sp: d.species.id, genus: d.genus, level: d.taxonLevel, f0: d.f0,
                                          conf: d.confidence, track: d.trackId,
-                                         pSp: ((d.posterior || []).find(p => p.id === d.species.id) || {}).p || 0 })) });
+                                         pSp: ((d.posterior || []).find(p => p.id === d.species.id) || {}).p || 0,
+                                         maleP: d.maleP, genusP: Object.fromEntries((d.genusPosterior || []).map(g => [g.genus, g.p])) })) });
   }
   return frames;
 }
