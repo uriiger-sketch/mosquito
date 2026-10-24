@@ -64,11 +64,20 @@ everyday-sound benchmark as a held-out test):
   path trained on the real recordings (learned plausibility model, out-of-fold
   AUC 0.78) gives sensitivities 1–2 **2–3× more detections in real field
   recordings**; brief culture-cup bursts remain largely missed.
+- **Held-out, human-labelled test** (HumBug crowd-labelled Culex phone
+  recordings, 94 flight episodes, never used for tuning): the default
+  sensitivity detects **3× more** labelled episodes than the previous engine
+  (12.8 % vs 4.3 %), sensitivity 2 detects **8.7× more** (37.2 %).
+- Those cage recordings are dominated by **male** Culex (≈ 640 Hz, which a
+  wingbeat alone cannot tell from a female *Aedes*). The identifier now models
+  male wingbeats for every species and tells the user when a detection is
+  probably a male (males don't bite).
 - The synthetic figures above are an upper bound; real-world performance must be
   re-measured on phone recordings of free-flying mosquitoes in bedrooms.
 - Known weak spots: hummed notes, pop-music pads, AC units, traffic and small
   fans still produce false alarms (church bells and snoring occasionally, in
-  ESC-50); non-biting midges and male mosquitoes are detected as mosquitoes;
+  ESC-50); non-biting midges are detected as mosquitoes; male mosquitoes are
+  flagged but still counted;
   loud TV or speech masks a mosquito.
 
 ## Privacy
@@ -93,6 +102,8 @@ federated_server.py      Flask backend: detections, map hotspots, federated mode
 tools/eval/              accuracy evaluation harness + regression thresholds
 tests/                   unit/contract tests, tests/server (pytest), tests/e2e (Playwright)
 docs/EVALUATION.md       evaluation method and results
+docs/REAL_DATA.md        real recordings: sources, held-out results, findings
+tools/real/              real-data fetch, tuning, training and held-out evaluators
 DEPLOY.md                backend and Pages deployment guide
 OUTREACH.md              launch and outreach copy
 ```

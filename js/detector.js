@@ -26,6 +26,8 @@
  *    voteFraction:0…1,
  *    range:       'near' | 'far',
  *    posterior:   [{ id, p }]  species probabilities, sorted desc, Σp ≤ 1,
+ *    maleP:       P(male | f0, location) — males (≈ 1.42× the female wingbeat)
+ *                 do not bite; species/posterior sum both sexes,
  *    mode:        'burst' when accumulated from repeated short passes (see
  *                 _burstDetection; confidence then NOT calibrated), else absent,
  *    // extensions (additive):
@@ -518,11 +520,22 @@ class SpeciesModel {
     this.M = M;
     this.MEAS = 0.004;                       // relative f0 measurement error of a track mean
     this.NON_NATIVE = 0.03;
+    // Males. Catalogue frequencies are FEMALE (the biting sex). Males beat
+    // ≈ 1.3–1.6× faster (Cx. quinquefasciatus: ♀ 415–475 Hz, ♂ 534–717 Hz;
+    // Sci Rep 2025 doi:10.1038/s41598-025-89608-7, J R Soc Interface 2022
+    // doi:10.1098/rsif.2022.0285). Real HumBug culture/cup recordings are
+    // male-dominated: their Culex flight sits at ≈ 640 Hz (docs/REAL_DATA.md),
+    // where a male Culex is indistinguishable by f0 from a female Aedes.
+    // Each species therefore also has a male component; its prior is low
+    // because males do not seek hosts (a tone beside a sleeper is far more
+    // likely female) — an assumption, not fitted (no sexed field data).
+    this.MALE_RATIO = 1.42; this.MALE_RATIO_SD = 0.07; this.MALE_PRIOR = 0.25;
     this.species = SPECIES_DB.map(sp => {
       const beta = sp.freqTempCoef ?? M.TEMP_COEF;
       const cv = (sp.freqSigma ?? sp.freq * M.CV) / sp.freq;
       const sd = Math.sqrt(cv * cv + (beta * M.T_SD) ** 2 + this.MEAS ** 2);
-      return { sp, mu: Math.log(sp.freq * (1 + beta * (M.T_MEAN - M.T_REF))), sd };
+      const mu = Math.log(sp.freq * (1 + beta * (M.T_MEAN - M.T_REF)));
+      return { sp, mu, sd, muM: mu + Math.log(this.MALE_RATIO), sdM: Math.sqrt(sd * sd + this.MALE_RATIO_SD ** 2) };
     });
     this._natKey = null; this._nat = null;
   }
@@ -538,25 +551,27 @@ class SpeciesModel {
   posterior(f0, ctx) {
     if (!Number.isFinite(f0) || f0 <= 0) return null;
     const lf = Math.log(f0), nat = this._natives(ctx.lat, ctx.lng);
-    let z = 0, zMin = Infinity;
+    let z = 0, zMin = Infinity, zMale = 0;
     const out = [];
     for (const m of this.species) {
       const id = m.sp.id;
       if (ctx.disabled && ctx.disabled.has(id)) continue;
-      const d = (lf - m.mu) / m.sd;
-      zMin = Math.min(zMin, Math.abs(d));
+      const d = (lf - m.mu) / m.sd, dM = (lf - m.muM) / m.sdM;
+      zMin = Math.min(zMin, Math.abs(d), Math.abs(dM));
       let prior = 1;
       if (nat && nat.size && !nat.has(id)) prior *= this.NON_NATIVE;
       if (ctx.tod) prior *= SpeciesModel.activityPrior(m.sp.activity, ctx.tod);
-      const l = prior * Math.exp(-0.5 * d * d) / m.sd;
-      out.push({ id, p: l, sp: m.sp }); z += l;
+      const lF = prior * Math.exp(-0.5 * d * d) / m.sd;
+      const lM = prior * this.MALE_PRIOR * Math.exp(-0.5 * dM * dM) / m.sdM;
+      // Species probability sums both sexes; pMale is P(male | f0, species).
+      out.push({ id, p: lF + lM, sp: m.sp, pMale: lF + lM > 0 ? lM / (lF + lM) : 0 }); z += lF + lM; zMale += lM;
     }
-    if (!out.length || z <= 0) return { post: [], genus: [], zMin };
+    if (!out.length || z <= 0) return { post: [], genus: [], zMin, maleP: 0 };
     const g = {};
     for (const o of out) { o.p /= z; g[o.sp.genus] = (g[o.sp.genus] || 0) + o.p; }
     out.sort((a, b) => b.p - a.p);
     const genus = Object.entries(g).map(([genus, p]) => ({ genus, p })).sort((a, b) => b.p - a.p);
-    return { post: out, genus, zMin };
+    return { post: out, genus, zMin, maleP: zMale / z };
   }
 
   // Deliberately mild (×1.4 at most): day-biters also bite indoors at night
@@ -990,6 +1005,8 @@ class MosquitoClassifier {
       posterior: post.post.filter(o => o.p >= 0.01).map(o => ({ id: o.id, p: o.p })),
       genusPosterior: post.genus.filter(g => g.p >= 0.01).map(g => ({ genus: g.genus, p: g.p })),
       taxonLevel, genusP, trackId: t.id,
+      // P(the insect is male | f0): males do not bite; the UI says so.
+      maleP: Number.isFinite(post.maleP) ? post.maleP : 0,
     };
   }
 
