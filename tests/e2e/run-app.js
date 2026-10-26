@@ -15,6 +15,17 @@ function loadPlaywright() {
   return require('/opt/node22/lib/node_modules/playwright');
 }
 
+// Tests may reach only the local servers they start. An allowlist, never a list
+// of production hosts: the app's endpoints (SERVER_URLS) change, and a missed
+// one sends test detections to the live map — in October 2026 adding the
+// Railway domain to SERVER_URLS did exactly that.
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const leavesTestMachine = (url) => !LOCAL_HOSTS.has(url.hostname);
+
+function isolateNetwork(ctx) {
+  return ctx.route(leavesTestMachine, r => r.abort());
+}
+
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2', '.woff': 'font/woff', '.wav': 'audio/wav' };
@@ -53,9 +64,7 @@ async function runApp(wav, { seconds = 20, lat = null, lng = null, root = path.j
   const ctx = await browser.newContext({ viewport, permissions: perms,
     geolocation: lat !== null ? { latitude: lat, longitude: lng } : undefined,
     serviceWorkers: 'block' });
-  // Never hit the production API from tests.
-  await ctx.route(/mosquito\.charity|tile\.openstreetmap\.org|fonts\.(googleapis|gstatic)\.com|cdnjs\.cloudflare\.com/,
-                  r => r.abort());
+  await isolateNetwork(ctx);     // never the production API (nor tiles, fonts, CDNs)
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
@@ -92,7 +101,7 @@ async function runApp(wav, { seconds = 20, lat = null, lng = null, root = path.j
   }
 }
 
-module.exports = { runApp, serve, loadPlaywright };
+module.exports = { runApp, serve, loadPlaywright, isolateNetwork, leavesTestMachine };
 
 if (require.main === module) {
   const a = process.argv.slice(2);
