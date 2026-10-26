@@ -31,3 +31,13 @@ test('anything but an origin is refused', () => {
     assert.throws(() => parseUrls(bad), /not an origin|no endpoints/, JSON.stringify(bad));
   }
 });
+
+test('the e2e suites can never reach a backend the app is configured to call', () => {
+  const { leavesTestMachine } = require('./e2e/run-app');
+  const urls = INDEX.match(/^const SERVER_URLS = \[(.*)\];$/m)[1].match(/'[^']+'/g).map(s => s.slice(1, -1));
+  assert.ok(urls.length >= 1);
+  for (const u of urls) assert.ok(leavesTestMachine(new URL(u)), `${u} must be blocked in tests`);
+  for (const u of ['http://127.0.0.1:5001/health', 'http://localhost:8080/', 'http://[::1]:9/x']) {
+    assert.ok(!leavesTestMachine(new URL(u)), `${u} is a local test server`);
+  }
+});

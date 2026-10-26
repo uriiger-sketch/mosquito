@@ -21,7 +21,7 @@ const net = require('net');
 const http = require('http');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
-const { serve, loadPlaywright } = require('./run-app');
+const { serve, loadPlaywright, isolateNetwork } = require('./run-app');
 const { setServerUrls } = require('../../tools/set-server-urls');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -111,7 +111,7 @@ test('app reaches the real server: failover, heartbeat, upload, diagnostics, out
   const pageLog = [];
   try {
     const ctx = await browser.newContext({ serviceWorkers: 'block' });
-    await ctx.route(/tile\.openstreetmap\.org|fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+    await isolateNetwork(ctx);     // every endpoint in this test is local
     const page = await ctx.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
