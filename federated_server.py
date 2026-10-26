@@ -46,7 +46,7 @@ all state lives in this process and a second writer would corrupt DATA_DIR.
 """
 
 import os, re, io, sys, json, math, time, hmac, errno, atexit, hashlib, shutil
-import threading, ipaddress, functools, itertools
+import threading, ipaddress, functools, itertools, traceback
 from collections import deque, OrderedDict
 from datetime import datetime, timezone
 import numpy as np
@@ -62,12 +62,48 @@ SERVICE = 'MosquitoNet v13'
 
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-def _log(msg):
-    """All server logging goes through here: one line, flushed immediately (a
+# LOG_FORMAT=json emits one JSON object per line — Railway parses `level` (line
+# colour, @level: filter) and `message`, and every other key becomes a
+# filterable attribute (@component:Det, @event:detection). LOG_FORMAT=text keeps
+# plain lines. Unset = json on Railway, text everywhere else (local, tests).
+# gunicorn.conf.py applies the same rule to gunicorn's own log lines.
+def _on_railway():
+    return bool(os.environ.get('RAILWAY_ENVIRONMENT_ID') or os.environ.get('RAILWAY_PROJECT_ID'))
+
+LOG_FORMAT = os.environ.get('LOG_FORMAT', '').strip().lower()
+if LOG_FORMAT not in ('json', 'text'):
+    LOG_FORMAT = 'json' if _on_railway() else 'text'
+
+_LOG_LEVELS = ('debug', 'info', 'warn', 'error')
+_TAG = re.compile(r'\[([A-Za-z][A-Za-z0-9_-]*)')
+
+def _log(msg, level='info', **fields):
+    """All server logging goes through here: one record, flushed immediately (a
     piped stdout is block-buffered, so a crash used to swallow the last lines).
-    Client-supplied values must be interpolated via _q() so they can't forge
-    extra log lines."""
-    print(msg, flush=True)
+    `level` is debug / info / warn / error. Keyword fields become structured
+    attributes in JSON mode (text mode prints the message only, so the message
+    must stand on its own). Client-supplied values must be interpolated via
+    _q() so they can't forge extra log lines; in JSON mode json.dumps escapes
+    them as well."""
+    if level not in _LOG_LEVELS:
+        level = 'info'
+    if LOG_FORMAT == 'json':
+        rec = {'level': level, 'message': msg}
+        m = _TAG.match(msg)
+        if m:
+            rec['component'] = m.group(1)
+        for k, v in fields.items():
+            if k not in rec and v is not None:
+                rec[k] = v
+        print(json.dumps(rec, default=str, separators=(',', ':')), flush=True)
+    else:
+        print(msg, flush=True)
+
+def _stack(e):
+    """The traceback frames of exception `e` (code locations only). The
+    exception's message — which may echo client input — is deliberately left
+    out: callers log it separately through _q()."""
+    return ''.join(traceback.format_tb(e.__traceback__)).rstrip() or None
 
 def _q(v, n=64):
     """Log-safe rendering of an untrusted value: truncated, and repr() escapes
@@ -86,7 +122,7 @@ def _env_num(name, default, lo, hi, cast=float):
             return v
     except (TypeError, ValueError):
         pass
-    _log(f'[config] ignoring invalid {name}={_q(raw)} (allowed {lo}..{hi}) — using {default}')
+    _log(f'[config] ignoring invalid {name}={_q(raw)} (allowed {lo}..{hi}) — using {default}', 'warn')
     return default
 
 
@@ -114,7 +150,7 @@ DATA_DIR   = os.environ.get('DATA_DIR', '/tmp')
 try:
     os.makedirs(DATA_DIR, exist_ok=True)
 except Exception as _e:
-    _log(f'[DATA_DIR] could not create {DATA_DIR}: {_e} — falling back to /tmp')
+    _log(f'[DATA_DIR] could not create {DATA_DIR}: {_e} — falling back to /tmp', 'error')
     DATA_DIR = '/tmp'
 STATE_FILE = os.path.join(DATA_DIR, 'mosquitonet_state.json')
 LOG_FILE   = os.path.join(DATA_DIR, 'detections.jsonl')
@@ -129,6 +165,8 @@ DETECTION_LOG_MAX = _env_num('DETECTION_LOG_MAX', 20000, 100, 2_000_000, int)
 # a retry that arrives after a hard kill is still recognised as a duplicate.
 SEEN_EVENTS_MAX   = _env_num('SEEN_EVENTS_MAX', 20000, 100, 1_000_000, int)
 FLUSH_INTERVAL    = 5.0     # seconds between background fsync + state saves
+# Seconds between [Stats] summary lines in the log (0 = off).
+STATS_LOG_INTERVAL = _env_num('STATS_LOG_INTERVAL', 900, 0, 86400, int)
 
 # Single lock for in-memory state AND every append to the detection log — no
 # races possible. The slow, batched I/O (fsync, state-file rewrite) runs outside
@@ -187,9 +225,9 @@ def _open_log():
                 f.seek(size - 1)
                 if f.read(1) != b'\n':
                     os.write(fd, b'\n')
-                    _log('[Log] torn final line (crash mid-write) — terminated so new records stay parseable')
+                    _log('[Log] torn final line (crash mid-write) — terminated so new records stay parseable', 'warn')
     except OSError as e:
-        _log(f'[Log] tail check failed: {e}')
+        _log(f'[Log] tail check failed: {e}', 'warn')
     return fd
 
 def _append_entry(entry):
@@ -222,7 +260,8 @@ def _append_entry(entry):
     except OSError as e:
         _write_failing = True
         _count('write_errors')
-        _log(f'[append] FAILED ({errno.errorcode.get(e.errno, e.errno)}): {e}')
+        _log(f'[append] FAILED ({errno.errorcode.get(e.errno, e.errno)}): {e}', 'error',
+             event='write_failed', errno=errno.errorcode.get(e.errno, e.errno))
         return False
     _log_unsynced = True
     _write_failing = False
@@ -269,7 +308,7 @@ def _save_state(payload=None):
         return True
     except Exception as e:
         _count('write_errors')
-        _log(f'[state] save FAILED: {e}')
+        _log(f'[state] save FAILED: {e}', 'error', event='write_failed')
         return False
 
 def _flush_once(lock_timeout=-1):
@@ -310,7 +349,7 @@ def _flush_once(lock_timeout=-1):
             try:
                 os.fsync(fd)    # fd is only ever closed under _io_lock, which we hold
             except OSError as e:
-                _log(f'[sync] {e}')
+                _log(f'[sync] {e}', 'error', event='write_failed')
                 _log_unsynced = True
         if snap is not None and not _save_state(snap):
             _dirty = True       # retried on the next pass instead of forgotten
@@ -389,7 +428,7 @@ def _load_state_file():
         except OSError:
             bad = '(could not move it aside)'
         _log(f'[State] CORRUPT state file ({type(e).__name__}: {_q(e, 120)}) moved to {bad} '
-              f'— rebuilding counters and cells from the detection log')
+              f'— rebuilding counters and cells from the detection log', 'error')
         return False
 
     st = d.get('stats') if isinstance(d.get('stats'), dict) else {}
@@ -432,7 +471,7 @@ def _load_state_file():
             global_W = np.array(d['global_W'], dtype=float)
             global_b = np.array(d['global_b'], dtype=float)
         else:
-            _log('[State] persisted global model invalid — keeping seed')
+            _log('[State] persisted global model invalid — keeping seed', 'warn')
     _log(f'[State] loaded, total={stats["total_detections"]}, seen_events={len(seen_events)}, '
           f'rounds={stats["total_rounds"]}')
     return True
@@ -499,7 +538,7 @@ def _load_log(rebuild_cells):
         _log(f'[Log] starting fresh at {LOG_FILE}')
         return
     except Exception as e:
-        _log(f'[Log load] {e}')
+        _log(f'[Log load] {e}', 'error', stack=_stack(e))
         return
     for e in detection_log:
         u = conf_updates.get(e['id'])
@@ -518,13 +557,13 @@ def _load_log(rebuild_cells):
     # stops the public "total detections" counter going backwards.
     if max_id:
         if next_detection_id[0] <= max_id:
-            _log(f'[State] next_id {next_detection_id[0]} behind log (max {max_id}) — recovering')
+            _log(f'[State] next_id {next_detection_id[0]} behind log (max {max_id}) — recovering', 'warn')
             next_detection_id[0] = max_id + 1
         if stats['total_detections'] < max_id:
-            _log(f'[State] total_detections {stats["total_detections"]} behind log — recovering to {max_id}')
+            _log(f'[State] total_detections {stats["total_detections"]} behind log — recovering to {max_id}', 'warn')
             stats['total_detections'] = max_id
     if n_bad:
-        _log(f'[Log] skipped {n_bad} unparseable/invalid line(s)')
+        _log(f'[Log] skipped {n_bad} unparseable/invalid line(s)', 'warn')
     _log(f'[Log] {n_read} entries on disk; kept most recent {len(detection_log)} '
           f'(cap {DETECTION_LOG_MAX}), {len(conf_updates)} conf-updates replayed, '
           f'{len(eid_tail)} eventIds recovered'
@@ -550,21 +589,20 @@ def _acquire_single_writer_lock():
     except OSError as e:
         # Can't even create the lock file: a permissions/volume problem (which
         # /health's `writable` reports), not a second writer — don't cry wolf.
-        _log(f'[lock] cannot open {LOCK_FILE}: {e} — single-writer check skipped')
+        _log(f'[lock] cannot open {LOCK_FILE}: {e} — single-writer check skipped', 'warn')
         return
     try:
         fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         single_instance = True
     except OSError as e:
         if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN, errno.EACCES):
-            _log(f'[lock] flock failed: {e} — single-writer check skipped')
+            _log(f'[lock] flock failed: {e} — single-writer check skipped', 'warn')
             return
         single_instance = False
-        _log('=' * 72)
-        _log(f'[WARNING] another process already holds {LOCK_FILE}.')
-        _log('          Run exactly ONE worker per DATA_DIR (gunicorn --workers 1);')
-        _log('          concurrent writers lose detections and corrupt the state file.')
-        _log('=' * 72)
+        _log(f'[lock] WARNING: another process already holds {LOCK_FILE}.\n'
+             '          Run exactly ONE worker per DATA_DIR (gunicorn --workers 1);\n'
+             '          concurrent writers lose detections and corrupt the state file.',
+             'error', event='second_writer')
 
 @atexit.register
 def _flush_on_exit():
@@ -577,12 +615,15 @@ def _flush_on_exit():
     # Append-only log: just fsync, never rewrite the whole file. Bounded wait:
     # never hang the shutdown forever behind a stuck request.
     if not _flush_once(lock_timeout=10):
-        _log('[Exit] state lock busy for 10 s — fsyncing the log only')
+        _log('[Exit] state lock busy for 10 s — fsyncing the log only', 'warn')
         with _io_lock:
             if _log_fd is not None:
                 try: os.fsync(_log_fd)
                 except OSError: pass
-    _log('[Exit] done')
+    with _counter_lock:
+        ctr = dict(counters)
+    _log('[Exit] done', event='exit', total_detections=stats.get('total_detections'),
+         uptime_seconds=int(time.time() - start_time), **ctr)
 
 def _graceful_exit(signum, _frame):
     """Plain `python federated_server.py` dies on SIGTERM WITHOUT running atexit,
@@ -727,7 +768,7 @@ def _server_secret():
         except FileNotFoundError:
             pass
         except OSError as e:
-            _log(f'[privacy] cannot read {path}: {e}')
+            _log(f'[privacy] cannot read {path}: {e}', 'error')
             break
         try:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -738,9 +779,9 @@ def _server_secret():
         except FileExistsError:
             continue                     # another process won the race: read theirs
         except OSError as e:
-            _log(f'[privacy] cannot persist {path}: {e}')
+            _log(f'[privacy] cannot persist {path}: {e}', 'error')
             break
-    _log('[privacy] WARNING: using a temporary key — public offsets/pseudonyms change on restart')
+    _log('[privacy] WARNING: using a temporary key — public offsets/pseudonyms change on restart', 'warn')
     return os.urandom(32)
 
 _PSEUDO_KEY = _server_secret()
@@ -838,7 +879,7 @@ def _count_cell(entry):
             _trim(hotspot_cells, DETECTION_CELLS_MAX)
         _trim(detection_cells, DETECTION_CELLS_MAX)   # evicts the coldest cell
     except Exception as e:
-        _log(f'[Cell] {e}')
+        _log(f'[Cell] {e}', 'error', stack=_stack(e))
 
 def _remember_event(event_id, det_id):
     """Record an eventId→det_id mapping for idempotency. Called under write_lock.
@@ -889,12 +930,49 @@ def _valid_weights(w):
             return False
     return True
 
+def _disk_free_mb():
+    try:
+        return shutil.disk_usage(DATA_DIR).free // (1024 * 1024)
+    except OSError:
+        return None
+
+_stats_prev = {}    # counters + total detections as of the previous [Stats] line
+
+def _log_stats():
+    """One operational summary line: proves the process is alive in the logs
+    and shows the trend (traffic, abuse, storage) since the previous line,
+    without logging every heartbeat. Level error while writes are failing."""
+    global _stats_prev
+    with write_lock:
+        snap = dict(full_stats())
+        failing = _write_failing
+    with _counter_lock:
+        now = dict(counters)
+    now['detections'] = snap['total_detections']
+    d = {k: v - _stats_prev.get(k, v if k == 'detections' else 0) for k, v in now.items()}
+    _stats_prev = now
+    rejected = d['rejected_detections'] + d['rejected_uploads'] + d['rejected_origin']
+    disk = _disk_free_mb()
+    _log(f'[Stats] active={snap["active_now"]} detections={snap["total_detections"]} '
+         f'(+{d["detections"]}) uploads={snap["total_uploads"]} rounds={snap["total_rounds"]} '
+         f'rate_limited=+{d["rate_limited"]} rejected=+{rejected} '
+         f'write_errors=+{d["write_errors"]} disk_free_mb={disk}',
+         'error' if failing or d['write_errors'] else 'info',
+         event='stats', active_now=snap['active_now'], total_detections=snap['total_detections'],
+         new_detections=d['detections'], total_uploads=snap['total_uploads'],
+         total_rounds=snap['total_rounds'], rate_limited=d['rate_limited'], rejected=rejected,
+         write_errors=d['write_errors'], disk_free_mb=disk, uptime_seconds=snap['uptime_seconds'])
+
 def _flusher():
+    next_stats = time.monotonic() + STATS_LOG_INTERVAL
     while not _stop.wait(FLUSH_INTERVAL):
         try:
             _flush_once()
+            if STATS_LOG_INTERVAL and time.monotonic() >= next_stats:
+                next_stats = time.monotonic() + STATS_LOG_INTERVAL
+                _log_stats()
         except Exception as e:
-            _log(f'[flusher] {e}')
+            _log(f'[flusher] {e}', 'error', stack=_stack(e))
 
 def fedavg(updates):
     """Robust FedAvg over client MODEL WEIGHTS.
@@ -928,7 +1006,7 @@ def fedavg(updates):
     cand_W = np.clip(global_W + 0.7 * dW, -FED_GLOBAL_ABS_MAX, FED_GLOBAL_ABS_MAX)
     cand_b = np.clip(global_b + 0.7 * db, -FED_GLOBAL_ABS_MAX, FED_GLOBAL_ABS_MAX)
     if not (np.all(np.isfinite(cand_W)) and np.all(np.isfinite(cand_b))):
-        _log('[FedAvg] non-finite result — keeping previous global model')
+        _log('[FedAvg] non-finite result — keeping previous global model', 'warn')
         return
     global_W, global_b = cand_W, cand_b
     stats['total_rounds'] += 1
@@ -1061,7 +1139,7 @@ def _origin_allowed(origin):
 def _reject_origin():
     _count('rejected_origin')
     _log(f'[CORS] rejected {request.method} {_q(request.path)} from origin '
-          f'{_q(request.headers.get("Origin"))}')
+          f'{_q(request.headers.get("Origin"))}', 'warn', event='rejected_origin')
     if request.path == '/detection':
         return jsonify({'received': False, 'reason': 'origin not allowed'}), 403
     return jsonify({'error': 'origin not allowed'}), 403
@@ -1142,7 +1220,8 @@ def _http_error(e):
 
 @app.errorhandler(Exception)
 def _internal_error(e):
-    _log(f'[500] {request.method} {_q(request.path)}: {type(e).__name__}: {_q(e, 200)}')
+    _log(f'[500] {request.method} {_q(request.path)}: {type(e).__name__}: {_q(e, 200)}', 'error',
+         event='internal_error', exc_type=type(e).__name__, stack=_stack(e))
     if request.path == '/detection':
         return jsonify({'received': False, 'reason': 'internal error'}), 500
     return jsonify({'error': 'internal error'}), 500
@@ -1201,7 +1280,7 @@ def _reject(reason, code=400):
     escaped for the log."""
     _count('rejected_detections')
     reason = str(reason)[:160]
-    _log(f'[Det REJECT {code}] {_q(reason, 160)}')
+    _log(f'[Det REJECT {code}] {_q(reason, 160)}', 'warn', event='rejected_detection')
     return jsonify({'received': False, 'reason': reason}), code
 
 def _clean_str(v, n):
@@ -1386,7 +1465,7 @@ def detection():
     dropped = f['dropped']
     if dropped:
         _count('dropped_fields', len(dropped))
-        _log(f'[Det] dropped invalid optional field(s): {",".join(dropped)}')
+        _log(f'[Det] dropped invalid optional field(s): {",".join(dropped)}', event='dropped_fields')
     rkey = f'{h}:{species}'
 
     with write_lock:
@@ -1473,7 +1552,9 @@ def detection():
         snap = dict(full_stats())   # snapshot inside lock — consistent with what was written
 
     _log(f'[Det #{det_id}] {entry["name"]} conf={conf:.3f} freq={entry["freq"]:.1f}Hz '
-          f'located={entry["lat"] is not None}')
+          f'located={entry["lat"] is not None}', event='detection', det_id=det_id,
+         species=species, conf=round(conf, 3), freq=entry['freq'],
+         located=entry['lat'] is not None)
     body = {'received': True, 'detection_id': det_id, **snap}
     if dropped:
         body['dropped'] = dropped
@@ -1582,7 +1663,7 @@ def hotspots():
 
 def _reject_upload(msg, log_reason):
     _count('rejected_uploads')
-    _log(f'[Fed REJECT 400] {log_reason}')
+    _log(f'[Fed REJECT 400] {log_reason}', 'warn', event='rejected_upload')
     return jsonify({'error': msg}), 400
 
 @app.route('/federated/upload', methods=['POST'])
@@ -1635,10 +1716,7 @@ def health():
         saved = _last_state_save
     with _counter_lock:
         ctr = dict(counters)
-    try:
-        disk_free_mb = shutil.disk_usage(DATA_DIR).free // (1024 * 1024)
-    except OSError:
-        disk_free_mb = None
+    disk_free_mb = _disk_free_mb()
     return jsonify({
         # 'degraded' = the last durable write failed (disk full / volume gone):
         # detections are being refused with 503 and retried by clients. HTTP
@@ -1650,7 +1728,9 @@ def health():
         # major.minor only — the full build string fingerprints the patch level.
         'python':       f'{sys.version_info.major}.{sys.version_info.minor}',
         'writable':     os.access(DATA_DIR, os.W_OK) and not failing,
-        'ephemeral':    os.path.abspath(DATA_DIR).startswith('/tmp'),
+        # true = the data will NOT survive a redeploy; ephemeral_reason says why.
+        'ephemeral':    EPHEMERAL_REASON is not None,
+        'ephemeral_reason': EPHEMERAL_REASON,
         'single_instance': single_instance,
         'disk_free_mb': disk_free_mb,
         'last_state_save': saved,
@@ -1674,18 +1754,84 @@ def index():
                                  'POST /federated/upload','GET /federated/model',
                                  'GET /federated/stats','GET /health']})
 
+# ── Storage check ─────────────────────────────────────────────────────────────
+# The old check only flagged /tmp, so a Railway service with NO volume attached
+# reported "ephemeral": false while every redeploy silently wiped its data.
+def _in_container():
+    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+
+def _on_mounted_volume(path):
+    """True if `path` lives on a mount other than the root filesystem."""
+    p = os.path.realpath(path)
+    while True:
+        if os.path.ismount(p):
+            return p != '/'
+        parent = os.path.dirname(p)
+        if parent == p:
+            return False
+        p = parent
+
+def _ephemeral_reason(path):
+    """Why data in `path` would NOT survive a restart/redeploy, or None when it
+    is (as far as can be told) on persistent storage."""
+    path = os.path.abspath(path)
+    if path == '/tmp' or path.startswith('/tmp/'):
+        return 'DATA_DIR is under /tmp'
+    if _on_railway():
+        vol = os.environ.get('RAILWAY_VOLUME_MOUNT_PATH', '').strip()
+        if not vol:
+            return 'no Railway volume is attached to this service'
+        vol = os.path.realpath(vol)
+        real = os.path.realpath(path)
+        if real != vol and not real.startswith(vol.rstrip('/') + '/'):
+            return f'DATA_DIR is not on the Railway volume (mounted at {vol})'
+        return None
+    if _in_container() and not _on_mounted_volume(path):
+        return 'DATA_DIR is on the container filesystem (no volume mounted)'
+    return None
+
+EPHEMERAL_REASON = _ephemeral_reason(DATA_DIR)
+
+
 _acquire_single_writer_lock()
 load_all()
 # Started in the process that serves requests. (Under gunicorn do NOT use
 # --preload: the thread would live in the master and die at fork.)
 threading.Thread(target=_flusher, daemon=True, name='flusher').start()
-if os.path.abspath(DATA_DIR).startswith('/tmp'):
-    _log('=' * 72)
-    _log(f'[WARNING] DATA_DIR={DATA_DIR} is under /tmp — storage is EPHEMERAL.')
-    _log('          Every restart/redeploy will PERMANENTLY DELETE all detections,')
-    _log('          all statistics and the trained federated model.')
-    _log('          Set DATA_DIR to a mounted persistent volume before going live.')
-    _log('=' * 72)
+
+def _log_boot():
+    """One line with everything needed to tell from the logs alone which build
+    is running, as whom, and whether its storage is safe."""
+    global _stats_prev
+    uid = os.getuid() if hasattr(os, 'getuid') else None
+    commit = (os.environ.get('RAILWAY_GIT_COMMIT_SHA') or '')[:12] or None
+    with write_lock:
+        total, kept = stats['total_detections'], len(detection_log)
+    with _counter_lock:
+        _stats_prev = {**counters, 'detections': total}
+    _log(f'[Boot] {SERVICE} pid={os.getpid()} uid={uid} commit={commit or "-"} '
+         f'data_dir={DATA_DIR} storage={"EPHEMERAL" if EPHEMERAL_REASON else "persistent"} '
+         f'writable={os.access(DATA_DIR, os.W_OK)} disk_free_mb={_disk_free_mb()} '
+         f'detections={total} in_ram={kept} single_instance={single_instance} '
+         f'log_format={LOG_FORMAT}',
+         event='boot', service=SERVICE, pid=os.getpid(), uid=uid, commit=commit,
+         deployment=os.environ.get('RAILWAY_DEPLOYMENT_ID'), data_dir=DATA_DIR,
+         ephemeral=EPHEMERAL_REASON is not None, total_detections=total,
+         rate_limit_scale=RATE_LIMIT_SCALE, trusted_proxy_hops=TRUSTED_PROXY_HOPS,
+         extra_origins=len(_EXTRA_ORIGINS))
+    if EPHEMERAL_REASON:
+        _log(f'[Storage] EPHEMERAL: {EPHEMERAL_REASON} (DATA_DIR={DATA_DIR}).\n'
+             '          Every restart/redeploy will PERMANENTLY DELETE all detections,\n'
+             '          all statistics and the trained federated model.\n'
+             '          Mount a persistent volume at DATA_DIR before going live.',
+             'error', event='ephemeral_storage', reason=EPHEMERAL_REASON)
+    if uid == 0 and (_in_container() or _on_railway()):
+        _log('[Boot] running as root: the platform start command bypassed the image '
+             'entrypoint (which drops to uid 10001). Use '
+             '"/usr/local/bin/docker-entrypoint gunicorn federated_server:app" '
+             'or no custom start command.', 'warn', event='running_as_root')
+
+_log_boot()
 
 if __name__ == '__main__':
     import signal as _signal
@@ -1693,6 +1839,6 @@ if __name__ == '__main__':
         try: _signal.signal(_s, _graceful_exit)
         except Exception: pass
     port = int(os.environ.get('PORT', 5001))
-    _log(f'\n{SERVICE} — DATA_DIR={DATA_DIR}  port={port}\n')
-    _log(f'  /health  /detection  /hotspots  /federated/upload  /log.txt\n')
+    _log(f'[Boot] standalone development server on 0.0.0.0:{port} '
+         f'(production runs under gunicorn: see gunicorn.conf.py)')
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)

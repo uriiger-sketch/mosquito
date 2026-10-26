@@ -8,8 +8,12 @@ recycle. If you go live without setting it you will **permanently lose every
 detection, all statistics and the trained federated model**, roughly daily, with
 no warning and no way to recover them.
 
-The server prints a loud banner at startup when it detects this, and
-`GET /health` reports `"ephemeral": true`.
+The server logs an error at startup when it detects this, and `GET /health`
+reports `"ephemeral": true` plus `ephemeral_reason`. It catches every case seen
+in practice: `DATA_DIR` under `/tmp`, a Railway service with **no volume
+attached** (production ran like that until October 2026 — the old check called
+it persistent), `DATA_DIR` outside the Railway volume, and a container with no
+volume mounted at `DATA_DIR`.
 
 **Railway**
 1. Service → **Variables** → add `DATA_DIR = /data`
@@ -22,9 +26,11 @@ The server prints a loud banner at startup when it detects this, and
 2. Service → **Environment** → add `DATA_DIR = /data`
 3. Redeploy and check `/health` as above.
 
-**Docker / VPS / Fly** — already correct: the `Dockerfile` sets `DATA_DIR=/data`
-and declares `VOLUME /data`. Just make sure you actually mount it:
-`docker run -v mosquitonet_data:/data ...`
+**Docker / VPS / Fly** — the `Dockerfile` sets `DATA_DIR=/data` but does **not**
+declare `VOLUME /data` (Railway refuses to build an image that does — that broke
+every Railway deploy from June to October 2026). So mount a volume yourself:
+`docker run -v mosquitonet_data:/data ...` — without one, data lives in the
+container's writable layer and is lost when the container is recreated.
 
 The container runs the server as an unprivileged user (uid/gid **10001**). It
 starts as root only long enough to `chown` the data directory — platform volumes
@@ -74,6 +80,13 @@ default (a typo never stops the server from booting).
 | `PUBLIC_COORD_DECIMALS` | `2` | Decimals of lat/lng shown by the public `/log` and `/log.txt` (2 ≈ 1.1 km). The private JSONL keeps 4. |
 | `PSEUDONYM_SECRET` | generated once | Key for the public device pseudonyms and offsets. By default a random key is created on first boot in `DATA_DIR/.server_secret` (mode 0600) and reused; set this only to manage the key yourself. Changing it re-randomises every public offset. |
 | `FED_CLIP_NORM` | `2.0` | Max L2 distance one federated upload can pull the model per round. |
+| `LOG_FORMAT` | `json` on Railway, else `text` | `json`: one JSON object per log line (server **and** gunicorn), which Railway parses into levels and filterable fields. `text`: plain lines. See *Logs*. |
+| `ACCESS_LOG` | `errors` | Which requests gunicorn logs: `errors` (4xx/5xx except throttling and 404/405 scanner noise, plus requests slower than 1 s), `all`, or `off`. Railway's HTTP log records every request anyway. |
+| `STATS_LOG_INTERVAL` | `900` | Seconds between `[Stats]` summary lines (traffic, rejections, write errors, free disk since the previous line). `0` disables them. |
+
+gunicorn's own settings (one worker, threads, timeouts, logging) live in
+`gunicorn.conf.py`, which gunicorn loads from its working directory however it
+is started — so no start command needs flags.
 
 ### Rate limits
 
@@ -104,7 +117,8 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 |---|---|
 | `status` | `ok`, or `degraded` when the last write to the detection log failed (disk full / volume gone). HTTP status stays 200. |
 | `service` | `MosquitoNet v13` — use it to confirm a deploy went live. |
-| `writable`, `ephemeral` | `DATA_DIR` is writable / is under `/tmp` (must be `true` / `false` in production). |
+| `writable`, `ephemeral` | `DATA_DIR` is writable / would be lost on redeploy (must be `true` / `false` in production). |
+| `ephemeral_reason` | Why storage is ephemeral (`no Railway volume is attached to this service`, `DATA_DIR is under /tmp`, …), `null` when it is persistent. |
 | `single_instance` | `false` = another process holds `DATA_DIR` — fix immediately. |
 | `disk_free_mb` | Free space on the `DATA_DIR` volume. |
 | `last_state_save` | Time of the last successful state-file save (every ~5 s while there is activity). |
@@ -142,7 +156,8 @@ mosquito/
 ├── requirements.txt          ← Python deps (fully pinned)
 ├── requirements-dev.txt      ← test deps (pytest, pytest-cov)
 ├── pytest.ini                ← pytest config → tests/server/
-├── Procfile                  ← Railway/Heroku start command
+├── Procfile                  ← start command for buildpack platforms (`gunicorn federated_server:app`)
+├── gunicorn.conf.py          ← gunicorn settings + startup guards + log format (read automatically)
 ├── Dockerfile                ← Docker deployment (VPS / fly.io / GCP / Railway)
 ├── runtime.txt               ← Python 3.12
 ├── tests/server/             ← server test suite (pytest)
@@ -159,6 +174,53 @@ automatically).
 The server adds: global detection map, federated model, live device count.
 
 ---
+
+## Logs
+
+On Railway every line is one JSON object (`LOG_FORMAT=json`): `level` colours
+the line and `message` is the text; every other key is a filter in the Log
+Explorer. gunicorn's own lines go to stdout as JSON too (on stderr Railway
+showed even `Starting gunicorn` as an error).
+
+| What | When | Level | Filter |
+|---|---|---|---|
+| `[Boot] MosquitoNet v13 pid=… uid=… commit=… storage=persistent …` | each start | info | `@event:boot` |
+| `[Storage] EPHEMERAL: <reason>` | start, if data would be lost | **error** | `@event:ephemeral_storage` |
+| `ready: listening on 0.0.0.0:8080, workers=1, …` | gunicorn ready | info | `@component:gunicorn` |
+| `repaired bind address …` / `workers=N refused …` | start command is wrong | **error** | `@component:gunicorn @level:error` |
+| `[Boot] running as root …` | start command bypassed the entrypoint | warn | `@event:running_as_root` |
+| `[Det #42] Aedes albopictus conf=0.830 …` | each stored detection | info | `@event:detection` (fields `det_id`, `species`, `conf`, `freq`, `located`) |
+| `[Det REJECT 400] …`, `[Fed REJECT 400] …`, `[CORS] rejected …` | invalid or foreign requests | warn | `@level:warn` |
+| `[Stats] active=… detections=… (+n) … write_errors=+n disk_free_mb=…` | every 15 min | info; **error** while writes fail | `@event:stats` |
+| `[append] FAILED`, `[state] save FAILED` | disk full / volume gone | **error** | `@event:write_failed` |
+| `[500] GET /… RuntimeError: …` with a `stack` field | unhandled exception | **error** | `@event:internal_error` |
+| `worker … timed out …` with every thread's `stack` | a request hung past 120 s | **error** | `@component:gunicorn` |
+| `GET /path 500 12ms` | 4xx/5xx and slow requests (`ACCESS_LOG`) | warn / error | `@component:access` |
+| `[Exit] done` with final counters | graceful shutdown | info | `@event:exit` |
+
+Never logged: raw device ids, client IPs, query strings or coordinates.
+Client-supplied text appears only inside rejection reasons, escaped and
+truncated, so it can't forge log lines. Everything
+needed to act on is at `warn` or `error`, so `@level:error` should be empty on
+a healthy service.
+
+## The app shows "Offline"
+
+In the app: **Settings → Advanced → Test server connection**. It probes
+`/health` on every endpoint in `SERVER_URLS` and names the failure:
+
+| Result | Meaning | Fix |
+|---|---|---|
+| `OK (MosquitoNet v13)` | That endpoint works; the app switches to it on its next heartbeat (≤ 10 s). | If the pill still says Offline, reload the page (an old cached build may be running). |
+| `unreachable — DNS, TLS or network failure` | The domain doesn't resolve, has no valid certificate, or nothing is deployed. | Railway → Networking: is the custom domain verified and the certificate issued? Does the DNS record match what Railway shows? Did the last deploy succeed? |
+| `HTTP 404 — answered, but not the MosquitoNet server` | Something answers, but not this app: typically Railway's "Application not found" (domain not attached to this service, or a wrong target port) or a parked domain. | Attach the domain to the service (Step 3) and check the port matches the `Listening at:` log line. |
+| `HTTP 502` / `503` | The platform reached the service, but it isn't serving: still booting, crashed, or failing its health check. | Railway → Deployments → deploy and runtime logs. |
+| `no answer within 8 s` | A firewall or a hung server. | As for 502. |
+
+From a computer, `curl -sS https://mosquito.charity/health` gives the same
+information. Railway build failures (`BUILD_IMAGE`, e.g. the Dockerfile
+`VOLUME` rejection) leave the **previous** deployment running — or nothing, on a
+new service — so always check the latest deploy actually went live.
 
 ## Diagnosing "Server Down" (403 / 502 / timeout)
 
@@ -216,14 +278,18 @@ docker run -d --name mosquitonet --restart=always \
 **Without Docker (Railway/Render will do this automatically):**
 ```bash
 pip install -r requirements.txt
-gunicorn federated_server:app \
-  --bind 0.0.0.0:${PORT:-8080} \
-  --workers 1 --threads 4 --timeout 120 --graceful-timeout 30 --no-control-socket
+PORT=8080 gunicorn federated_server:app     # run from the repo root
 ```
-Always `--workers 1` (see above). Don't add `--preload` either: the background
-flusher thread must start in the worker, not the master.
+Everything else comes from `gunicorn.conf.py` (read from the current
+directory): one worker — a `--workers N` flag, `WEB_CONCURRENCY` or a `TTIN`
+signal is refused with an error in the log — threads, timeouts, logging. Don't
+add `--preload`: the background flusher thread must start in the worker, not
+the master.
 
-**Railway:** Go to your Railway project → your service → **Deployments** → click **Redeploy**.
+**Railway:** your service → **Deployments** → **⋮ → Redeploy** restarts the
+current build. After changing *settings* (start command, healthcheck), use
+**Deploy latest commit** or push to `main` instead — see *Railway service
+settings*.
 
 **Render:** Go to your Render service → click **Manual Deploy** → **Deploy latest commit**.
 
@@ -262,7 +328,7 @@ test gate, so do switch.
 |---|---|
 | **JS unit tests + detector benchmark** | `npm test`, then `npm run bench:quick` (Node 22) |
 | **Server tests (Python 3.12)** | `pytest` over `tests/server/` with coverage (fails under 85 %) |
-| **End-to-end (Playwright, Chromium)** | `npm run test:e2e` — the real app in a headless browser (production API calls are blocked; no secrets needed) |
+| **End-to-end (Playwright, Chromium)** | `npm run test:e2e` — the real app in a headless browser: detection with WAV files as the mic, and connectivity against a locally started backend (endpoint failover, heartbeat, upload, diagnostics, outage recovery). Production is never called; no secrets needed |
 | **Backend image smoke test** | builds the Dockerfile, starts it on a root-owned volume holding legacy data, checks it runs as uid 10001, accepts a detection, turns Docker-healthy and flushes state on `docker stop` |
 
 `deploy-pages.yml` calls the same workflow and publishes **only if the JS, server
@@ -355,18 +421,63 @@ Go to [railway.app](https://railway.app) → sign up with GitHub (takes 30 secon
 1. Click **"New Project"**
 2. Click **"Deploy from GitHub repo"**
 3. Select your `mosquito` repo
-4. Railway finds the `Dockerfile` at the repo root and builds the image from it
-   (a root `Dockerfile` takes precedence over `requirements.txt` + `Procfile`)
-5. Click **"Deploy"**
+4. Railway builds the root `Dockerfile`.
+5. Before (or right after) the first deploy, apply **every** setting in
+   *Railway service settings* below — above all the start command, the volume
+   and `PORT`. Then **Deploy latest commit**.
 
-Wait ~2 minutes. Railway will show a deployment log.
+Wait ~2 minutes. A good boot logs `ready: listening on 0.0.0.0:8080` and a
+`[Boot] … storage=persistent` line — see *Logs*.
 
-### Step 3: Get your server URL
+### Railway service settings (production, as configured)
 
-1. In Railway, click your deployment
-2. Click **"Settings"** → **"Domains"**
-3. Click **"Generate Domain"**
-4. You get a URL like: `https://mosquito-production.up.railway.app`
+| Setting | Value | Why |
+|---|---|---|
+| **Start command** | `/usr/local/bin/docker-entrypoint gunicorn federated_server:app` (or empty) | Railway runs it in **exec form — no shell** — and it **replaces** the image `ENTRYPOINT`. Never put `$PORT` (or any `$VAR`) in it: it reaches gunicorn literally. Keeping `docker-entrypoint` keeps the drop to uid 10001. |
+| Healthcheck path / timeout | `/health` / `300` s | A deploy goes live only once the new process answers. |
+| Restart policy | **Always** | A web server should never stay down; `On failure` gives up after N crashes. |
+| Draining (teardown) | `40` s | Railway's default is **0 s** — SIGKILL right after SIGTERM — which skips the final fsync/state save (gunicorn's graceful timeout is 30 s). |
+| Volume | mount path `/data` | Without it every deploy wipes all data (`/health` → `ephemeral_reason`). |
+| Variables | `PORT = 8080`, `DATA_DIR = /data` | `PORT` pins the port the domains target (`8080`); Railway's healthcheck uses the same variable. |
+| Replicas | 1 | All state lives in one process; a volume pins the service to one region anyway. |
+| Source → **Wait for CI** | on (dashboard toggle) | A red commit never reaches the server. |
+
+Two Railway behaviours behind the October 2026 outage:
+
+- **A start command is exec form.** `gunicorn … --bind 0.0.0.0:$PORT`, which
+  Railway had imported from an old `Procfile`, made gunicorn exit with
+  `Error: '$PORT' is not a valid port number.` on every boot. The `Procfile` no
+  longer has flags, and `gunicorn.conf.py` now repairs such a bind (and refuses
+  extra workers) at startup with an `error` log line instead of crashing — but
+  fix the setting when you see that line.
+- **Redeploy replays the old deployment, start command included.** A changed
+  setting only takes effect on a *new* deployment: push to `main`, or
+  **Deploy latest commit**.
+
+Configuration as code (`railway.json`) is deprecated by Railway and stops being
+read on 2026-12-01, so these settings live on the service; this table is their
+record.
+
+### Step 3: Give the service a public address
+
+Railway → your service → **Settings → Networking**:
+
+1. **Generate Domain** — you get e.g. `https://mosquito-production.up.railway.app`.
+   If it asks for a port, use the one from the `Listening at:` log line (8080
+   unless Railway injected its own `PORT`). A wrong port shows up as a Railway
+   error page instead of `/health`.
+2. **Custom Domain** → add `mosquito.charity` (the address the app calls by
+   default). Railway shows the DNS record to create (a `CNAME`, or `ALIAS`/
+   flattened `CNAME` at the apex, plus a `TXT` verification record) — add it at
+   your domain registrar/DNS host and wait until Railway shows the domain as
+   verified and the certificate as issued. If the DNS is proxied through
+   Cloudflare, set `TRUSTED_PROXY_HOPS = 2`.
+
+Check both from any machine: `curl https://mosquito.charity/health` and
+`curl https://web-production-de7b5.up.railway.app/health` (the production
+service's Railway domain) must return `"service":"MosquitoNet v13"`. The app
+lists both in `SERVER_URLS`, so it stays online if the custom domain's DNS or
+certificate ever lapses.
 
 ### Step 4: Variables (DATA_DIR, and ALLOWED_ORIGINS only if needed)
 
@@ -389,29 +500,29 @@ to everyone.
 If you put Cloudflare in front of Railway, also set `TRUSTED_PROXY_HOPS = 2`
 (see *Server configuration*).
 
-### Step 5: Update index.html with the server URL
+### Step 5: Point the app at the server (no code change)
 
-Open `index.html` and find this line near the top of the `<script>`:
+The app calls the endpoints in `SERVER_URLS` (top of the `<script>` in
+`index.html`; default: `https://mosquito.charity`, then the production
+service's Railway domain) **in order**, fails over
+to the next one when an endpoint doesn't answer as MosquitoNet, and remembers
+the one that worked on each device.
 
-```javascript
-const SERVER_URL = '';   // ← PASTE YOUR SERVER URL HERE AFTER DEPLOYING
-```
+To change the list without editing code, set a repository variable:
 
-Change it to:
+1. GitHub repo → **Settings → Secrets and variables → Actions → Variables →
+   New repository variable**
+2. Name `SERVER_URLS`, value — comma-separated origins (`https://host`, no path):
+   ```
+   https://mosquito.charity,https://web-production-de7b5.up.railway.app
+   ```
+3. **Actions → Deploy to GitHub Pages → Run workflow** (or push to `main`).
 
-```javascript
-const SERVER_URL = 'https://mosquito-production.up.railway.app';
-```
-
-Then push:
-
-```bash
-git add index.html
-git commit -m "Connect app to federated server"
-git push origin main
-```
-
-GitHub Pages redeploys in ~30 seconds. Done.
+List the custom domain and the Railway domain **of the same service** (one
+data store): the app then stays online while the custom domain's DNS or
+certificate is being set up, and moves back to it by itself once it works.
+Never list two different backends — they would split the map and the model. The deploy refuses anything that
+isn't a plain origin, so the variable can only ever put a URL into the page.
 
 ---
 
@@ -471,9 +582,9 @@ If Railway doesn't work, Render is identical:
 3. Connect your `mosquito` repo
 4. Runtime: **Python 3** (or **Docker**, which uses the `Dockerfile`)
 5. Build command: `pip install -r requirements.txt`
-6. Start command — exactly the `Procfile` line, `--workers 1` included (Render
-   may set `WEB_CONCURRENCY`, which would otherwise start several workers):
-   `gunicorn federated_server:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --graceful-timeout 30 --no-control-socket`
+6. Start command — the `Procfile` line: `gunicorn federated_server:app`.
+   `gunicorn.conf.py` (read from the repo root) holds it at one worker even if
+   Render sets `WEB_CONCURRENCY`.
 7. Environment: `DATA_DIR = /data` plus a disk mounted at `/data`
 8. Click **"Create Web Service"**
 
