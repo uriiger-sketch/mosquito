@@ -1757,9 +1757,11 @@ legend { padding: 0; }
 
 // Backend endpoints, tried in order until one answers (see useNextServer). The
 // Pages deploy replaces this list with the repository variable SERVER_URLS when
-// it is set, so the app can be pointed at another backend — e.g. the Railway
-// domain while a custom domain's DNS is not live — without a code change.
-const SERVER_URLS = ['https://mosquito.charity'];
+// it is set, so the app can be pointed at another backend without a code change.
+// Both entries are the SAME Railway service (one data store): the custom domain,
+// then the service's own Railway domain, which keeps working if the custom
+// domain's DNS or certificate ever lapses.
+const SERVER_URLS = ['https://mosquito.charity', 'https://web-production-de7b5.up.railway.app'];
 const APP_VERSION = '3.0.0';
 
 /* ════════════════════════════════════════════════════════════

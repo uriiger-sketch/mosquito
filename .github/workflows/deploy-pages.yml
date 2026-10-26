@@ -67,7 +67,7 @@ jobs:
           cd _site
           # top-level, non-site paths
           rm -rf .github .claude tests tools docs \
-                 federated_server.py requirements*.txt Dockerfile Procfile runtime.txt railway.json \
+                 federated_server.py gunicorn.conf.py requirements*.txt Dockerfile Procfile runtime.txt railway.json \
                  netlify.toml package.json package-lock.json pyproject.toml pytest.ini \
                  .pytest_cache htmlcov .coverage .venv
           # anywhere in the tree
@@ -85,7 +85,7 @@ jobs:
             node ../tools/set-server-urls.js index.html "$SERVER_URLS"
           fi
           grep -m1 '^const SERVER_URLS = ' index.html
-          for p in federated_server.py Dockerfile Procfile railway.json requirements.txt package.json tests tools .github; do
+          for p in federated_server.py gunicorn.conf.py Dockerfile Procfile railway.json requirements.txt package.json tests tools .github; do
             if [ -e "$p" ]; then echo "::error::$p leaked into _site"; exit 1; fi
           done
           leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' \) -print)

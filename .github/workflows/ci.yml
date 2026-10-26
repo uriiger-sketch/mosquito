@@ -188,12 +188,46 @@ jobs:
             curl -fsS http://127.0.0.1:8081/health >/dev/null 2>&1 && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8081/health | python3 -c "import json, sys; h = json.load(sys.stdin); assert h['data_dir'] == '/srv/mn/data' and h['writable'] and not h['ephemeral'], h"
+          # No volume is mounted there, so /health must say the data would be lost.
+          curl -fsS http://127.0.0.1:8081/health | python3 -c "import json, sys; h = json.load(sys.stdin); assert h['data_dir'] == '/srv/mn/data' and h['writable'] and h['ephemeral'] and 'container filesystem' in h['ephemeral_reason'], h"
           test "$(docker exec mn2 cat /proc/1/status | awk '/^Uid:/ {print $2}')" = 10001
           docker rm -f mn2
+
+      # Railway runs a service's start command in exec form (no shell) and it
+      # REPLACES the image entrypoint. Production crash-looped in October 2026
+      # on exactly this stored command: '$PORT' reached gunicorn literally.
+      - name: Railway-style start commands
+        run: |
+          wait_health() {
+            for _ in $(seq 1 30); do curl -fsS "http://127.0.0.1:$1/health" >/dev/null 2>&1 && return 0; sleep 1; done
+            return 1
+          }
+          docker volume create mn-rw
+          # The old, broken command: must boot, with ONE worker, and say what it repaired.
+          docker run -d --name mn3 -p 8082:8080 -v mn-rw:/data \
+            -e RAILWAY_ENVIRONMENT_ID=ci -e RAILWAY_VOLUME_MOUNT_PATH=/data \
+            --entrypoint gunicorn mosquitonet:ci \
+            federated_server:app --bind '0.0.0.0:$PORT' --workers 2 --timeout 60
+          wait_health 8082
+          docker logs mn3 2>&1 | grep -F "repaired bind address: '0.0.0.0:\$PORT' -> '0.0.0.0:8080'"
+          docker logs mn3 2>&1 | grep -F 'workers=2 refused'
+          test "$(docker logs mn3 2>&1 | grep -c 'Booting worker')" = 1
+          docker rm -f mn3
+          # The documented command keeps the entrypoint: unprivileged, persistent, quiet.
+          docker run -d --name mn4 -p 8083:8080 -v mn-rw:/data \
+            -e RAILWAY_ENVIRONMENT_ID=ci -e RAILWAY_VOLUME_MOUNT_PATH=/data \
+            --entrypoint /usr/local/bin/docker-entrypoint mosquitonet:ci gunicorn federated_server:app
+          wait_health 8083
+          curl -fsS http://127.0.0.1:8083/health | python3 -c "import json, sys; h = json.load(sys.stdin); assert h['status'] == 'ok' and h['writable'] and not h['ephemeral'] and h['single_instance'], h"
+          test "$(docker exec mn4 cat /proc/1/status | awk '/^Uid:/ {print $2}')" = 10001
+          # Railway's log format: every line one JSON record, and no warnings on a clean boot.
+          docker logs mn4 2>&1 | python3 -c "import json, sys; recs = [json.loads(l) for l in sys.stdin if l.strip()]; bad = [r for r in recs if r['level'] in ('warn', 'error')]; assert recs and not bad, bad"
+          docker rm -f mn4
 
       - name: Logs on failure
         if: failure()
         run: |
           docker logs mn 2>&1 | tail -100 || true
           docker logs mn2 2>&1 | tail -50 || true
+          docker logs mn3 2>&1 | tail -50 || true
+          docker logs mn4 2>&1 | tail -50 || true
