@@ -81,6 +81,9 @@ jobs:
           # run against a cached copy of the previous js/*.js (version skew).
           sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${GITHUB_SHA::12}"'"#g' index.html
           grep -q "js/detector.js?v=${GITHUB_SHA::12}\"" index.html || { echo "::error::app-code version stamp failed"; exit 1; }
+          # Every deployment shows its own version: X.Y.<run number> plus commit and date.
+          node ../tools/stamp-version.js index.html "$GITHUB_RUN_NUMBER" "$GITHUB_SHA"
+          grep -q "^const APP_VERSION = '[0-9]*\.[0-9]*\.${GITHUB_RUN_NUMBER}';$" index.html || { echo "::error::APP_VERSION stamp failed"; exit 1; }
           if [ -n "${SERVER_URLS:-}" ]; then
             node ../tools/set-server-urls.js index.html "$SERVER_URLS"
           fi
