@@ -11,7 +11,7 @@ consent — adds an anonymised detection to a global vector map.
   (*Aedes*) and West Nile (*Culex*) vectors; location-aware species priors and
   local names.
 
-Live app: https://uriiger-sketch.github.io/mosquito/
+Live app: https://mosquito.charity (also https://uriiger-sketch.github.io/mosquito/)
 
 ---
 

@@ -1,9 +1,12 @@
 name: Deploy to GitHub Pages
 
-# Deterministic deploy: every push to main republishes the site to the SAME
-# permanent address — https://uriiger-sketch.github.io/mosquito/ — which never
-# changes between deployments. (One-time setup: repo Settings → Pages → Build and
-# deployment → Source → "GitHub Actions".)
+# Deterministic deploy: every push to main builds ONE minified site
+# (tools/build-site.sh) and publishes it to both addresses, which never change:
+#   • https://uriiger-sketch.github.io/mosquito/ — GitHub Pages (one-time setup:
+#     Settings → Pages → Source → "GitHub Actions"; a private repository needs
+#     GitHub Pro for Pages)
+#   • https://mosquito.charity — the `release` branch (this commit + the site in
+#     site/), which Railway deploys and federated_server.py serves at /
 #
 # Gated: the site is published only after the full CI suite (ci.yml) passes —
 # JS unit tests + detector benchmark, server tests, and the browser end-to-end
@@ -43,6 +46,10 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write                   # push the release branch
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -50,52 +57,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Publish ONLY the static site. This is a DENYLIST on purpose: new static
-      # folders (js/, vendor/, assets/, …) ship automatically, while server
-      # code, tests, tooling, CI and docs never do.
-      - name: Build _site (repo minus non-site paths)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the minifiers
+        run: npm ci --no-audit --no-fund
+
+      # The one build both hosts publish: repo minus non-site paths, stamped
+      # (app-code URLs, version X.Y.<run number>, optional backend list) and
+      # minified. See tools/build-site.sh.
+      - name: Build the site
         env:
+          SITE_SHA: ${{ github.sha }}
+          SITE_RUN: ${{ github.run_number }}
           # Optional repository variable (Settings → Secrets and variables →
           # Actions → Variables): comma-separated backend origins, tried in
           # order — e.g. the Railway domain while a custom domain's DNS isn't
           # live. Unset = keep the SERVER_URLS list in index.html.
           SERVER_URLS: ${{ vars.SERVER_URLS }}
+        run: bash tools/build-site.sh _site
+
+      # Railway deploys the `release` branch: this commit's tree plus the site
+      # above in site/, which federated_server.py serves at / — so
+      # https://mosquito.charity runs exactly this tested build, and the backend
+      # itself only ever ships after the full test suite passed. Fast-forward
+      # only: each release commit's first parent is the previous release.
+      # Pushed before Pages, so the backend never depends on Pages succeeding.
+      - name: Publish the release branch (backend + app, for Railway)
         run: |
           set -euo pipefail
-          mkdir _site
-          tar --exclude=./_site --exclude=./.git -cf - . | tar -xf - -C _site
-          cd _site
-          # top-level, non-site paths
-          rm -rf .github .claude tests tools docs \
-                 federated_server.py gunicorn.conf.py requirements*.txt Dockerfile Procfile runtime.txt railway.json \
-                 netlify.toml package.json package-lock.json pyproject.toml pytest.ini \
-                 .pytest_cache htmlcov .coverage .venv
-          # anywhere in the tree
-          find . \( -name '.git*' -o -name node_modules -o -name __pycache__ -o -name '.env*' \) \
-               -prune -exec rm -rf {} +
-          find . -type f -name '*.md' -delete
-
-          # Fail loudly rather than publish something broken or private.
-          test -f index.html || { echo "::error::index.html missing from _site"; exit 1; }
-          # Stamp the app-code URLs with this commit so a new index.html can never
-          # run against a cached copy of the previous js/*.js (version skew).
-          sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${GITHUB_SHA::12}"'"#g' index.html
-          grep -q "js/detector.js?v=${GITHUB_SHA::12}\"" index.html || { echo "::error::app-code version stamp failed"; exit 1; }
-          # Every deployment shows its own version: X.Y.<run number> plus commit and date.
-          node ../tools/stamp-version.js index.html "$GITHUB_RUN_NUMBER" "$GITHUB_SHA"
-          grep -q "^const APP_VERSION = '[0-9]*\.[0-9]*\.${GITHUB_RUN_NUMBER}';$" index.html || { echo "::error::APP_VERSION stamp failed"; exit 1; }
-          if [ -n "${SERVER_URLS:-}" ]; then
-            node ../tools/set-server-urls.js index.html "$SERVER_URLS"
-          fi
-          grep -m1 '^const SERVER_URLS = ' index.html
-          for p in federated_server.py gunicorn.conf.py Dockerfile Procfile railway.json requirements.txt package.json tests tools .github; do
-            if [ -e "$p" ]; then echo "::error::$p leaked into _site"; exit 1; fi
-          done
-          leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' \) -print)
-          if [ -n "$leaked" ]; then echo "::error::non-site files in _site:"; echo "$leaked"; exit 1; fi
-
-          echo "Publishing $(find . -type f | wc -l) files, $(du -sh . | cut -f1):"
-          find . -type f | sort
+          VERSION="$(sed -n -E "s/^const APP_VERSION = '([0-9]+\.[0-9]+)\.[0-9]+';$/\1/p" index.html).${GITHUB_RUN_NUMBER}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -rf site && cp -R _site site
+          git add -A site
+          tree=$(git write-tree)
+          parents=()
+          if git fetch --quiet --depth=1 origin release; then parents+=(-p FETCH_HEAD); fi
+          parents+=(-p "$GITHUB_SHA")
+          commit=$(git commit-tree "$tree" "${parents[@]}" -m "Release v$VERSION (${GITHUB_SHA::7})")
+          git push origin "$commit:refs/heads/release"
+          echo "release → $commit (v$VERSION)"
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

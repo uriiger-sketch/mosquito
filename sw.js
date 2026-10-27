@@ -17,11 +17,14 @@
  *     the network untouched (the client deliberately uses XHR for them).
  */
 
-const VERSION      = 'v4';
+const VERSION      = 'v5';
 const SHELL_CACHE  = `mn-shell-${VERSION}`;
 const ASSET_CACHE  = `mn-assets-${VERSION}`;
 const TILE_CACHE   = 'mn-tiles';          // unversioned: tiles never change
 const MAX_TILES    = 400;
+// The backend's API routes (federated_server.py). On the app's own origin when
+// the backend serves the app; never matches a page or asset path.
+const API_PATH = /^\/(?:(?:heartbeat|detection|hotspots|health|log|log\.txt)$|federated\/)/;
 
 const SHELL_URLS = [
   './', './index.html',
@@ -75,8 +78,9 @@ self.addEventListener('fetch', (event) => {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
   // Never intercept the API — detections, heartbeats and federated traffic must
-  // always hit the network directly and must never be served from a cache.
-  if (url.hostname === 'mosquito.charity') return;
+  // always hit the network directly and must never be served from a cache. By
+  // path, not host: the backend at mosquito.charity also serves the app itself.
+  if (API_PATH.test(url.pathname)) return;
 
   // Map tiles: cache-first, and bounded so long sessions can't fill storage.
   if (url.hostname.endsWith('tile.openstreetmap.org')) {

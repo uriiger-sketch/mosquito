@@ -33,3 +33,6 @@ tools/eval/results/quick-test.json
 .coverage
 .pytest_cache/
 htmlcov/
+
+# Built site (tools/build-site.sh); on the release branch it lives in site/
+_site/

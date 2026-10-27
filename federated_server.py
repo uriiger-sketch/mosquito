@@ -45,13 +45,13 @@ active_now(). MUST run as ONE process (gunicorn --workers 1, threads are fine):
 all state lives in this process and a second writer would corrupt DATA_DIR.
 """
 
-import os, re, io, sys, json, math, time, hmac, errno, atexit, hashlib, shutil
+import os, re, io, sys, gzip, json, math, time, hmac, errno, atexit, base64, hashlib, shutil
 import threading, ipaddress, functools, itertools, traceback
 from collections import deque, OrderedDict
 from datetime import datetime, timezone
 import numpy as np
 from flask import Flask, request, jsonify, Response
-from werkzeug.exceptions import HTTPException
+from werkzeug.exceptions import HTTPException, NotFound
 from werkzeug.middleware.proxy_fix import ProxyFix
 try:
     import fcntl
@@ -1748,11 +1748,111 @@ def health():
 
 @app.route('/', methods=['GET'])
 def index():
+    if _SITE:
+        return _site_response('index.html')
     return jsonify({'service':SERVICE,'data_dir':DATA_DIR,
                     'endpoints':['GET /heartbeat','POST /detection',
                                  'GET /log','GET /log.txt','GET /hotspots',
                                  'POST /federated/upload','GET /federated/model',
                                  'GET /federated/stats','GET /health']})
+
+# ── The app itself ────────────────────────────────────────────────────────────
+# The Pages deploy also builds the minified PWA into ./site on the `release`
+# branch, which is what Railway deploys: then this server is a full copy of the
+# app at / (https://mosquito.charity), on the same origin as the API. Without a
+# built site (main branch, local runs, most tests) nothing below is registered
+# and / stays the JSON service description. Files are read once at boot and
+# served from memory (about 1 MB), so no filesystem path is ever built from a
+# request.
+SITE_DIR = os.environ.get('SITE_DIR') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'site')
+_SITE_TYPES = {
+    '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8', '.json': 'application/json',
+    '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml',
+    '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
+    '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml',
+}
+_SITE_GZIP = ('.html', '.js', '.css', '.json', '.webmanifest', '.svg', '.txt', '.xml')
+# Re-validated on every load (an ETag round trip): the page and the service
+# worker must pick up a new release at once. Everything else may be cached a day;
+# app code is fetched with ?v=<commit>, so a release never pairs with stale code.
+_SITE_NO_CACHE = ('index.html', 'sw.js', 'manifest.webmanifest', 'map-data.json')
+
+def _load_site(root):
+    if not os.path.isfile(os.path.join(root, 'index.html')):
+        return {}
+    files = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
+        for name in filenames:
+            ext = os.path.splitext(name)[1].lower()
+            if name.startswith('.') or ext not in _SITE_TYPES:
+                continue
+            full = os.path.join(dirpath, name)
+            with open(full, 'rb') as fh:
+                body = fh.read()
+            rel = os.path.relpath(full, root).replace(os.sep, '/')
+            gz = gzip.compress(body, 9, mtime=0) if ext in _SITE_GZIP else None
+            files[rel] = {
+                'body': body, 'gz': gz if gz is not None and len(gz) < len(body) else None,
+                'type': _SITE_TYPES[ext], 'etag': hashlib.sha256(body).hexdigest()[:32],
+                'cache': 'no-cache' if rel in _SITE_NO_CACHE else 'public, max-age=86400',
+            }
+    return files
+
+def _site_csp(index_html):
+    """The page's Content-Security-Policy. Inline scripts run only if their exact
+    text is listed by hash, so markup injected into the page can never run code;
+    only the OpenStreetMap tile servers are allowed besides this origin (and
+    HTTPS endpoints for the API failover list)."""
+    hashes = []
+    for attrs, code in re.findall(r'<script\b([^>]*)>(.*?)</script>', index_html, re.S | re.I):
+        if re.search(r'\bsrc\s*=', attrs, re.I):
+            continue
+        t = re.search(r'\btype\s*=\s*["\']?([^"\'\s>]+)', attrs, re.I)
+        if t and t.group(1).lower() not in ('text/javascript', 'application/javascript', 'module'):
+            continue                                   # data blocks (JSON-LD) never execute
+        digest = base64.b64encode(hashlib.sha256(code.encode('utf-8')).digest()).decode()
+        hashes.append(f"'sha256-{digest}'")
+    return '; '.join([
+        "default-src 'self'",
+        "script-src 'self' " + ' '.join(hashes),
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob: https://*.tile.openstreetmap.org",
+        "font-src 'self'",
+        "connect-src 'self' https:",
+        "manifest-src 'self' blob:",
+        "worker-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+    ])
+
+def _site_response(rel):
+    f = _SITE.get(rel)
+    if f is None:
+        raise NotFound()
+    gz = f['gz'] is not None and 'gzip' in request.headers.get('Accept-Encoding', '')
+    r = Response(f['gz'] if gz else f['body'], content_type=f['type'])
+    if f['gz'] is not None:
+        r.headers['Vary'] = 'Accept-Encoding'
+    if gz:
+        r.headers['Content-Encoding'] = 'gzip'
+    r.set_etag(f['etag'] + ('-gz' if gz else ''))
+    r.headers['Cache-Control'] = f['cache']
+    r.headers['Content-Security-Policy'] = _SITE_CSP
+    # Not the API's no-referrer: the OpenStreetMap tile servers refuse requests
+    # that carry no Referer at all. Cross-origin, only the origin is sent.
+    r.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return r.make_conditional(request)
+
+_SITE = _load_site(SITE_DIR)
+_SITE_CSP = _site_csp(_SITE['index.html']['body'].decode('utf-8')) if _SITE else ''
+if _SITE:
+    @app.route('/<path:p>', methods=['GET'])
+    def site_file(p):
+        return _site_response(p)
 
 # ── Storage check ─────────────────────────────────────────────────────────────
 # The old check only flagged /tmp, so a Railway service with NO volume attached
@@ -1813,12 +1913,12 @@ def _log_boot():
          f'data_dir={DATA_DIR} storage={"EPHEMERAL" if EPHEMERAL_REASON else "persistent"} '
          f'writable={os.access(DATA_DIR, os.W_OK)} disk_free_mb={_disk_free_mb()} '
          f'detections={total} in_ram={kept} single_instance={single_instance} '
-         f'log_format={LOG_FORMAT}',
+         f'log_format={LOG_FORMAT} site_files={len(_SITE)}',
          event='boot', service=SERVICE, pid=os.getpid(), uid=uid, commit=commit,
          deployment=os.environ.get('RAILWAY_DEPLOYMENT_ID'), data_dir=DATA_DIR,
          ephemeral=EPHEMERAL_REASON is not None, total_detections=total,
          rate_limit_scale=RATE_LIMIT_SCALE, trusted_proxy_hops=TRUSTED_PROXY_HOPS,
-         extra_origins=len(_EXTRA_ORIGINS))
+         extra_origins=len(_EXTRA_ORIGINS), site_files=len(_SITE))
     if EPHEMERAL_REASON:
         _log(f'[Storage] EPHEMERAL: {EPHEMERAL_REASON} (DATA_DIR={DATA_DIR}).\n'
              '          Every restart/redeploy will PERMANENTLY DELETE all detections,\n'

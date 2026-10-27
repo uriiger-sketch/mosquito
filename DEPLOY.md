@@ -328,6 +328,44 @@ test gate, so do switch.
 
 ---
 
+## Private repository, public app
+
+The repository can be private while anyone with the link uses the app. Every
+push to `main` that passes the tests builds **one** site with
+`tools/build-site.sh` and publishes it twice:
+
+| Address | How |
+|---|---|
+| **https://mosquito.charity** | The workflow commits the build to the **`release`** branch (this commit + `site/`). Railway deploys `release`; `federated_server.py` serves `site/` at `/`, next to the API, on the same origin. |
+| **https://uriiger-sketch.github.io/mosquito/** | GitHub Pages. A **private** repository needs **GitHub Pro** (or Team/Enterprise) for Pages; on the free plan, making the repository private unpublishes this address, while mosquito.charity keeps working. |
+
+What anyone can see, and what not:
+
+- **Private (repository):** server code, tests, tools, docs, CI, history.
+- **Public (the app):** only what a browser must download to run it, published
+  **minified** (no comments, short local names, no source maps) — readable with
+  effort, never the source. Nothing secret may ever go into the client: the
+  Advanced password is stored as a SHA-256 only, and the server trusts no
+  client input.
+- **Served by the backend** with a strict Content-Security-Policy: the page's
+  inline script runs only by hash (injected markup cannot run code), and the
+  only third-party host is the OpenStreetMap tile server. Responses are gzip
+  compressed and revalidated by ETag.
+
+**To make the repository private** (owner, once):
+
+1. For the github.io address to keep working: upgrade to **GitHub Pro**
+   (github.com → Settings → Billing and plans).
+2. Repository → **Settings → General → Danger Zone → Change visibility →
+   Make private**.
+3. Check that Railway still deploys (it reads the repository through its GitHub
+   App, which keeps access), and that both addresses load.
+
+Private repositories use GitHub Actions minutes (Pro includes 3,000 a month;
+one change costs ~15 with CI on the push, the pull request and the deploy).
+
+---
+
 ## Continuous integration and the deploy gate
 
 `.github/workflows/ci.yml` runs on every push and pull request:
@@ -448,7 +486,7 @@ Wait ~2 minutes. A good boot logs `ready: listening on 0.0.0.0:8080` and a
 | Volume | mount path `/data` | Without it every deploy wipes all data (`/health` → `ephemeral_reason`). |
 | Variables | `PORT = 8080`, `DATA_DIR = /data` | `PORT` pins the port the domains target (`8080`); Railway's healthcheck uses the same variable. |
 | Replicas | 1 | All state lives in one process; a volume pins the service to one region anyway. |
-| Source → **Wait for CI** | on (dashboard toggle) | A red commit never reaches the server. |
+| Source → **Branch** | **`release`** | Written only by the deploy workflow after the full test suite passed: this commit plus the built app in `site/` (see *Private repository, public app*). A red commit never reaches the server. |
 
 Two Railway behaviours behind the October 2026 outage:
 
