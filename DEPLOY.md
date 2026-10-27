@@ -308,6 +308,13 @@ A GitHub Actions workflow (`.github/workflows/deploy-pages.yml`) makes each depl
 deterministic: every push to `main` runs the full test suite and, only if it
 passes, republishes the static site to that same URL.
 
+**Every deployment shows its own version.** The workflow stamps `index.html`
+(`tools/stamp-version.js`): `APP_VERSION` keeps its hand-set major.minor and
+takes the deploy's run number as the last part (`3.1.0` in the repo → `3.1.10`
+for deploy run #10), and `APP_BUILD` becomes the commit and date. About shows
+`MosquitoNet v3.1.10`; About → Advanced shows `3.1.10 · de25d72 · 2026-10-27`.
+Bump only major.minor by hand, for releases worth naming.
+
 **One-time setup to activate it:**
 1. Repo **Settings → Pages**
 2. **Build and deployment → Source → "GitHub Actions"**

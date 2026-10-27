@@ -1715,9 +1715,9 @@ legend { padding: 0; }
 <!-- ?v= pins the app code to THIS page version, so no HTTP/memory/SW cache can
      ever pair a new index.html with an old engine. The deploy workflow rewrites
      it to the commit SHA; keep the three in step when editing by hand. -->
-<script src="js/species.js?v=3.0.0"></script>
-<script src="js/audio-engine.js?v=3.0.0"></script>
-<script src="js/detector.js?v=3.0.0"></script>
+<script src="js/species.js?v=3.1.0"></script>
+<script src="js/audio-engine.js?v=3.1.0"></script>
+<script src="js/detector.js?v=3.1.0"></script>
 <script>
 (() => {
 'use strict';
@@ -1731,7 +1731,11 @@ legend { padding: 0; }
 // then the service's own Railway domain, which keeps working if the custom
 // domain's DNS or certificate ever lapses.
 const SERVER_URLS = ['https://mosquito.charity', 'https://web-production-de7b5.up.railway.app'];
-const APP_VERSION = '3.0.0';
+// Set by every Pages deploy (tools/stamp-version.js): the last part of
+// APP_VERSION becomes the deploy's run number, APP_BUILD its commit and date.
+// Bump only major.minor by hand.
+const APP_VERSION = '3.1.0';
+const APP_BUILD = '';
 
 /* ════════════════════════════════════════════════════════════
    Small helpers
@@ -3152,7 +3156,7 @@ class App {
     try { this.buildSpeciesTable(); }    catch (e) { console.warn('table:', e); }
     try { $('#map-legend').innerHTML = MapController.legendHTML(); } catch (e) { console.warn('legend:', e); }
     setText($('#about-version'), 'v' + APP_VERSION);
-    setText($('#dbg-version'), APP_VERSION);
+    setText($('#dbg-version'), APP_BUILD ? `${APP_VERSION} · ${APP_BUILD}` : APP_VERSION);
     setText($('#dbg-server'), window.SERVER_URL);
 
     this.wireTabs();
