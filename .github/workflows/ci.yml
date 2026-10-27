@@ -101,6 +101,10 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
 
+      # The minifiers: tests/e2e/site.e2e.js builds the published site.
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
       - name: Install Playwright
         run: npm install --no-save --no-audit --no-fund "playwright@${PLAYWRIGHT_VERSION}"
 
@@ -120,6 +124,16 @@ jobs:
       # or network access to the backend are needed.
       - name: End-to-end tests
         run: npm run test:e2e
+
+      # What ships is minified: run the detection suite again on the built site
+      # (tools/build-site.sh), the same build the deploy publishes.
+      - name: Detection tests on the built site
+        env:
+          SITE_SHA: ${{ github.sha }}
+          SITE_RUN: ${{ github.run_number }}
+        run: |
+          bash tools/build-site.sh "$RUNNER_TEMP/site" > /dev/null
+          SITE_ROOT="$RUNNER_TEMP/site" node --test --test-concurrency=1 tests/e2e/detection.e2e.js
 
   docker:
     name: Backend image smoke test

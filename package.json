@@ -2,7 +2,7 @@
   "name": "mosquitonet",
   "version": "3.1.0",
   "private": true,
-  "description": "Acoustic mosquito surveillance PWA \u2014 on-device detection, crowdsourced vector map.",
+  "description": "Acoustic mosquito surveillance PWA — on-device detection, crowdsourced vector map.",
   "license": "UNLICENSED",
   "engines": {
     "node": ">=20"
@@ -16,5 +16,9 @@
     "eval": "node tools/eval/eval.js --full",
     "eval:quick": "node tools/eval/eval.js --quick --check",
     "eval:report": "node tools/eval/report.js"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "7.2.0",
+    "terser": "5.51.2"
   }
 }

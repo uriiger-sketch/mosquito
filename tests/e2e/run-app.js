@@ -49,7 +49,12 @@ function serve(root, port = 0) {
   });
 }
 
-async function runApp(wav, { seconds = 20, lat = null, lng = null, root = path.join(__dirname, '..', '..'),
+// SITE_ROOT=<dir> runs the suites against a built (minified) site instead of
+// the source tree: CI sets it to tools/build-site.sh's output, so what ships is
+// what is tested.
+const DEFAULT_ROOT = process.env.SITE_ROOT ? path.resolve(process.env.SITE_ROOT) : path.join(__dirname, '..', '..');
+
+async function runApp(wav, { seconds = 20, lat = null, lng = null, root = DEFAULT_ROOT,
                              viewport = { width: 390, height: 844 }, onPage } = {}) {
   const { chromium } = loadPlaywright();
   const srv = await serve(path.resolve(root));

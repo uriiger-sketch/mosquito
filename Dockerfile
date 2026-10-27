@@ -52,6 +52,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY federated_server.py gunicorn.conf.py ./
+# The built app (only on the release branch; a placeholder on main): served at /.
+COPY site/ ./site/
 
 # Persistence: Railway does not support the Dockerfile VOLUME instruction.
 # Attach a Railway Volume to the service with mount path /data.
