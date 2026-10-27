@@ -1,0 +1,43 @@
+{
+  "name": "MosquitoNet — Vector Surveillance",
+  "short_name": "MosquitoNet",
+  "description": "Free acoustic mosquito detector. Identifies disease-carrying species from their wingbeat using your phone’s microphone — on-device, no audio stored.",
+  "id": "/mosquito/",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0a1114",
+  "theme_color": "#0a1114",
+  "orientation": "any",
+  "categories": [
+    "health",
+    "utilities",
+    "education"
+  ],
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

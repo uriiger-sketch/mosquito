@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://uriiger-sketch.github.io/mosquito/sitemap.xml
