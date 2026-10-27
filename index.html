@@ -614,51 +614,38 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 }
 .wave-box { height: 2rem; border-top: 1px solid var(--line); }
 #waveform { width: 100%; height: 100%; }
-.spec-foot { display: flex; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4) var(--sp-4); font-size: var(--fs-caption); color: var(--text-3); }
 
-/* Species list */
-.sp-list { list-style: none; padding: 0; }
-.sp-group-label { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
-.sp-row {
+/* Species grid — small tiles, all visible at once */
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.25rem, 1fr)); gap: var(--sp-2); padding: 0 var(--sp-3) var(--sp-3); }
+.sp-tile {
   --c: var(--text-3);
-  position: relative;
-  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3);
-  min-height: 3.75rem; margin: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
-  border-top: 1px solid var(--line);
+  position: relative; overflow: hidden;
+  display: grid; gap: 1px; align-content: center;
+  width: 100%; min-height: 3.25rem; margin: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--surface-2);
+  text-align: left;
 }
-.sp-swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--c); align-self: start; margin-top: 0.45rem; }
-.sp-main { min-width: 0; display: grid; gap: 1px; }
-.sp-l1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
-.sp-common { font-size: var(--fs-sm); font-weight: 580; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sp-l2 { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); color: var(--text-3); white-space: nowrap; overflow: hidden; }
-.sp-l2 .sci { font-size: 0.875rem; color: var(--text-2); }
+.sp-tile::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
+button.sp-tile { transition: background var(--dur-1) var(--ease-out); }
+button.sp-tile:hover { background: var(--surface-3); }
+.sp-swatch { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.sp-l1, .sp-l2 { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.sp-name { flex: 1; min-width: 0; font-size: 1rem; line-height: 1.25; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-act { width: 0.875rem; height: 0.875rem; color: var(--text-3); }
 .sp-act.now { color: var(--accent); }
-.sp-meter { position: absolute; left: var(--sp-4); right: var(--sp-4); bottom: 0; height: 2px; overflow: hidden; }
+.sp-l2 { justify-content: space-between; font-size: var(--fs-caption); color: var(--text-3); }
+.sp-status { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-local { flex: none; font-size: 0.625rem; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.sp-meter { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
 .sp-meter-fill { position: absolute; inset: 0; transform-origin: 0 50%; transform: scaleX(0); background: var(--c); transition: transform 140ms linear; will-change: transform; }
-.sp-side { display: flex; align-items: center; gap: var(--sp-1); }
-.sp-status { font-size: var(--fs-caption); color: var(--text-3); text-align: right; min-width: 4.5rem; white-space: nowrap; }
-.sp-row[data-status="building"] .sp-status { color: var(--warn); font-weight: 600; }
-.sp-row[data-status="locked"] { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 12%, transparent), transparent 70%); box-shadow: inset 3px 0 0 var(--c); }
-.badge-sm { height: 1.125rem; padding: 0 0.375rem; font-size: 0.625rem; letter-spacing: 0.08em; }
-.sp-row[data-status="locked"] .sp-status { color: var(--text-1); font-weight: 650; }
-.sp-row[data-enabled="false"] .sp-main,
-.sp-row[data-enabled="false"] .sp-swatch { opacity: 0.45; }
-.sp-debug { grid-column: 2 / -1; font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sp-more { border-top: 1px solid var(--line); }
-.sp-more > summary {
-  list-style: none; cursor: pointer;
-  display: flex; align-items: center; gap: var(--sp-2);
-  min-height: 3rem; padding: 0 var(--sp-4);
-  font-size: var(--fs-sm); font-weight: 550; color: var(--text-2);
-}
-.sp-more > summary::-webkit-details-marker { display: none; }
-.sp-more > summary .icon { transition: transform var(--dur-2) var(--ease-out); }
-.sp-more[open] > summary .icon { transform: rotate(180deg); }
-.sp-note { padding: var(--sp-3) var(--sp-4) var(--sp-4); font-size: var(--fs-caption); color: var(--text-3); border-top: 1px solid var(--line); }
-
-.privacy-note { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-4); font-size: var(--fs-sm); color: var(--text-2); }
-.privacy-note .icon { color: var(--accent); margin-top: 2px; }
+.sp-tile[data-status="building"] .sp-status { color: var(--warn); font-weight: 600; }
+.sp-tile[data-status="locked"] { background: color-mix(in srgb, var(--c) 16%, var(--surface-2)); border-color: color-mix(in srgb, var(--c) 55%, transparent); }
+.sp-tile[data-status="locked"] .sp-status { color: var(--text-1); font-weight: 650; }
+.sp-tile[data-enabled="false"] { background: transparent; }
+.sp-tile[data-enabled="false"]::before { opacity: 0.3; }
+.sp-tile[data-enabled="false"] .sp-l1 { opacity: 0.45; }
+.sp-debug { font-family: var(--font-mono); font-size: 0.625rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sp-note { padding: 0 var(--sp-4) var(--sp-4); font-size: var(--fs-caption); color: var(--text-3); }
 
 /* ── MAP ───────────────────────────────────────────────────────────────── */
 .panel-map { overflow: hidden; }
@@ -667,11 +654,11 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .map-overlay { position: absolute; z-index: 500; pointer-events: none; }
 .map-overlay > * { pointer-events: auto; }
 .map-top { top: var(--sp-3); left: calc(var(--sp-3) + var(--safe-l)); right: calc(4.25rem + var(--safe-r)); }
-.map-title-card { display: inline-grid; gap: 2px; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: rgba(16,25,29,0.92); border: 1px solid var(--line); box-shadow: var(--e-2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); max-width: 26rem; }
+.map-title-card { display: inline-grid; gap: 2px; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); background: rgba(16,25,29,0.92); border: 1px solid var(--line); box-shadow: var(--e-2); max-width: 26rem; }
 .map-title-card h2 { font-size: var(--fs-body); font-weight: 620; }
 .map-title-card p { font-size: var(--fs-caption); color: var(--text-2); }
 .map-bottom { left: calc(var(--sp-3) + var(--safe-l)); right: calc(var(--sp-3) + var(--safe-r)); bottom: var(--sp-3); display: grid; gap: var(--sp-2); justify-items: end; }
-.map-card { width: 100%; padding: var(--sp-3) var(--sp-4) var(--sp-2); border-radius: var(--r-lg); background: rgba(16,25,29,0.94); border: 1px solid var(--line); box-shadow: var(--e-2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.map-card { width: 100%; padding: var(--sp-3) var(--sp-4) var(--sp-2); border-radius: var(--r-lg); background: rgba(16,25,29,0.94); border: 1px solid var(--line); box-shadow: var(--e-2); }
 .year-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
 .year-head label { font-size: var(--fs-sm); color: var(--text-2); }
 .year-val { font-weight: 650; font-size: var(--fs-body); }
@@ -683,7 +670,6 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
   min-height: 44px; padding: 0 var(--sp-4); border-radius: var(--r-full);
   background: rgba(16,25,29,0.94); border: 1px solid var(--line-strong); box-shadow: var(--e-2);
   color: var(--text-1); font-weight: 600; font-size: var(--fs-sm);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
 }
 .map-fab:hover { background: var(--surface-3); }
 .map-fab[aria-expanded="true"] { color: var(--accent); border-color: var(--accent-line); }
@@ -711,7 +697,10 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 
 /* Leaflet, restyled */
 .leaflet-container { background: var(--ink-0) !important; font-family: var(--font-ui) !important; font-size: var(--fs-sm); }
-.leaflet-tile-pane { filter: grayscale(1) brightness(0.32) contrast(1.75) sepia(0.4) hue-rotate(140deg) saturate(1.4); }
+/* Night map: tiles dimmed with opacity over the dark container. Not a CSS filter:
+   a filter (or backdrop-filter) costs a full-screen render pass on every frame
+   the map draws, and on phones that saturated the GPU until the app froze. */
+.leaflet-tile-pane { opacity: 0.3; }
 .leaflet-bar { border: 1px solid var(--line-strong) !important; border-radius: var(--r-md) !important; box-shadow: var(--e-2) !important; overflow: hidden; }
 .leaflet-bar a, .leaflet-bar a:hover {
   width: 44px !important; height: 44px !important; line-height: 44px !important;
@@ -731,9 +720,8 @@ code { font-family: var(--font-mono); font-size: 0.875em; background: var(--surf
 .leaflet-container a.leaflet-popup-close-button { color: var(--text-2); width: 32px; height: 32px; font-size: 20px; line-height: 30px; }
 .pop-title { font-family: var(--font-sci); font-style: italic; font-size: 1.125rem; line-height: 1.2; }
 .you-marker { position: relative; width: 22px; height: 22px; }
-.you-marker::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: rgba(92,214,194,0.22); animation: you 2.4s var(--ease-out) infinite; }
+.you-marker::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; background: rgba(92,214,194,0.22); border: 1px solid rgba(92,214,194,0.45); }   /* static: an endless pulse redrew the map every frame */
 .you-marker::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; background: var(--accent); border: 2.5px solid #f2f6f6; box-shadow: 0 1px 4px rgba(0,0,0,0.6); }
-@keyframes you { 0% { transform: scale(0.6); opacity: 1; } 100% { transform: scale(2.2); opacity: 0; } }
 
 /* Year slider */
 input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; cursor: pointer; }
@@ -791,9 +779,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .about-hero h1 { font-size: var(--fs-display); line-height: 1.05; letter-spacing: -0.025em; font-weight: 600; }
 .about-hero h1 .sci { font-weight: 400; color: var(--accent); letter-spacing: 0; }
 .about-hero p { color: var(--text-2); max-width: 40rem; }
-.trust { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.trust .chip { color: var(--text-1); }
-.trust .chip .icon { color: var(--accent); width: 1rem; height: 1rem; }
 .acc { border-top: 1px solid var(--line); }
 .acc:first-child { border-top: 0; }
 .acc > summary {
@@ -804,7 +789,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .acc > summary::-webkit-details-marker { display: none; }
 .acc-ico { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: var(--r-md); background: var(--surface-3); color: var(--accent); }
 .acc-title { font-weight: 600; font-size: var(--fs-body); }
-.acc-sub { display: block; font-size: var(--fs-caption); color: var(--text-3); font-weight: 400; }
+.adv-lock { color: var(--text-3); }
 .acc > summary .chev { color: var(--text-3); transition: transform var(--dur-2) var(--ease-out); }
 .acc[open] > summary .chev { transform: rotate(180deg); }
 .acc-body { padding: 0 var(--sp-4) var(--sp-5) calc(var(--sp-4) + 2.25rem + var(--sp-3)); color: var(--text-2); font-size: var(--fs-sm); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
@@ -820,8 +805,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .sp-table .t-common { color: var(--text-1); font-weight: 580; }
 .sp-table .t-sci { grid-column: 2; font-size: 1rem; color: var(--text-2); }
 .sp-table .t-hz { color: var(--text-1); font-weight: 600; white-space: nowrap; }
-.sp-table .t-range { display: block; font-size: var(--fs-caption); color: var(--text-3); }
-.sp-table .t-act { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
 @media (max-width: 599px) {
   .acc-body { padding-left: var(--sp-4); }
   .sp-table-wrap { margin-left: 0; }
@@ -862,6 +845,14 @@ dialog::backdrop { background: rgba(3, 6, 8, 0.72); backdrop-filter: blur(3px); 
 .dlg-body { padding: var(--sp-2) var(--sp-5) var(--sp-5); overflow-y: auto; display: grid; gap: var(--sp-4); color: var(--text-2); font-size: var(--fs-sm); }
 .dlg-foot { display: flex; gap: var(--sp-2); justify-content: flex-end; flex-wrap: wrap; padding: var(--sp-3) var(--sp-5) calc(var(--sp-5) + var(--safe-b)); border-top: 1px solid var(--line); }
 .dlg-foot .btn { flex: 1 1 auto; }
+#adv-form .dlg-body { gap: var(--sp-2); }
+.pw-input {
+  width: 100%; min-height: 48px; padding: 0 var(--sp-4);
+  border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface-2);
+  color: var(--text-1); font-size: 1rem;
+}
+.pw-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pw-error { color: var(--warn); font-size: var(--fs-sm); }
 @media (max-width: 599px) {
   dialog.sheet {
     width: 100%; max-width: 100%; margin: auto 0 0; max-height: 92%;
@@ -1250,10 +1241,7 @@ legend { padding: 0; }
             <!-- Spectrogram -->
             <section class="card" aria-labelledby="spec-title">
               <div class="card-head">
-                <div class="grow">
-                  <h2 class="card-title" id="spec-title">Spectrogram</h2>
-                  <p class="card-sub">Live sound energy, 100–1,200 Hz</p>
-                </div>
+                <h2 class="card-title grow" id="spec-title">Spectrogram</h2>
                 <button class="icon-btn" id="btn-bands" aria-pressed="true" aria-label="Show species frequency bands" title="Species frequency bands">
                   <svg class="icon" aria-hidden="true"><use href="#i-bands"/></svg>
                 </button>
@@ -1268,25 +1256,16 @@ legend { padding: 0; }
                 </div>
                 <div class="wave-box"><canvas id="waveform" aria-hidden="true"></canvas></div>
               </div>
-              <div class="spec-foot"><span>Brighter = louder than the room</span><span class="num">Mosquitoes: 290–730 Hz</span></div>
             </section>
 
             <!-- Species -->
             <section class="card" id="species-card" aria-labelledby="species-title">
               <div class="card-head">
-                <div class="grow">
-                  <h2 class="card-title" id="species-title">Species</h2>
-                  <p class="card-sub" id="species-sub"><svg class="icon icon-sm" aria-hidden="true"><use id="species-sub-ico" href="#i-moon"/></svg><span id="species-sub-text">—</span></p>
-                </div>
+                <h2 class="card-title grow" id="species-title">Species</h2>
                 <span class="badge num" id="species-count">12 / 12</span>
               </div>
               <div id="species-list"></div>
               <p class="sp-note" id="sp-note"></p>
-            </section>
-
-            <section class="card privacy-note">
-              <svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>
-              <p>Sound is analysed on this phone in real time and never recorded or uploaded. Only confirmed detections are shared — anonymously, with location shifted by a fixed, secret offset of up to about 1.5 km. <button class="link-btn" data-goto="about-privacy" style="min-height:0">Privacy details</button></p>
             </section>
           </div>
         </div>
@@ -1403,13 +1382,7 @@ legend { padding: 0; }
         <section class="card about-hero">
           <span class="overline">About MosquitoNet</span>
           <h1>Hear the mosquito<br><span class="sci">before it bites.</span></h1>
-          <p>MosquitoNet turns a phone into an acoustic mosquito detector. It listens for the wingbeat tone each species makes, names the likely species on the device, and adds confirmed finds — anonymously — to a global map of disease vectors used by households, field teams and researchers.</p>
-          <div class="trust">
-            <span class="chip"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>On-device analysis</span>
-            <span class="chip"><svg class="icon" aria-hidden="true"><use href="#i-mic-off"/></svg>No audio stored</span>
-            <span class="chip"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>Anonymous by design</span>
-            <span class="chip"><svg class="icon" aria-hidden="true"><use href="#i-flask"/></svg>Published science</span>
-          </div>
+          <p>MosquitoNet listens for mosquito wingbeats, names the likely species on your phone, and adds confirmed finds — anonymously — to a global map of disease vectors.</p>
           <div><button class="btn btn-secondary" id="btn-share-app"><svg class="icon" aria-hidden="true"><use href="#i-share"/></svg>Share MosquitoNet</button></div>
         </section>
 
@@ -1417,37 +1390,28 @@ legend { padding: 0; }
           <details class="acc" id="about-detection">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-flask"/></svg></span>
-              <h2 class="acc-title">How detection works<span class="acc-sub" id="about-detection-sub">12 species · two detectors</span></h2>
+              <h2 class="acc-title">How detection works</h2>
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
-              <p>Every mosquito species beats its wings at a characteristic rate — a faint, steady tone between about 290 and 730 Hz, with overtones at two and three times that pitch. MosquitoNet computes a high-resolution spectrum of the room many times a second and looks for narrow, sustained tones with exactly that harmonic structure.</p>
-              <p>Frequency priors come from two open datasets: <a href="https://zenodo.org/record/4904800" target="_blank" rel="noopener">HumBugDB</a> (Kiskin et al. 2021 — 20 hours, 36 species, CC-BY-4.0) and the <a href="https://doi.org/10.7554/eLife.27854" target="_blank" rel="noopener">Abuzz dataset</a> (Mukundarajan et al. 2017, eLife).</p>
+              <p>Each species beats its wings at its own pitch — about 290–730 Hz, with overtones at two and three times that. MosquitoNet looks for steady tones with exactly that pattern and rejects voices, fans and motors. Only finds with at least 70% confidence are shared with the map.</p>
               <div class="sp-table-wrap"><table class="sp-table" id="species-table"><caption class="sr-only">Species MosquitoNet can recognise</caption></table></div>
-              <h3>Two detectors run on every frame</h3>
-              <ul>
-                <li><strong>Close range</strong> — a filter bank tuned to each species’ wingbeat, with signal-to-noise, tonality, periodicity and harmonic-ratio checks. Very selective; works for mosquitoes close to the phone.</li>
-                <li><strong>Long range</strong> — a harmonic track-before-detect tracker borrowed from sonar. Each frequency is compared with its own noise floor, evidence from f<sub>0</sub>, 2f<sub>0</sub> and 3f<sub>0</sub> is combined, and weak frames accumulate along the drifting pitch for about 1.5 s. Voices and motors are rejected by physics: nothing may sound below the fundamental, and perfectly steady tones (fans, motors) are notched out. Detections it makes are labelled <em>Far</em>.</li>
-                <li>A tone must persist across most of a ~2-second window before anything is shown. Only finds that reach 70% confidence are shared with the global map.</li>
-              </ul>
+              <p>Wingbeat data: <a href="https://zenodo.org/record/4904800" target="_blank" rel="noopener">HumBugDB</a> and the <a href="https://doi.org/10.7554/eLife.27854" target="_blank" rel="noopener">Abuzz dataset</a>.</p>
             </div>
           </details>
 
           <details class="acc" id="about-range">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-ruler"/></svg></span>
-              <h2 class="acc-title">Getting the most range<span class="acc-sub">Placement and room tips</span></h2>
+              <h2 class="acc-title">Getting the most range</h2>
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
-              <p>A wingbeat is very quiet. Beyond about 10 cm its sound halves (−6 dB) each time the distance doubles, so range is set by how far the tone stands above background noise — every 6 dB you win back doubles the distance.</p>
               <ul>
-                <li><strong>Go where the mosquitoes go.</strong> They home in on breath and body heat. Put the phone beside the sleeper’s head, 20–40 cm away; halving the distance gains 6 dB.</li>
-                <li><strong>Lay the phone flat on a hard surface</strong> — table, floor or bed frame — microphone toward the sleeping area. A hard boundary adds about 3 dB.</li>
-                <li><strong>Switch off fans and air-conditioning.</strong> They add broadband noise and blow away the CO<sub>2</sub> plume that draws mosquitoes in.</li>
-                <li><strong>Keep the room quiet</strong> — no TV, music or conversation near the phone.</li>
-                <li><strong>Remove the phone case</strong> if it partly covers the microphone.</li>
-                <li><strong>Timing:</strong> dusk and through the night for <em>Anopheles</em> and <em>Culex</em>; daytime for <em>Aedes</em>.</li>
+                <li><strong>Close to the sleeper</strong> — phone flat, 20–40 cm from the head.</li>
+                <li><strong>Quiet room</strong> — fans, air-conditioning, TV and music off.</li>
+                <li><strong>Microphone uncovered</strong> — remove a case that covers it.</li>
+                <li><strong>Right time</strong> — night for <em>Anopheles</em> and <em>Culex</em>, daytime for <em>Aedes</em>.</li>
               </ul>
             </div>
           </details>
@@ -1455,36 +1419,27 @@ legend { padding: 0; }
           <details class="acc" id="about-map">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-globe"/></svg></span>
-              <h2 class="acc-title">About the map data<span class="acc-sub">Sources and cleaning</span></h2>
+              <h2 class="acc-title">About the map data</h2>
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
-              <p><strong>Each circle is one documented location where the vector is present</strong> — never a synthetic or random point. Colour shows the species; ringed circles mark invasive first detections (for example <em>An. stephensi</em> in Africa); dashed circles mark detected or introduced populations that are not established.</p>
-              <p>Every record is checked against a 1:10m land mask (points in the sea or in lakes are corrected or removed) and de-duplicated. The records, their sources and the cleaning steps are rebuilt reproducibly by <code>tools/build_map_data.py</code>.</p>
-              <ul>
-                <li><strong>WHO World Malaria Report 2025</strong> and Sinka et al. 2012 (dominant <em>Anopheles</em> vectors)</li>
-                <li><strong>PAHO dengue bulletins 2024</strong>, <strong>CDC ArboNET</strong>, <strong>ECDC invasive-mosquito maps (June 2025)</strong></li>
-                <li><strong>Kraemer et al. 2015</strong> global <em>Aedes</em> compendium (eLife, doi:10.7554/eLife.08347)</li>
-                <li><em>An. stephensi</em> invasion: Djibouti 2012, Kebri Dehar (Ethiopia) 2016, Arba Minch, Marsabit, Turkana and Kisumu (Kenya), Accra (Ghana) 2022, Al Hudaydah (Yemen) 2021, Jaffna (Sri Lanka) 2017</li>
-              </ul>
-              <p>The year control is cumulative: “up to 2010” shows everything documented by 2010. Community detections appear as squares once a 5 km zone collects enough confirmed finds.</p>
+              <p>Each circle is one documented site where the vector is present; ringed circles are invasive first detections, dashed circles are populations that are not established. Squares are community hotspots.</p>
+              <p>Sources: WHO World Malaria Report 2025, Sinka et al. 2012, PAHO, CDC ArboNET, ECDC and Kraemer et al. 2015 — checked against a land mask and de-duplicated.</p>
             </div>
           </details>
 
           <details class="acc" id="about-privacy">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg></span>
-              <h2 class="acc-title">Privacy &amp; federated learning<span class="acc-sub">What leaves your phone — and what never does</span></h2>
+              <h2 class="acc-title">Privacy</h2>
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
               <ul>
-                <li><strong>No audio is stored or transmitted.</strong> Microphone data is analysed in real time and immediately discarded.</li>
-                <li><strong>What does leave the device:</strong> confirmed detections (species, genus, confidence, wingbeat frequency, signal strength, and a location moved by a fixed secret offset of up to ~1.5 km that is unique to your device — so even many finds from home never average back to your home; the server shifts it again before anything is published), and differentially private model weights for federated learning.</li>
-                <li><strong>Your history stays here.</strong> The History tab is stored only in this browser; export or clear it at any time.</li>
-                <li><strong>Differential privacy:</strong> Gaussian mechanism with ε = 1.0, δ = 10<sup>−5</sup>; gradients are clipped to an L2 norm of 1.0 before noise is added.</li>
-                <li><strong>Anonymous device ID:</strong> a random 128-bit value created on your device and never linked to your identity. The server stores only its SHA-256 hash.</li>
-                <li><strong>Federated averaging:</strong> each device uploads its locally trained weights every 20 training steps; the server averages them, weighted by step count.</li>
+                <li><strong>No audio is stored or sent.</strong> Sound is analysed in real time and discarded.</li>
+                <li><strong>Shared:</strong> confirmed detections only, with the location moved by a fixed secret offset of up to ~1.5 km, plus differentially private model updates.</li>
+                <li><strong>Anonymous:</strong> a random device ID, kept on the server only as a hash.</li>
+                <li><strong>Your history stays in this browser.</strong></li>
               </ul>
             </div>
           </details>
@@ -1492,28 +1447,27 @@ legend { padding: 0; }
           <details class="acc" id="about-install">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg></span>
-              <h2 class="acc-title">Install the app<span class="acc-sub">Full screen, works offline</span></h2>
+              <h2 class="acc-title">Install the app</h2>
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
-              <h3>iPhone and iPad (Safari)</h3>
-              <ol class="steps"><li>Open this page in Safari.</li><li>Tap the Share button.</li><li>Choose “Add to Home Screen”, then “Add”.</li></ol>
-              <h3>Android (Chrome)</h3>
-              <ol class="steps"><li>Tap the ⋮ menu.</li><li>Choose “Install app” or “Add to Home screen”.</li></ol>
-              <h3>Desktop (Chrome, Edge)</h3>
-              <ol class="steps"><li>Click the install icon at the right of the address bar.</li></ol>
-              <p>Once installed, MosquitoNet opens full screen and keeps working without a connection; detections are queued and uploaded when you are back online.</p>
+              <ul>
+                <li><strong>iPhone, iPad (Safari):</strong> Share → Add to Home Screen.</li>
+                <li><strong>Android (Chrome):</strong> ⋮ menu → Install app.</li>
+                <li><strong>Desktop (Chrome, Edge):</strong> install icon in the address bar.</li>
+              </ul>
+              <p>Installed, it opens full screen and works offline.</p>
             </div>
           </details>
 
           <details class="acc" id="about-advanced">
             <summary>
               <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg></span>
-              <h2 class="acc-title">Advanced<span class="acc-sub">Diagnostics and server test</span></h2>
-              <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+              <h2 class="acc-title">Advanced</h2>
+              <svg class="icon adv-lock" aria-label="Password required" role="img"><use href="#i-lock"/></svg>
             </summary>
             <div class="acc-body">
-              <p>Internal state of the federated-learning client and the network connection. Turn on <button class="link-btn" data-open="dlg-settings" style="min-height:0">diagnostics in Settings</button> to see raw detector gates in the species list.</p>
+              <p>Internal state of the federated-learning client and the network connection. Turn on <button class="link-btn" data-open="dlg-settings" style="min-height:0">diagnostics in Settings</button> to see raw detector gates on the species tiles.</p>
               <div>
                 <div class="readout-row"><span class="overline">Model · <span id="fed-round">round 0</span></span><span class="readout-sub" id="fed-upload">pending</span></div>
                 <div class="meter fed-bar" aria-hidden="true"><div class="meter-fill" id="fed-bar"></div></div>
@@ -1535,7 +1489,7 @@ legend { padding: 0; }
           </details>
         </div>
 
-        <p class="about-foot">MosquitoNet <span id="about-version"></span> · A citizen-science tool, not a medical device.</p>
+        <p class="about-foot">MosquitoNet <span id="about-version"></span></p>
       </div>
     </section>
 
@@ -1599,25 +1553,24 @@ legend { padding: 0; }
         <label class="setting-label" for="set-dim">Dim screen while listening</label>
         <input class="switch" type="checkbox" role="switch" id="set-dim" checked>
       </div>
-      <p class="setting-help">After 30 seconds the display darkens so it won’t light the room. Tap once to wake it.</p>
+      <p class="setting-help">Darkens after 30 seconds. Tap once to wake it.</p>
     </div>
     <div class="setting">
       <div class="setting-row">
         <label class="setting-label" for="set-bands">Species bands on spectrogram</label>
         <input class="switch" type="checkbox" role="switch" id="set-bands" checked>
       </div>
-      <p class="setting-help">Faint guides show where each monitored species’ wingbeat should appear.</p>
     </div>
     <div class="setting">
       <div class="setting-row">
         <label class="setting-label" for="set-diag">Show diagnostics</label>
         <input class="switch" type="checkbox" role="switch" id="set-diag">
       </div>
-      <p class="setting-help">Adds raw detector gates, signal-to-noise and levels to the species list — for researchers and field testing.</p>
+      <p class="setting-help">Raw detector gates and levels on the species tiles.</p>
     </div>
     <div class="setting">
       <span class="setting-label">Species</span>
-      <p class="setting-help"><span id="set-species-count">12 of 12</span> species monitored. Turn individual species on or off in the species list on the Listen screen.</p>
+      <p class="setting-help"><span id="set-species-count">12 of 12</span> species monitored. Tap a species on the Listen screen to switch it.</p>
       <div><button class="btn btn-secondary" id="btn-replay-onb">Show the introduction again</button></div>
     </div>
   </div>
@@ -1710,6 +1663,22 @@ legend { padding: 0; }
     <button class="btn btn-secondary" data-close>Cancel</button>
     <button class="btn btn-danger" id="clear-confirm"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Clear history</button>
   </div>
+</dialog>
+
+<!-- About → Advanced: password -->
+<dialog id="dlg-adv" aria-labelledby="adv-title">
+  <form id="adv-form" novalidate>
+    <div class="dlg-head"><h2 id="adv-title">Advanced</h2></div>
+    <div class="dlg-body">
+      <label class="setting-label" for="adv-pw">Password</label>
+      <input class="pw-input" type="password" id="adv-pw" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="adv-error">
+      <p class="pw-error" id="adv-error" role="alert" hidden>Wrong password.</p>
+    </div>
+    <div class="dlg-foot">
+      <button class="btn btn-secondary" type="button" data-close>Cancel</button>
+      <button class="btn btn-primary" type="submit">Unlock</button>
+    </div>
+  </form>
 </dialog>
 
 <!-- ══ FEEDBACK SURFACES ══════════════════════════════════════════════ -->
@@ -1899,6 +1868,45 @@ const ACTIVITY = {
   dusk:  { icon: 'dusk', label: 'Dusk & dawn' },
   day:   { icon: 'sun',  label: 'Day' },
 };
+
+// About → Advanced is behind a password. The page is public, so this only keeps
+// casual users out of the diagnostics; it ships the SHA-256, never the password.
+const ADVANCED_PW_SHA256 = 'e85de69f5bf2320774bc40924b4e2c53d167ea6741197ca80181d60eef63bbe8';
+
+// SHA-256 of a string (UTF-8), as hex. Synchronous and self-contained:
+// crypto.subtle is missing on plain-http origins (LAN testing).
+function sha256Hex(str) {
+  const primes = [];
+  for (let n = 2; primes.length < 64; n++) if (primes.every(p => n % p)) primes.push(n);
+  const frac = (x) => (x - Math.floor(x)) * 4294967296 >>> 0;
+  const K = primes.map(p => frac(Math.cbrt(p)));
+  const H = primes.slice(0, 8).map(p => frac(Math.sqrt(p)));
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const bytes = new TextEncoder().encode(String(str));
+  const size = Math.ceil((bytes.length + 9) / 64) * 64;
+  const buf = new Uint8Array(size);
+  buf.set(bytes);
+  buf[bytes.length] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(size - 8, Math.floor(bytes.length / 0x20000000));   // message length in bits, 64-bit big-endian
+  dv.setUint32(size - 4, (bytes.length * 8) >>> 0);
+  const W = new Uint32Array(64);                                      // stores wrap mod 2^32
+  for (let off = 0; off < size; off += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + 4 * i);
+    for (let i = 16; i < 64; i++) {
+      const x = W[i - 15], y = W[i - 2];
+      W[i] = W[i - 16] + (rotr(x, 7) ^ rotr(x, 18) ^ (x >>> 3)) + W[i - 7] + (rotr(y, 17) ^ rotr(y, 19) ^ (y >>> 10));
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i];
+      const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });
+  }
+  return H.map(x => x.toString(16).padStart(8, '0')).join('');
+}
 
 // Short, sober guidance for the person who just heard a mosquito.
 function guidanceFor(sp, genus) {
@@ -3146,12 +3154,12 @@ class App {
     setText($('#about-version'), 'v' + APP_VERSION);
     setText($('#dbg-version'), APP_VERSION);
     setText($('#dbg-server'), window.SERVER_URL);
-    setText($('#about-detection-sub'), `${SPECIES_DB.length} species · two detectors`);
 
     this.wireTabs();
     this.wireListen();
     this.wireSettings();
     this.wireDialogs();
+    this.wireAdvanced();
     this.wireMap();
     this.wireHistory();
     this.wireShare();
@@ -3213,37 +3221,28 @@ class App {
     const ns = this._native;
     const hasGeo = this._nativeInitialized && ns.size > 0;
     const ds = this._disabledSpecies;
-    const row = (sp, local) => {
+    // One small tile per species, all on screen together. Tapping a tile
+    // switches it on or off; local species are always on, so theirs is not a
+    // button (unless a saved choice turned one off — it can be switched back).
+    const tile = (sp) => {
       const act = ACTIVITY[sp.activity] || ACTIVITY.night;
+      const local = hasGeo && ns.has(sp.id);
       const on = !ds.has(sp.id);
       const tx = this.taxonOf(sp);
-      return `<li class="sp-row" id="sp-${sp.id}" data-id="${sp.id}" data-status="idle" data-enabled="${on}" style="--c:${sp.color}">
-        <span class="sp-swatch" aria-hidden="true"></span>
-        <div class="sp-main">
-          <div class="sp-l1"><span class="sp-common">${esc(tx.common)}</span></div>
-          <div class="sp-l2">${local ? '<span class="badge badge-local badge-sm">Local</span>' : ''}<span class="sci"${tx.note ? ` title="${esc(tx.note)}"` : ''}>${esc(shortSci(tx.name))}</span><span class="num">${sp.freq} Hz</span><span role="img" aria-label="Active: ${esc(act.label.toLowerCase())}" title="Active: ${esc(act.label.toLowerCase())}">${icon(act.icon, 'sp-act')}</span></div>
-          <div class="sp-debug" ${this.settings.diag ? '' : 'hidden'}></div>
-        </div>
-        <div class="sp-side">
-          <span class="sp-status">${on ? 'Ready' : 'Off'}</span>
-          ${local ? '' : `<label class="switch-hit"><input type="checkbox" class="switch" role="switch" data-sp="${sp.id}" ${on ? 'checked' : ''} aria-label="Monitor ${esc(tx.common)}, ${esc(tx.name)}"></label>`}
-        </div>
-        <div class="sp-meter" aria-hidden="true"><div class="sp-meter-fill"></div></div>
-      </li>`;
+      const toggle = !local || !on;
+      const tag = toggle ? 'button' : 'div';
+      const attrs = toggle ? ` type="button" aria-pressed="${on}" aria-label="Monitor ${esc(tx.common)}, ${esc(tx.name)}"` : '';
+      return `<${tag} class="sp-tile" id="sp-${sp.id}" data-id="${sp.id}" data-status="idle" data-enabled="${on}" style="--c:${sp.color}" title="${esc(tx.common)}${tx.note ? ` — ${esc(tx.note)}` : ''}"${attrs}>
+        <span class="sp-l1"><span class="sp-name sci">${esc(shortSci(tx.name))}</span><span role="img" aria-label="Active: ${esc(act.label.toLowerCase())}">${icon(act.icon, 'sp-act')}</span></span>
+        <span class="sp-l2"><span class="sp-status">${on ? 'Ready' : 'Off'}</span>${local ? '<span class="sp-local">Local</span>' : ''}</span>
+        <span class="sp-debug" ${this.settings.diag ? '' : 'hidden'}></span>
+        <span class="sp-meter" aria-hidden="true"><span class="sp-meter-fill"></span></span>
+      </${tag}>`;
     };
     const order = this.speciesOrder();
-    if (hasGeo) {
-      const local = order.filter(sp => ns.has(sp.id)), other = order.filter(sp => !ns.has(sp.id));
-      host.innerHTML =
-        `<h3 class="overline sp-group-label">Found in your region</h3>` +
-        `<ul class="sp-list">${local.map(sp => row(sp, true)).join('')}</ul>` +
-        (other.length ? `<details class="sp-more"><summary>${icon('chevron-down')}Not recorded in your region (${other.length})</summary>` +
-                        `<ul class="sp-list">${other.map(sp => row(sp, false)).join('')}</ul></details>` : '');
-      setText($('#sp-note'), 'Local species are always monitored. Others stay off unless you switch them on.');
-    } else {
-      host.innerHTML = `<ul class="sp-list">${order.map(sp => row(sp, false)).join('')}</ul>`;
-      setText($('#sp-note'), 'Allow location to focus on the species recorded in your region.');
-    }
+    host.innerHTML = `<div class="sp-grid">${order.map(tile).join('')}</div>`;
+    setText($('#sp-note'), hasGeo ? 'Local species are always on. Tap others to switch them.'
+                                  : 'Tap a species to switch it on or off.');
     this.spRows = order.map(sp => {
       const el = document.getElementById('sp-' + sp.id);
       return { id: sp.id, el, statusEl: $('.sp-status', el), fill: $('.sp-meter-fill', el), debugEl: $('.sp-debug', el),
@@ -3265,7 +3264,7 @@ class App {
     store.setJSON('mosquitonet_species_prefs', this._userToggles);
     if (enabled) this._disabledSpecies.delete(id); else this._disabledSpecies.add(id);
     const row = document.getElementById('sp-' + id);
-    if (row) row.dataset.enabled = String(enabled);
+    if (row) { row.dataset.enabled = String(enabled); if (row.tagName === 'BUTTON') setAttr(row, 'aria-pressed', String(enabled)); }
     const r = this.spRows && this.spRows.find(x => x.id === id);
     if (r && !this.running) setText(r.statusEl, enabled ? 'Ready' : 'Off');
     this.updateSpeciesCount();
@@ -3311,17 +3310,16 @@ class App {
     const t = $('#species-table');
     const riskRank = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, NONE: 4 };
     const rows = [...SPECIES_DB].sort((a, b) => (riskRank[a.risk] ?? 5) - (riskRank[b.risk] ?? 5) || a.freq - b.freq).map(sp => {
-      const rm = riskMeta(sp.risk), act = ACTIVITY[sp.activity] || ACTIVITY.night;
+      const rm = riskMeta(sp.risk);
       return `<tr>
         <td><div class="t-name"><span class="sp-swatch" style="--c:${sp.color}" aria-hidden="true"></span><span class="t-common">${esc(sp.common)}</span><span class="sci t-sci">${esc(sp.name)}</span></div></td>
-        <td><span class="t-hz num">${sp.freq} Hz</span><span class="t-range num">${sp.freqRange[0]}–${sp.freqRange[1]}</span></td>
+        <td><span class="t-hz num">${sp.freq} Hz</span></td>
         <td>${esc(sp.disease)}</td>
         <td><span class="badge badge-risk ${rm.cls}">${esc(rm.label)}</span></td>
-        <td><span class="t-act">${icon(act.icon, 'icon-sm')}${esc(act.label)}</span></td>
       </tr>`;
     }).join('');
     t.insertAdjacentHTML('beforeend',
-      `<thead><tr><th scope="col">Species</th><th scope="col">Wingbeat</th><th scope="col">Diseases</th><th scope="col">Risk</th><th scope="col">Active</th></tr></thead><tbody>${rows}</tbody>`);
+      `<thead><tr><th scope="col">Species</th><th scope="col">Wingbeat</th><th scope="col">Diseases</th><th scope="col">Risk</th></tr></thead><tbody>${rows}</tbody>`);
   }
 
   // ═══ Tabs (WAI-ARIA tabs pattern: roving tabindex + arrow keys) ═══════
@@ -3386,9 +3384,9 @@ class App {
     });
     this.ro.locFix.addEventListener('click', () => this.openDialog('dlg-geo'));
     $('#btn-bands').addEventListener('click', () => this.setSetting('bands', !this.settings.bands));
-    $('#species-list').addEventListener('change', (e) => {
-      const t = e.target;
-      if (t && t.matches('input[data-sp]')) this.onSpeciesToggle(t.dataset.sp, t.checked);
+    $('#species-list').addEventListener('click', (e) => {
+      const t = e.target.closest('button.sp-tile');
+      if (t) this.onSpeciesToggle(t.dataset.id, t.dataset.enabled !== 'true');
     });
     setAttr($('#btn-bands'), 'aria-pressed', String(this.settings.bands));
 
@@ -3518,6 +3516,44 @@ class App {
     const d = document.getElementById(id);
     if (d && d.open) { try { d.close(); } catch (e) { d.removeAttribute('open'); } }
   }
+  // About → Advanced opens only with the password; unlocked until the app reloads.
+  wireAdvanced() {
+    const adv = $('#about-advanced'), form = $('#adv-form'), pw = $('#adv-pw'), err = $('#adv-error');
+    this._advUnlocked = false;
+    const ask = () => {
+      pw.value = '';
+      setHidden(err, true);
+      this.openDialog('dlg-adv');
+      pw.focus();
+    };
+    $('summary', adv).addEventListener('click', (e) => {
+      if (this._advUnlocked) return;
+      e.preventDefault();
+      ask();
+    });
+    // Any other way of opening it (goto(), a script) is caught here.
+    adv.addEventListener('toggle', () => {
+      if (adv.open && !this._advUnlocked) { adv.open = false; ask(); }
+    });
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (sha256Hex(pw.value) !== ADVANCED_PW_SHA256) {
+        setHidden(err, false);
+        pw.select();
+        return;
+      }
+      this._advUnlocked = true;
+      pw.value = '';
+      const lock = $('.adv-lock', adv);
+      lock.classList.replace('adv-lock', 'chev');
+      lock.removeAttribute('role'); lock.removeAttribute('aria-label'); lock.setAttribute('aria-hidden', 'true');
+      $('use', lock).setAttribute('href', '#i-chevron-down');
+      this.closeDialog('dlg-adv');
+      adv.open = true;
+      this.updateFedStatus();
+    });
+  }
+
   openOnboarding() { this.openDialog('dlg-onboarding'); }
   markOnboarded() { if (!this._onboarded) { this._onboarded = true; store.set('mosquitonet_onboarded', '1'); } }
 
@@ -4756,11 +4792,7 @@ class App {
 
   updateTimeOfDay() {
     const period = timeOfDayCategory(this.deviceLat, this.deviceLng);
-    const meta = ACTIVITY[period];
-    const active = SPECIES_DB.filter(sp => sp.activity === period || (sp.activity === 'night' && period === 'dusk'));
-    setAttr($('#species-sub-ico'), 'href', '#i-' + meta.icon);
-    setText($('#species-sub-text'), `${meta.label} · ${active.length} species at peak activity`);
-    $$('.sp-row').forEach(row => {
+    $$('.sp-tile').forEach(row => {
       const sp = SPECIES_BY_ID[row.dataset.id];
       const on = sp && (sp.activity === period || (sp.activity === 'night' && period === 'dusk'));
       const ic = $('.sp-act', row);

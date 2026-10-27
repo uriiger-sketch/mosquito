@@ -206,7 +206,8 @@ a healthy service.
 
 ## The app shows "Offline"
 
-In the app: **Settings → Advanced → Test server connection**. It probes
+In the app: **About → Advanced → Test server connection** (Advanced asks for
+the maintainers' password; the page stores only its SHA-256). It probes
 `/health` on every endpoint in `SERVER_URLS` and names the failure:
 
 | Result | Meaning | Fix |
