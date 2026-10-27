@@ -1467,20 +1467,21 @@ legend { padding: 0; }
               <svg class="icon adv-lock" aria-label="Password required" role="img"><use href="#i-lock"/></svg>
             </summary>
             <div class="acc-body">
-              <p>Internal state of the federated-learning client and the network connection. Turn on <button class="link-btn" data-open="dlg-settings" style="min-height:0">diagnostics in Settings</button> to see raw detector gates on the species tiles.</p>
+              <p>Live state of this device, the server connection and the shared model. Turn on <button class="link-btn" data-open="dlg-settings" style="min-height:0">diagnostics in Settings</button> to see raw detector gates on the species tiles.</p>
               <div>
-                <div class="readout-row"><span class="overline">Model · <span id="fed-round">round 0</span></span><span class="readout-sub" id="fed-upload">pending</span></div>
+                <div class="readout-row"><span class="overline">Global model · <span id="fed-round">round —</span></span><span class="readout-sub" id="fed-upload">—</span></div>
                 <div class="meter fed-bar" aria-hidden="true"><div class="meter-fill" id="fed-bar"></div></div>
-                <div class="readout-sub num" id="fed-steps">0 / 20 training steps</div>
+                <div class="readout-sub num" id="fed-steps">—</div>
               </div>
               <dl class="kv">
-                <dt>Device ID</dt><dd id="dbg-device-id">—</dd>
+                <dt>Connection</dt><dd id="dbg-conn">—</dd>
                 <dt>Server</dt><dd id="dbg-server">—</dd>
                 <dt>Network</dt><dd id="dbg-network">—</dd>
-                <dt>Session detections</dt><dd id="dbg-session-det">0</dd>
-                <dt>Server total</dt><dd data-ever>—</dd>
-                <dt>Upload queue</dt><dd id="dbg-queue">0</dd>
-                <dt>Last model upload</dt><dd id="dbg-last-upload">—</dd>
+                <dt>Detections on server</dt><dd id="dbg-server-total">—</dd>
+                <dt>This session</dt><dd id="dbg-session-det">—</dd>
+                <dt>Waiting to upload</dt><dd id="dbg-queue">—</dd>
+                <dt>Model uploads</dt><dd id="dbg-last-upload">—</dd>
+                <dt>Device ID</dt><dd id="dbg-device-id">—</dd>
                 <dt>App version</dt><dd id="dbg-version">—</dd>
               </dl>
               <div><button class="btn btn-secondary" id="btn-test-server"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span id="btn-test-label">Test server connection</span></button></div>
@@ -2089,7 +2090,8 @@ class FederatedLearningClient {
     this.UPLOAD_EVERY = 20;   // upload every 20 training steps
 
     this.roundNumber = 0;
-    this.lastUpload = null;
+    this.lastUpload = null;      // Date of the last accepted upload
+    this.lastFailed = null;      // Date of the last failed one
     this.uploadSuccess = 0;
     this.uploadFailed = 0;
     this._uploading = false;
@@ -2256,11 +2258,14 @@ class FederatedLearningClient {
         this.saveLocal();
       } else {
         this.uploadFailed++;   // local weights kept; retried on the next window
+        this.lastFailed = new Date();
       }
     } catch {
       this.uploadFailed++;     // offline — local weights kept and keep training
+      this.lastFailed = new Date();
     } finally {
       this._uploading = false;
+      this.saveLocal();
     }
   }
 
@@ -2486,8 +2491,14 @@ class FederatedLearningClient {
   saveLocal() {
     try {
       if (!this._validShape(this.W, this.b)) return;   // never persist garbage
+      // The counters ride along so a reload neither resets the Advanced panel
+      // nor loses progress toward the next upload.
+      const t = (d) => (d ? d.getTime() : null);
       localStorage.setItem('mosquitonet_weights',
-        JSON.stringify({ v: this.MODEL_VERSION, W: this.W, b: this.b, round: this.roundNumber }));
+        JSON.stringify({ v: this.MODEL_VERSION, W: this.W, b: this.b, round: this.roundNumber,
+                         steps: this.localSteps, pending: this.stepsSinceUpload,
+                         ok: this.uploadSuccess, fail: this.uploadFailed,
+                         lastOk: t(this.lastUpload), lastFail: t(this.lastFailed) }));
     } catch {}
   }
 
@@ -2500,7 +2511,15 @@ class FederatedLearningClient {
       if (saved && saved.v === this.MODEL_VERSION && this._validShape(saved.W, saved.b)) {
         this.W = saved.W;
         this.b = saved.b;
-        this.roundNumber = Number.isFinite(saved.round) ? saved.round : 0;
+        const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+        const when = (v) => (Number.isFinite(v) && v > 0 ? new Date(v) : null);
+        this.roundNumber = count(saved.round);
+        this.localSteps = count(saved.steps);
+        this.stepsSinceUpload = Math.min(count(saved.pending), this.UPLOAD_EVERY - 1);
+        this.uploadSuccess = count(saved.ok);
+        this.uploadFailed = count(saved.fail);
+        this.lastUpload = when(saved.lastOk);
+        this.lastFailed = when(saved.lastFail);
       } else if (saved) {
         localStorage.removeItem('mosquitonet_weights');   // clear the bad blob
       }
@@ -2515,6 +2534,7 @@ class FederatedLearningClient {
       uploadSuccess: this.uploadSuccess,
       uploadFailed: this.uploadFailed,
       lastUpload: this.lastUpload,
+      lastFailed: this.lastFailed,
       pendingCount: this.stepsSinceUpload,
       progress: this.stepsSinceUpload % this.UPLOAD_EVERY,
     };
@@ -3868,11 +3888,14 @@ class App {
       const activeNow = data.active_now ?? 0;
       const everConn  = data.unique_devices ?? data.ever_connected ?? 0;
       const totalDet  = data.total_detections ?? 0;
-      const rounds    = data.total_rounds ?? 0;
       this.setNet('online', activeNow);
       this.setEverCount(Number(totalDet) || 0);
-      setText($('#fed-round'), `round ${rounds}`);
-      setText($('#dbg-network'), `${activeNow} online · ${everConn} devices ever · ${data.total_sessions ?? 0} sessions`);
+      // Latest server answer, as is (the Advanced panel shows it with its age).
+      const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);   // missing ≠ 0
+      this._srv = { at: Date.now(), url: window.SERVER_URL, activeNow: num(data.active_now),
+                    devices: num(data.unique_devices ?? data.ever_connected), sessions: num(data.total_sessions),
+                    total: num(data.total_detections), rounds: num(data.total_rounds) };
+      if (this.activeTab === 'about') this.updateFedStatus();
     };
 
     // Heartbeat via XHR — bypasses the service worker, no CORS preflight, works in iOS PWAs.
@@ -3895,6 +3918,7 @@ class App {
       xhr.setRequestHeader('Content-Type', 'text/plain');
       xhr.timeout = 8000;
       const fail = () => {
+        this._srvFailAt = Date.now();
         this.setNet('offline');
         useNextServer(url);
         if (window.SERVER_URL !== url && ++misses < SERVER_URLS.length) sendHeartbeat();
@@ -4791,7 +4815,6 @@ class App {
     }
     this.history.flush();
     if (this.activeTab === 'about') this.updateFedStatus();
-    setText($('#dbg-session-det'), String(Object.values(this.sessionCounts).reduce((a, b) => a + b, 0)));
   }
 
   updateTimeOfDay() {
@@ -4807,17 +4830,49 @@ class App {
     if (this.classifier) this.classifier.setLocation(this.deviceLat, this.deviceLng);
   }
 
+  // About → Advanced. Every row is recomputed from current state (each second
+  // while About is open), and server-derived rows say how old they are.
   updateFedStatus() {
     try {
+      const now = Date.now();
       const s = this.fedClient.getStatus();
-      const pct = Math.round((s.progress / s.uploadEvery) * 100);
-      $('#fed-bar').style.transform = `scaleX(${pct / 100})`;
-      setText($('#fed-steps'), `${s.progress} / ${s.uploadEvery} training steps · ${s.localSteps} total`);
-      setText($('#fed-upload'), s.lastUpload ? `uploaded ${fmtAgo(Date.now() - s.lastUpload)}`
-                                              : s.uploadFailed > 0 ? `${s.uploadFailed} upload${s.uploadFailed === 1 ? '' : 's'} pending` : 'no upload yet');
+      const srv = this._srv || null;
+      const n = (v) => (v === null || v === undefined ? '—' : v.toLocaleString());
+      const plural = (k, one, many) => `${k.toLocaleString()} ${k === 1 ? one : many}`;
+      const when = (d) => `${fmtDay(d)}, ${fmtTime(d)}`;
+
+      // Shared model: global round from the server; this device's progress toward its next upload.
+      setText($('#fed-round'), `round ${n(srv && srv.rounds)}`);
+      const failedLast = s.lastFailed && (!s.lastUpload || s.lastFailed > s.lastUpload);
+      setText($('#fed-upload'), failedLast ? `upload failed ${fmtAgo(now - s.lastFailed)}`
+                              : s.lastUpload ? `uploaded ${fmtAgo(now - s.lastUpload)}` : 'no upload yet');
+      $('#fed-bar').style.transform = `scaleX(${s.progress / s.uploadEvery})`;
+      setText($('#fed-steps'), `${s.progress} / ${s.uploadEvery} steps to next upload · ${s.localSteps.toLocaleString()} total`);
+
+      // Connection: the latest heartbeat/stats answer versus the latest failure.
+      const ok = srv ? srv.at : 0, bad = this._srvFailAt || 0;
+      let conn;
+      if (navigator.onLine === false) conn = 'Offline · no internet connection';
+      else if (ok && ok >= bad) conn = `Online · last reply ${fmtAgo(now - ok)}`;
+      else if (bad) conn = `Not reachable · ${ok ? `last reply ${fmtAgo(now - ok)}` : 'no reply yet'}`;
+      else conn = 'Connecting…';
+      setText($('#dbg-conn'), conn);
+      setText($('#dbg-server'), window.SERVER_URL || '—');
+      const count = (v, one, many) => (v === null ? `— ${many}` : plural(v, one, many));
+      setText($('#dbg-network'), srv
+        ? `${n(srv.activeNow)} listening now · ${count(srv.devices, 'device', 'devices')} · ${count(srv.sessions, 'session', 'sessions')}` : '—');
+      setText($('#dbg-server-total'), n(srv && srv.total));
+
+      // This device.
+      const sess = this.running && this.session ? this.session : this._lastSession;
+      setText($('#dbg-session-det'), !sess ? 'No session yet'
+        : `${plural(sess.detections, 'detection', 'detections')}${this.running ? ' · listening' : ' · last session'}`);
+      const q = this.fedClient._loadQueue().length;
+      setText($('#dbg-queue'), q ? plural(q, 'detection', 'detections') : 'None');
+      setText($('#dbg-last-upload'), (s.uploadSuccess || s.uploadFailed)
+        ? `${s.uploadSuccess} sent · ${s.uploadFailed} failed${s.lastUpload ? ` · last ${when(s.lastUpload)}` : ''}`
+        : 'None yet');
       setText($('#dbg-device-id'), this.fedClient.getAnonymousId().slice(0, 8) + '…');
-      setText($('#dbg-queue'), String(this.fedClient._loadQueue().length));
-      if (s.lastUpload) setText($('#dbg-last-upload'), new Date(s.lastUpload).toLocaleTimeString());
     } catch (e) { /* diagnostics are best-effort */ }
   }
 
