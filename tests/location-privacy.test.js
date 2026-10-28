@@ -31,6 +31,17 @@ function harness() {
   vm.createContext(ctx);
   vm.runInContext(`${src[0]}\nthis.FederatedLearningClient = FederatedLearningClient;`, ctx);
   return {
+    // One install (storage kept), reporting from noisy fixes: returns report(lat, lng).
+    install() {
+      store = new Map();
+      const fc = new ctx.FederatedLearningClient();
+      return (lat, lng) => {
+        Object.assign(ctx.window._app, { deviceLat: lat, deviceLng: lng });
+        fc.reportDetection({ species: SPECIES, confidence: 0.9, frequency: 455, f0: 455 });
+        const q = fc._loadQueue();
+        return [q[q.length - 1].lat, q[q.length - 1].lng];
+      };
+    },
     // One listening session on fresh storage: a new id and a new secret offset.
     wipedSession(finds) {
       store = new Map();
@@ -58,4 +69,19 @@ test('every report stays within the documented distance of the true fix', () => 
   for (let s = 0; s < 50; s++) {
     for (const p of h.wipedSession(2)) assert.ok(metres(p, HOME) < 3300, `${metres(p, HOME).toFixed(0)} m`);
   }
+});
+
+test('GPS noise near a grid line does not split an install between two cells', () => {
+  // A home 10 m north of the 32.04° line, fixes with ~25 m of noise: without
+  // hysteresis about half the reports land one cell south, and the midpoint of
+  // the two clusters pins the home's latitude to the line.
+  const h = harness();
+  const report = h.install();
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+  const gauss = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const lats = [];
+  for (let i = 0; i < 80; i++) lats.push(report(32.04009 + gauss() * 25 / M, 34.7955 + gauss() * 25 / (M * COS))[0]);
+  const spread = Math.max(...lats) - Math.min(...lats);
+  assert.ok(spread < 0.005, `reports span ${spread.toFixed(4)}° — split across cells`);   // jitter alone: ±0.001°
 });

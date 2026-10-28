@@ -60,6 +60,9 @@ grep -qE "[\"']${VERSION//./\\.}[\"']" index.html || { echo "::error::version $V
 # The page's CSP as a <meta> too, for hosts that can't send headers (Pages).
 node "$ROOT/tools/csp-meta.js" index.html "$URLS"
 grep -q 'http-equiv="Content-Security-Policy"' index.html || { echo "::error::CSP meta missing"; exit 1; }
+# Again on what ships: the npm minifiers ran since the first check.
+odd=$(find . ! -type f ! -type d -print)
+if [ -n "$odd" ]; then echo "::error::symlinks or special files in the site:"; echo "$odd"; exit 1; fi
 
 for p in federated_server.py gunicorn.conf.py Dockerfile Procfile railway.json requirements.txt package.json tests tools site .github .claude; do
   if [ -e "$p" ]; then echo "::error::$p leaked into the site"; exit 1; fi

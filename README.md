@@ -90,7 +90,8 @@ everyday-sound benchmark as a held-out test):
 - A confirmed detection carries species/genus, confidence, wingbeat frequency
   and a location **snapped to a fixed ~2 km grid and moved by a secret per-device
   offset of up to ~1.5 km**, so many reports from home never average back to the
-  home, not even across wiped browser storage. Before anything is published the
+  home — not even across wiped browser storage, except that a home within a few
+  hundred metres of a cell edge can then alternate between two cells. Before anything is published the
   server adds a second secret offset, snaps to its ~5 km grid and rotates device
   pseudonyms daily. A phone's public point stays the same each day, but the grid
   makes many phones share it.

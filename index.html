@@ -1467,7 +1467,7 @@ legend { padding: 0; }
             <div class="acc-body">
               <ul>
                 <li><strong>No audio is stored or sent.</strong> Sound is analysed in real time and discarded.</li>
-                <li><strong>Shared:</strong> confirmed detections, with the location rounded to a ~2 km grid and moved by a fixed secret offset of up to ~1.5 km; small noise-added updates to the detector's model (16 numbers, never audio); and, while the app is open, a heartbeat saying whether it is listening (no location).</li>
+                <li><strong>Shared:</strong> confirmed detections, with the location rounded to a ~2 km grid and moved by a fixed secret offset of up to ~1.5 km; small noise-added updates to the detector's model (20 numbers, never audio); and, while the app is open, a heartbeat saying whether it is listening (no location).</li>
                 <li><strong>Pseudonymous:</strong> a random device ID, kept on the server only as a hash. The public map and log never show it; the service's operator can see which devices are connected and the locations they shared.</li>
                 <li><strong>Your history stays in this browser.</strong></li>
               </ul>
@@ -2378,7 +2378,7 @@ class FederatedLearningClient {
   // The offset lives in this browser's storage, though: when that is wiped
   // (private tabs, Safari's 7-day limit, "clear site data") the next session
   // draws a new one, and averaging many sessions would converge on the home
-  // again. So the fix is first snapped to a fixed worldwide grid (LOC_GRID):
+  // again. So the fix is first snapped to a fixed worldwide grid (_shareCell):
   // every session starts from the same cell centre, and averaging sessions ends
   // there, not at the home. (The server adds its own per-device offset and
   // grid before publishing — defence in depth.)
@@ -2406,6 +2406,25 @@ class FederatedLearningClient {
              dLng: this._locOff.dLng + (Math.random() - 0.5) * JIT };
   }
 
+  // The grid cell this install reports from, kept beside the offset. It only
+  // changes when the fix is clearly (HYST) inside another cell: GPS noise around
+  // a home near a grid line would otherwise alternate between two cells, and
+  // the midpoint of the two clusters would pin the home to that line.
+  // Call after _locationOffset() (it loads the stored state).
+  _shareCell(lat, lng) {
+    const G = 0.02, HYST = 0.0025;                // ≈ 2.2 km cells, ≈ 280 m hysteresis
+    const centre = (v) => (Math.floor(v / G) + 0.5) * G;
+    const near = (v, c) => Math.abs(v - c) <= G / 2 + HYST;
+    const o = this._locOff, c = o && o.cell;
+    if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng) && near(lat, c.lat) && near(lng, c.lng)) return c;
+    const cell = { lat: centre(lat), lng: centre(lng) };
+    if (o) {
+      o.cell = cell;
+      try { localStorage.setItem('mosquitonet_loc_offset', JSON.stringify(o)); } catch (e) {}
+    }
+    return cell;
+  }
+
   // ── Report a confirmed detection ──────────────────────────────────────────
   // A confirmed "true find" is durable: it is written to a persistent, ordered,
   // idempotent upload queue in localStorage, then a flush is attempted. If the
@@ -2419,14 +2438,12 @@ class FederatedLearningClient {
     if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
       const o = this._locationOffset();
       if (o) {
-        const LOC_GRID = 0.02;                      // ≈ 2.2 km cells, the same on every phone
-        const cell = (v) => (Math.floor(v / LOC_GRID) + 0.5) * LOC_GRID;
-        const cLat = cell(app.deviceLat), cLng = cell(app.deviceLng);
+        const c = this._shareCell(app.deviceLat, app.deviceLng);   // the fixed worldwide grid
         // Degrees of longitude shrink with cos(lat): scale so the offset disc is
         // ~1.5 km in every direction, not just north–south.
-        const k = 1 / Math.max(0.2, Math.cos(cLat * Math.PI / 180));
-        lat = Math.max(-90, Math.min(90, cLat + o.dLat));
-        lng = ((cLng + o.dLng * k + 540) % 360) - 180;
+        const k = 1 / Math.max(0.2, Math.cos(c.lat * Math.PI / 180));
+        lat = Math.max(-90, Math.min(90, c.lat + o.dLat));
+        lng = ((c.lng + o.dLng * k + 540) % 360) - 180;
       }
     }
     const round = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : undefined);

@@ -677,7 +677,7 @@ FED_WEIGHT_ABS_MAX = 50.0   # any |w| above this is rejected outright (400)
 # the global model is kept inside a box well within the upload bound.
 FED_GLOBAL_ABS_MAX = 20.0
 FED_CLIP_NORM  = _env_num('FED_CLIP_NORM', 2.0, 0.01, 1000.0)   # L2 cap on (client − global)
-FED_MAX_STEPS  = 50         # step weight cap (honest clients send 20; was 500 → 25× leverage)
+FED_MAX_STEPS  = 50         # step weight cap (honest clients send 1, up to ~20 when catching up; was 500)
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -1065,15 +1065,16 @@ class _RateLimiter:
 # (0 disables limiting). Per-IP buckets are sized for carrier-grade NAT / campus
 # Wi-Fi where hundreds of honest phones share one address; per-device buckets
 # sit well above the real client's cadence (heartbeat every 10 s + 30 s, stats
-# every 15 s, an upload per 20 training steps) but stop a runaway or scripted
+# every 15 s, a model upload per confident detection — at most one per insect,
+# typically a few a night) but stop a runaway or scripted
 # client. Device ids are client-chosen, so the per-IP buckets are the real
 # abuse control and the per-device ones catch a single misbehaving install.
 RATE_LIMITS = {
     'ip:any':        (600, 20.0),   # every request from one IP
     'ip:write':      (120, 1.0),    # POST /detection + /federated/upload per IP
     'ip:log':        (30, 0.5),     # /log, /log.txt — up to 5000 rows each
-    'ip:upload':     (10, 1 / 60),  # model uploads: honest phones send one per 20 training
-                                    # steps; this caps how many FedAvg rounds one IP can drive
+    'ip:upload':     (10, 1 / 60),  # model uploads: honest phones send one per confident
+                                    # detection; this caps how many FedAvg rounds one IP can drive
     'ip:health':     (120, 2.0),    # own bucket: probes must not starve behind other traffic
     'dev:detection': (60, 0.25),    # burst = draining an offline queue; then 15/min
     'dev:heartbeat': (60, 1.0),     # ~9/min per open tab; leaves room for several tabs

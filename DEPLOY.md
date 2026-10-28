@@ -101,7 +101,7 @@ address; per-device limits sit well above what the app actually sends.
 |---|---|---|---|
 | per IP, everything | 600 | 20 / s | all requests except `/health` and `OPTIONS` |
 | per IP, writes | 120 | 1 / s | `POST /detection`, `POST /federated/upload` |
-| per IP, model uploads | 10 | 1 / min | `POST /federated/upload` (caps how many learning rounds one address can drive) |
+| per IP, model uploads | 10 | 1 / min | `POST /federated/upload` (caps how many learning rounds one address can drive; phones send one per confident detection, so a shared address only queues them — a throttled update is retried with the next one) |
 | per IP, logs | 30 | 1 / 2 s | `/log`, `/log.txt` |
 | per IP, health | 120 | 2 / s | `/health` only (separate, so probes never starve behind busy traffic) |
 | per device, detections | 60 | 15 / min | `POST /detection` (burst = draining an offline queue) |
@@ -256,8 +256,9 @@ showed even `Starting gunicorn` as an error).
 | `[Exit] done` with final counters | graceful shutdown | info | `@event:exit` |
 
 Never logged: raw device ids, query strings or coordinates, and client IPs —
-except on `[Admin]` login lines (`login from <ip>`, `login FAILED from <ip>`),
-on purpose: who tried to become admin is a security record.
+except on `[Admin]` login lines (`login from <ip>`, `login FAILED from <ip>`,
+`login throttled from <ip>`), on purpose: who tried to become admin is a
+security record.
 Client-supplied text appears only inside rejection reasons, escaped and
 truncated, so it can't forge log lines. Everything
 needed to act on is at `warn` or `error`, so `@level:error` should be empty on

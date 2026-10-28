@@ -79,6 +79,13 @@ it) and to Pages. An operator can open an admin session with the server's
   public projection). Insider/backup exposure only.
 - Model updates are noised but give no meaningful differential privacy
   (ε ≈ 400 per step); they carry 16 weights, no audio or location.
+- The client grid keeps an install in one cell (≈ 280 m hysteresis), but a
+  home within ~280 m of a cell edge still lands in either cell across WIPED
+  storage sessions; the server's public offset hides it from public outputs.
+- The Pages copy's `script-src 'self'` is the whole `uriiger-sketch.github.io`
+  origin: every Pages site of that account. Keep third-party code off them.
+- `/federated/upload` is sent as `application/json` (a CORS preflight), unlike
+  the other writes; it is not on the no-lost-detections path.
 - Releases up to v3.1.11 shipped an unsalted SHA-256 of the old in-page
   Advanced password; it is public forever (history, caches). That password
   must never be an `ADMIN_PASSWORD`.
