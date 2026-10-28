@@ -10,14 +10,18 @@
  *     when online; the last good copy serves the app when offline.
  *   • App code (JS/CSS/manifest, same origin) → network-first, cache fallback —
  *     the same rule as the page, so a fresh index.html can never run against a
- *     stale cached js/detector.js (version skew between the split files).
+ *     stale cached js/detector.js (version skew between the split files). The
+ *     cache keeps ONE copy per file, the version the page last asked for, so
+ *     offline the cached page runs exactly the code it was served with.
+ *   • Only the app page itself can become the offline shell: a link from any
+ *     site to ./robots.txt must not replace what the installed app opens.
  *   • Other static assets (icons, map data) → stale-while-revalidate.
  *   • Map tiles        → cache-first (immutable, and the whole point offline).
  *   • The API + anything non-GET → never touched. Detection uploads must reach
  *     the network untouched (the client deliberately uses XHR for them).
  */
 
-const VERSION      = 'v5';
+const VERSION      = 'v6';             // v6: drops v5 shells that kept stale app code
 const SHELL_CACHE  = `mn-shell-${VERSION}`;
 const ASSET_CACHE  = `mn-assets-${VERSION}`;
 const TILE_CACHE   = 'mn-tiles';          // unversioned: tiles never change
@@ -26,6 +30,9 @@ const MAX_TILES    = 400;
 // the backend serves the app; never matches a page or asset path. admin/ above
 // all: an operator's answers must never land in Cache Storage.
 const API_PATH = /^\/(?:(?:heartbeat|detection|hotspots|health|log|log\.txt)$|federated\/|admin\/)/;
+// The app page — the only response that may become the offline shell.
+const SCOPE_PATH = new URL(self.registration.scope).pathname;
+const isShell = (url) => url.pathname === SCOPE_PATH || url.pathname === SCOPE_PATH + 'index.html';
 
 const SHELL_URLS = [
   './', './index.html',
@@ -107,7 +114,9 @@ self.addEventListener('fetch', (event) => {
         // A navigate-mode Request can't be re-fetched with an init (TypeError):
         // rebuild it from the URL to revalidate past the HTTP cache.
         const res = await fetch(new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }));
-        if (res && res.ok) (await caches.open(SHELL_CACHE)).put('./index.html', res.clone());
+        if (res && res.ok && isShell(url) && /^text\/html/i.test(res.headers.get('Content-Type') || '')) {
+          (await caches.open(SHELL_CACHE)).put('./index.html', res.clone());
+        }
         return res;
       } catch (e) {
         const cache = await caches.open(SHELL_CACHE);
@@ -127,7 +136,13 @@ self.addEventListener('fetch', (event) => {
       const cache = await caches.open(SHELL_CACHE);
       try {
         const res = await fetch(req, { cache: 'no-cache' });   // revalidate: no HTTP-cache skew
-        if (res && res.ok) cache.put(req, res.clone());
+        // Then drop every other version of this file: offline, the ignoreSearch
+        // match below returns the FIRST copy, which was the install-time one forever.
+        if (res && res.ok) {
+          cache.put(req, res.clone()).then(async () => {
+            for (const k of await cache.keys(req, { ignoreSearch: true })) if (k.url !== req.url) await cache.delete(k);
+          }).catch(() => {});
+        }
         return res;
       } catch (e) {
         return (await cache.match(req, { ignoreSearch: true })) || Response.error();

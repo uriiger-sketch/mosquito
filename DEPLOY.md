@@ -76,7 +76,8 @@ default (a typo never stops the server from booting).
 | `DETECTION_LOG_MAX` | `20000` | Detections kept in RAM for `/log`. |
 | `SEEN_EVENTS_MAX` | `20000` | Size of the idempotency window (eventIds remembered to drop client retries). |
 | `DETECTION_CELLS_MAX` | `20000` | Hotspot cells tracked (least recently hit cells are evicted first). |
-| `PUBLIC_GEO_OFFSET` | `0.02` | Max secret per-device shift (degrees, ≈ 2.2 km) applied to coordinates in the public `/log` and `/log.txt`. `0` disables it (not recommended). |
+| `PUBLIC_GEO_OFFSET` | `0.02` | Max secret per-device shift (degrees: ≈ 2.2 km north–south, less east–west away from the equator) applied to coordinates in the public `/log` and `/log.txt`. `0` disables it (not recommended). |
+| `PUBLIC_COORD_STEP` | `0.05` | Grid (degrees, ≈ 5.5 km, the hotspot cell size) that public `/log` and `/log.txt` points snap to after the offset, so many phones share each public point and a phone's days don't link by location. `0` turns it off (not recommended). |
 | `PUBLIC_COORD_DECIMALS` | `2` | Decimals of lat/lng shown by the public `/log` and `/log.txt` (2 ≈ 1.1 km). The private JSONL keeps 4. |
 | `PSEUDONYM_SECRET` | generated once | Key for the public device pseudonyms and offsets. By default a random key is created on first boot in `DATA_DIR/.server_secret` (mode 0600) and reused; set this only to manage the key yourself. Changing it re-randomises every public offset. |
 | `ADMIN_PASSWORD` | — (admin off) | Turns on the operator's admin views (see *Admin view*). Use a long random password (a warning is logged under 12 characters). Unset, every `/admin/*` path is a 404. |
@@ -132,15 +133,26 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 
 ### Privacy of the public log
 
-`/log` and `/log.txt` are public. The app jitters each report by up to ~1.4 km,
-but independently per report, so averaging one phone's reports used to reveal
-its home to ~100 m (rounding doesn't stop that — the jitter is wider than the
-grid). The public log therefore shifts every phone's coordinates by its own
-**secret, constant** offset of up to `PUBLIC_GEO_OFFSET` (≈ 2.2 km) before
-rounding: averaging any number of reports, over any number of days, lands on
-the offset point, not the home. Devices appear as a pseudonym that changes every
-UTC day. The stable device hash, eventIds and 4-decimal (client-jittered)
-coordinates stay in the private JSONL; `/hotspots` uses ~5 km cells.
+`/log` and `/log.txt` are public. Three layers keep a phone's home out of them:
+
+1. **On the phone**, the fix is snapped to a fixed ~2 km worldwide grid and then
+   moved by the phone's own secret offset (≤ ~1.5 km, kept in its storage). The
+   grid matters when storage is wiped (private tabs, Safari's 7-day limit): a
+   new offset is drawn, but every session still starts from the same cell
+   centre, so averaging sessions ends there, never at the home. Without the grid,
+   52 wiped sessions recovered a home to ~280 m in simulation.
+2. **On the server**, every phone's public points are shifted by a second
+   **secret, constant** offset of up to `PUBLIC_GEO_OFFSET` (≈ 2.2 km): averaging
+   any number of reports, over any number of days, lands on the offset point.
+3. The result snaps to the `PUBLIC_COORD_STEP` grid (≈ 5.5 km). A phone's public
+   point is the same every day, so its days could be linked by location despite
+   the daily pseudonym (~80 % in a simulated city); on the grid many phones share
+   each point (~20–35 %).
+
+Devices appear as a pseudonym that changes every UTC day; it stops linking days
+*by id*, not by location (layer 3 handles that). The stable device hash,
+eventIds and 4-decimal (client-offset) coordinates stay in the private JSONL;
+`/hotspots` uses ~5 km cells of the stored point.
 Keep `DATA_DIR/.server_secret` with the data — losing it re-randomises the
 offsets, and averaging across old and new offsets weakens the protection.
 Request logs never contain the raw device id: the Docker image's access log
@@ -156,8 +168,9 @@ Advanced** opens Advanced and starts an admin session in that browser tab:
   it was last seen, its listening session, how many detections it shared, and
   the **locations it shared with those detections**, which can be shown on
   the map. Nothing else about a device exists: heartbeats carry no location,
-  and a shared location is the one the phone sent, already moved by its own
-  fixed secret offset of up to ~1.5 km. The admin view never sees a raw GPS fix.
+  and a shared location is the one the phone sent, already snapped to its ~2 km
+  grid and moved by its own secret offset of up to ~1.5 km. The admin view
+  never sees a raw GPS fix.
 - A **Server** tab appears with health, the most recent ~1000 server log
   records of this process (the hosting platform keeps the full log), the stored
   detection records (private device hash and stored coordinates, filterable
@@ -179,6 +192,12 @@ Because the server checks the password, Advanced cannot be opened while the
 server is unreachable, and it stays closed on a deployment without
 `ADMIN_PASSWORD`. To change the password, change the variable on Railway. The
 service redeploys and every open session ends.
+
+Choose a long random `ADMIN_PASSWORD` (e.g. `python3 -c "import secrets;
+print(secrets.token_urlsafe(24))"`) and **never one that was ever the in-page
+Advanced password**: releases up to v3.1.11 shipped that password's unsalted
+SHA-256 in the public page, and it stays public in git history, on the Pages
+history and in third-party copies — it can be guessed offline.
 
 ---
 
@@ -236,7 +255,9 @@ showed even `Starting gunicorn` as an error).
 | `GET /path 500 12ms` | 4xx/5xx and slow requests (`ACCESS_LOG`) | warn / error | `@component:access` |
 | `[Exit] done` with final counters | graceful shutdown | info | `@event:exit` |
 
-Never logged: raw device ids, client IPs, query strings or coordinates.
+Never logged: raw device ids, query strings or coordinates, and client IPs —
+except on `[Admin]` login lines (`login from <ip>`, `login FAILED from <ip>`),
+on purpose: who tried to become admin is a security record.
 Client-supplied text appears only inside rejection reasons, escaped and
 truncated, so it can't forge log lines. Everything
 needed to act on is at `warn` or `error`, so `@level:error` should be empty on
@@ -416,9 +437,9 @@ one change costs ~15 with CI on the push, the pull request and the deploy).
 | **End-to-end (Playwright, Chromium)** | `npm run test:e2e` — the real app in a headless browser: detection with WAV files as the mic, and connectivity against a locally started backend (endpoint failover, heartbeat, upload, diagnostics, outage recovery). Production is never called; no secrets needed |
 | **Backend image smoke test** | builds the Dockerfile, starts it on a root-owned volume holding legacy data, checks it runs as uid 10001, accepts a detection, turns Docker-healthy and flushes state on `docker stop` |
 
-`deploy-pages.yml` calls the same workflow and publishes **only if the JS, server
-and end-to-end jobs pass** (the image smoke test is skipped there — it doesn't
-affect the static site). Waiting for the browser tests matters: the service
+`deploy-pages.yml` calls the same workflow and publishes **only if every job
+passes**, the backend image smoke test included (Railway builds `release` from
+the Dockerfile). Waiting for the browser tests matters: the service
 worker caches what we ship on users' phones, so a broken release would outlive
 its own rollback. In an emergency, run **Actions → Deploy to GitHub Pages → Run
 workflow** with **skip_e2e** ticked; unit and server tests still gate it.
@@ -435,11 +456,27 @@ pytest --cov=federated_server --cov-report=term-missing
   status checks *JS unit tests + detector benchmark*, *Server tests (Python
   3.12)*, *End-to-end (Playwright, Chromium)* and *Backend image smoke test*.
 - **Settings → Environments → github-pages**: limit deployments to `main`.
-- The backend is **not** deployed by GitHub Actions — Railway/Render deploy it
-  straight from the repo on every push. In the service settings, make the
-  auto-deploy wait for GitHub CI checks to pass (Railway: **"Wait for CI"**;
-  Render: Auto-Deploy **after CI checks pass**) so a red build never reaches the
-  server.
+- The backend ships through the same gate: Railway deploys the `release`
+  branch, which only the deploy job writes, after the full suite passed. (Its
+  commits are pushed with the workflow token, which starts no workflows, so
+  Railway's "Wait for CI" has nothing to wait for there: the gate is the deploy
+  job itself.) Add a **ruleset on `release`** blocking force pushes and deletion.
+- **Accounts:** two-factor authentication on the GitHub and Railway accounts.
+
+**Supply chain, as built:** the deploy's build job runs the npm minifiers with a
+read-only token, no persisted git credentials, no restored npm cache and
+`--ignore-scripts`; only the deploy job can push `release` or deploy Pages, and
+it runs no npm code — it publishes the artifact the build produced. Every
+action is pinned to a full commit SHA (`tests/workflows.test.js` enforces this
+and the job split), and `.github/dependabot.yml` proposes one grouped update PR
+per ecosystem per month so the pins don't rot.
+
+**Slow clients:** gunicorn's threads read request headers without a time limit,
+so four connections that send a partial header and stop would stall the single
+worker (its 120 s watchdog doesn't fire, because the main loop stays alive). The
+platform edge in front of it must enforce header/body read timeouts; check this
+for any new hosting setup, since only the edge can fix it without breaking the
+one-worker design.
 
 **Optional — a custom domain (e.g. app.mosquito.charity):** add a `CNAME` file
 containing the domain and point a DNS `CNAME` record at `uriiger-sketch.github.io`.

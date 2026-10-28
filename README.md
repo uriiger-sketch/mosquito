@@ -2,8 +2,9 @@
 
 **Turn a phone into a mosquito detector.** MosquitoNet listens through the
 microphone for the wingbeat tone of mosquitoes (≈ 290–730 Hz plus harmonics),
-estimates which genus and species is in the room, and — with the user's
-consent — adds an anonymised detection to a global vector map.
+estimates which genus and species is in the room, and adds an anonymised
+detection to a global vector map (with a coarsened location, if the user allows
+location).
 
 - Installable PWA, no app store, no account. Works offline once loaded.
 - All audio analysis runs on the device. **No audio is ever recorded or uploaded.**
@@ -84,9 +85,14 @@ everyday-sound benchmark as a held-out test):
 
 - No audio leaves the device; there is no account.
 - A confirmed detection carries species/genus, confidence, wingbeat frequency
-  and a location moved by a **fixed, secret per-device offset of up to ~1.5 km**
-  (so many reports from home never average back to the home); the server applies
-  a second offset before anything is published and rotates device pseudonyms daily.
+  and a location **snapped to a fixed ~2 km grid and moved by a secret per-device
+  offset of up to ~1.5 km**, so many reports from home never average back to the
+  home, not even across wiped browser storage. Before anything is published the
+  server adds a second secret offset, snaps to its ~5 km grid and rotates device
+  pseudonyms daily. A phone's public point stays the same each day, but the grid
+  makes many phones share it.
+- While the app is open it sends a heartbeat (listening or not, no location),
+  and it shares small noise-added updates to the detector's model.
 - Detection history is stored only on the device and can be exported or cleared.
 - The operator's admin view (server `ADMIN_PASSWORD`, see `DEPLOY.md` → *Admin
   view*) shows connected devices and only the locations they shared with their

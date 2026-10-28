@@ -1471,8 +1471,8 @@ legend { padding: 0; }
             <div class="acc-body">
               <ul>
                 <li><strong>No audio is stored or sent.</strong> Sound is analysed in real time and discarded.</li>
-                <li><strong>Shared:</strong> confirmed detections only, with the location moved by a fixed secret offset of up to ~1.5 km, plus differentially private model updates.</li>
-                <li><strong>Anonymous:</strong> a random device ID, kept on the server only as a hash.</li>
+                <li><strong>Shared:</strong> confirmed detections, with the location rounded to a ~2 km grid and moved by a fixed secret offset of up to ~1.5 km; small noise-added updates to the detector's model (16 numbers, never audio); and, while the app is open, a heartbeat saying whether it is listening (no location).</li>
+                <li><strong>Pseudonymous:</strong> a random device ID, kept on the server only as a hash. The public map and log never show it; the service's operator can see which devices are connected and the locations they shared.</li>
                 <li><strong>Your history stays in this browser.</strong></li>
               </ul>
             </div>
@@ -1606,7 +1606,7 @@ legend { padding: 0; }
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
-        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location shifted by a fixed, secret offset of up to about 1.5 km.</p></div>
+        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location rounded to about 2 km and shifted by a fixed, secret offset of up to about 1.5 km.</p></div>
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-bed"/></svg></span>
@@ -1718,7 +1718,7 @@ legend { padding: 0; }
     <button class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>
   <div class="dlg-body">
-    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (offset by up to about 1.5 km). Detection works without it.</p>
+    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (rounded to about 2 km and offset by up to about 1.5 km). Detection works without it.</p>
     <details class="plat" data-platform="ios">
       <summary>iPhone or iPad<svg class="icon" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
       <ol class="steps">
@@ -1783,7 +1783,7 @@ legend { padding: 0; }
   </div>
   <div class="dlg-body">
     <p class="setting-label" id="adm-dev-summary" role="status">Loading…</p>
-    <p class="adm-note">Active in the last <span id="adm-dev-window">90</span> s. A location appears only when the device shared it with a detection, exactly as it arrived: already moved on the device by its fixed secret offset of up to ~1.5 km. Heartbeats carry no location.</p>
+    <p class="adm-note">Active in the last <span id="adm-dev-window">90</span> s. A location appears only when the device shared it with a detection, exactly as it arrived: already rounded on the device to a ~2 km grid and moved by its fixed secret offset of up to ~1.5 km. Heartbeats carry no location.</p>
     <div class="adm-list" id="adm-dev-list"></div>
   </div>
   <div class="dlg-foot">
@@ -2155,7 +2155,9 @@ class FederatedLearningClient {
     this.b = [-0.4, -0.3, -0.4, -0.3];  // slight negative bias — prefer silence over FP
 
     this.LR = 0.01;        // learning rate
-    this.DP_SIGMA = 0.012; // noise σ for Gaussian mechanism (ε≈1.0, δ=1e-5)
+    // Noise σ on each clipped (L2 ≤ 1) update. It blurs single events, but it is
+    // NOT a meaningful differential-privacy guarantee: ε ≈ 400 per step at δ=1e-5.
+    this.DP_SIGMA = 0.012;
     this.CLIP_NORM = 1.0;  // gradient clipping for DP
 
     // Bumping MODEL_VERSION invalidates weights persisted by any earlier (buggy)
@@ -2375,7 +2377,13 @@ class FederatedLearningClient {
   // Instead each device draws ONE secret offset, uniform over a disc of radius
   // ~1.5 km, and keeps it; reports carry that constant offset plus a small fresh
   // jitter, so averaging converges to a point ~1.5 km from home, never the home.
-  // (The server adds its own per-device offset before publishing — defence in depth.)
+  // The offset lives in this browser's storage, though: when that is wiped
+  // (private tabs, Safari's 7-day limit, "clear site data") the next session
+  // draws a new one, and averaging many sessions would converge on the home
+  // again. So the fix is first snapped to a fixed worldwide grid (LOC_GRID):
+  // every session starts from the same cell centre, and averaging sessions ends
+  // there, not at the home. (The server adds its own per-device offset and
+  // grid before publishing — defence in depth.)
   _locationOffset() {
     const R_DEG = 0.0135, JIT = 0.002;            // ≈ 1.5 km disc, ± ≈ 110 m jitter
     if (this._locOff === undefined) {
@@ -2413,11 +2421,14 @@ class FederatedLearningClient {
     if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
       const o = this._locationOffset();
       if (o) {
+        const LOC_GRID = 0.02;                      // ≈ 2.2 km cells, the same on every phone
+        const cell = (v) => (Math.floor(v / LOC_GRID) + 0.5) * LOC_GRID;
+        const cLat = cell(app.deviceLat), cLng = cell(app.deviceLng);
         // Degrees of longitude shrink with cos(lat): scale so the offset disc is
         // ~1.5 km in every direction, not just north–south.
-        const k = 1 / Math.max(0.2, Math.cos(app.deviceLat * Math.PI / 180));
-        lat = Math.max(-90, Math.min(90, app.deviceLat + o.dLat));
-        lng = ((app.deviceLng + o.dLng * k + 540) % 360) - 180;
+        const k = 1 / Math.max(0.2, Math.cos(cLat * Math.PI / 180));
+        lat = Math.max(-90, Math.min(90, cLat + o.dLat));
+        lng = ((cLng + o.dLng * k + 540) % 360) - 180;
       }
     }
     const round = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : undefined);
@@ -2709,7 +2720,7 @@ class MapController {
       }).addTo(this._adminLayer).bindPopup(
         `<span class="pop-title">Device ${esc(String(p.device).slice(0, 8))}</span><br>` +
         `${esc(p.name || p.species || '')}${Number.isFinite(p.conf) ? ` · ${Math.round(p.conf * 100)}%` : ''}<br>` +
-        `<small>${esc(fmtStamp(p.ts))} · shared location, offset on the device by up to ~1.5 km</small>`);
+        `<small>${esc(fmtStamp(p.ts))} · shared location, rounded (~2 km) and offset (≤ ~1.5 km) on the device</small>`);
     }
     if (fit) {
       try {
@@ -3789,6 +3800,8 @@ class App {
     this._admDevFilter = '';
     ['#adm-dev-list', '#adm-log', '#adm-det', '#adm-files'].forEach(sel => { $(sel).innerHTML = ''; });
     $('#adm-health').innerHTML = $('#adm-config').innerHTML = '';
+    [['#adm-dev-summary', 'Loading…'], ['#adm-det-sub', '—'], ['#adm-files-sub', '—'],
+     ['#adm-session', 'Admin session']].forEach(([sel, text]) => setText($(sel), text));
     try { this.mapCtrl.setAdminPoints(null); } catch (e) {}
     this.setNet(this._netState || 'connecting', this._netLive);
     this.updateFedStatus();
@@ -3954,7 +3967,7 @@ class App {
       `<th scope="col">Conf</th><th scope="col">Hz</th><th scope="col">Shared location</th><th scope="col">App</th></tr></thead>` +
       `<tbody>${rows.join('') || '<tr><td colspan="8">None</td></tr>'}</tbody>`;
     setText($('#adm-det-sub'), `${dev ? `Device ${dev.slice(0, 8)} · ` : ''}newest ${num(dets.returned)} of ` +
-      `${num(dets.total_log)} in memory · ${num(dets.total_ever)} ever. Locations as the device shared them (its own offset, up to ~1.5 km).`);
+      `${num(dets.total_log)} in memory · ${num(dets.total_ever)} ever. Locations as the device shared them (rounded to ~2 km and offset ≤ ~1.5 km).`);
     setHidden($('#adm-det-clear'), !dev);
 
     const files = (srv.files || []).filter(f => f.name);
@@ -4139,7 +4152,7 @@ class App {
     setText($('#hist-sessions-sub'), ses.length ? `Last ${ses.length} on this device` : 'Sessions appear after you stop listening');
     const maxDur = Math.max(1, ...ses.map(s => s.end - s.start));
     $('#hist-sessions').innerHTML = ses.map(s =>
-      `<li><div class="bar-l"><span>${esc(fmtDay(s.start))}, ${esc(fmtTime(s.start))}</span><span class="num faint">${esc(fmtDuration(s.end - s.start))} · ${s.detections} det.</span></div>
+      `<li><div class="bar-l"><span>${esc(fmtDay(s.start))}, ${esc(fmtTime(s.start))}</span><span class="num faint">${esc(fmtDuration(s.end - s.start))} · ${Number(s.detections) || 0} det.</span></div>
        <div class="meter" aria-hidden="true"><div class="meter-fill" style="transform:scaleX(${((s.end - s.start) / maxDur).toFixed(3)})"></div></div></li>`).join('');
 
     const recent = ev.slice(-40).reverse();
