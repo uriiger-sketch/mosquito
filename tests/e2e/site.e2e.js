@@ -6,7 +6,9 @@
  * headless Chromium, with a WAV file as the microphone. The page must run under
  * its Content-Security-Policy without a single violation or error, reach its
  * API on the same origin, detect a mosquito, and its service worker must cache
- * the app but never answer an API request.
+ * the app but never answer an API request. An admin session (the server's
+ * ADMIN_PASSWORD typed into About → Advanced) must open the connected-devices
+ * sheet from the top bar and the Server tab, and leave no trace once ended.
  *
  *   needs `npm ci` (the minifiers), Playwright + Chromium, and the server's
  *   Python dependencies (pip install -r requirements.txt)
@@ -24,7 +26,8 @@ const { FIXTURES, writeWav, SR, rng } = require('./make-wav');
 
 const ROOT = path.join(__dirname, '..', '..');
 const PY = process.env.PYTHON || 'python3';
-const API_PATH = /^\/(?:(?:heartbeat|detection|hotspots|health|log|log\.txt)$|federated\/)/;
+const API_PATH = /^\/(?:(?:heartbeat|detection|hotspots|health|log|log\.txt)$|federated\/|admin\/)/;
+const ADMIN_PW = 'e2e admin password, long enough';
 
 function missingDeps() {
   try { execFileSync(PY, ['-c', 'import flask, numpy'], { stdio: 'ignore' }); } catch (e) { return 'server deps missing: pip install -r requirements.txt'; }
@@ -80,7 +83,7 @@ test('built site served by the backend: CSP-clean, same-origin API, detection, s
   const log = [];
   const proc = spawn(PY, ['federated_server.py'], {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: String(port), DATA_DIR: path.join(tmp, 'data'), SITE_DIR: site },
+    env: { ...process.env, PORT: String(port), DATA_DIR: path.join(tmp, 'data'), SITE_DIR: site, ADMIN_PASSWORD: ADMIN_PW },
   });
   proc.stdout.on('data', (d) => log.push(String(d)));
   proc.stderr.on('data', (d) => log.push(String(d)));
@@ -132,6 +135,39 @@ test('built site served by the backend: CSP-clean, same-origin API, detection, s
       return d && d.genus;
     }), 40000, 'an Aedes detection');
     assert.equal(genus, 'Aedes');
+
+    // ── Admin session ──────────────────────────────────────────────────────
+    await page.click('#tab-about');
+    await page.click('#about-advanced > summary');
+    await page.fill('#adv-pw', 'not the password');
+    await page.click('#adv-form button[type="submit"]');
+    await page.waitForSelector('#adv-error:not([hidden])');
+    assert.equal(await page.$('#net-pill[data-admin]'), null, 'a wrong password grants nothing');
+    await page.fill('#adv-pw', ADMIN_PW);
+    await page.click('#adv-form button[type="submit"]');
+    await page.waitForSelector('#net-pill[data-admin][role="button"]', { timeout: 10000 });
+    assert.ok(await page.evaluate(() => document.querySelector('#about-advanced').open), 'Advanced unlocked too');
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => /admin|token/i.test(k)).length +
+                                           Object.keys(sessionStorage).length), 0, 'the admin token is never stored');
+
+    await page.click('#net-pill');
+    await page.waitForSelector('#dlg-admin-devices[open]');
+    await until(() => page.evaluate(() => [...document.querySelectorAll('#adm-dev-list .adm-badge')]
+      .some(b => b.textContent === 'Listening')), 20000, 'this device listed as listening');
+    assert.match(await page.textContent('#adm-dev-summary'), /connected · \d+ listening/);
+
+    await page.click('#adm-dev-server');
+    await page.waitForSelector('#panel-server:not([hidden])');
+    await until(() => page.evaluate(() => /\[Admin\] login from/.test(document.querySelector('#adm-log').textContent)),
+                10000, 'the server log in the Server tab');
+    assert.match(await page.textContent('#adm-health'), /Status\s*ok/);
+    assert.match(await page.textContent('#adm-files'), /mosquitonet_state\.json/);
+
+    await page.click('#adm-logout');
+    await page.waitForSelector('#tab-server[hidden]', { state: 'attached' });
+    assert.equal(await page.$('#net-pill[data-admin]'), null);
+    assert.equal(await page.evaluate(() => document.querySelector('#adm-log').innerHTML +
+                                           document.querySelector('#adm-dev-list').innerHTML), '', 'admin views wiped');
 
     assert.deepEqual(await page.evaluate(() => window.__csp), [], 'Content-Security-Policy violations');
     assert.deepEqual(errors, [], 'errors in the page');

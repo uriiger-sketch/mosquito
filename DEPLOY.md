@@ -79,6 +79,8 @@ default (a typo never stops the server from booting).
 | `PUBLIC_GEO_OFFSET` | `0.02` | Max secret per-device shift (degrees, ≈ 2.2 km) applied to coordinates in the public `/log` and `/log.txt`. `0` disables it (not recommended). |
 | `PUBLIC_COORD_DECIMALS` | `2` | Decimals of lat/lng shown by the public `/log` and `/log.txt` (2 ≈ 1.1 km). The private JSONL keeps 4. |
 | `PSEUDONYM_SECRET` | generated once | Key for the public device pseudonyms and offsets. By default a random key is created on first boot in `DATA_DIR/.server_secret` (mode 0600) and reused; set this only to manage the key yourself. Changing it re-randomises every public offset. |
+| `ADMIN_PASSWORD` | — (admin off) | Turns on the operator's admin views (see *Admin view*). Use a long random password (a warning is logged under 12 characters). Unset, every `/admin/*` path is a 404. |
+| `ADMIN_SESSION_SEC` | `14400` (4 h) | Lifetime of one admin session, 300–86400 s. |
 | `FED_CLIP_NORM` | `2.0` | Max L2 distance one federated upload can pull the model per round. |
 | `LOG_FORMAT` | `json` on Railway, else `text` | `json`: one JSON object per log line (server **and** gunicorn), which Railway parses into levels and filterable fields. `text`: plain lines. See *Logs*. |
 | `ACCESS_LOG` | `errors` | Which requests gunicorn logs: `errors` (4xx/5xx except throttling and 404/405 scanner noise, plus requests slower than 1 s), `all`, or `off`. Railway's HTTP log records every request anyway. |
@@ -104,6 +106,8 @@ address; per-device limits sit well above what the app actually sends.
 | per device, detections | 60 | 15 / min | `POST /detection` (burst = draining an offline queue) |
 | per device, heartbeats | 60 | 60 / min | `/heartbeat` (one open app sends ~9 / min) |
 | per device, uploads | 6 | 2 / min | `POST /federated/upload` |
+| admin login, per IP | 5 | 1 / min | `POST /admin/login` — **not** scaled by `RATE_LIMIT_SCALE`, so turning limits off never opens the login to guessing |
+| admin login, all IPs | 30 | 3 / min | `POST /admin/login`, every address together |
 
 Throttled requests get `429` + `Retry-After` — except `/detection`, which gets
 `503` + `Retry-After`, because deployed apps delete a queued find on any 4xx but
@@ -123,7 +127,7 @@ retry 5xx with backoff. A throttled find is delayed, never lost.
 | `disk_free_mb` | Free space on the `DATA_DIR` volume. |
 | `last_state_save` | Time of the last successful state-file save (every ~5 s while there is activity). |
 | `client_ip` | The address rate limits use for *your* request. **Check it once after deploying:** it must be your own public IP. A Cloudflare/Railway/proxy address means `TRUSTED_PROXY_HOPS` is wrong and all users share one bucket. |
-| `counters` | Since process start: `rejected_detections`, `rejected_uploads`, `rejected_origin`, `rate_limited`, `clipped_updates`, `dropped_fields`, `write_errors`. A climbing `rejected_origin` / `rate_limited` / `clipped_updates` means someone is probing or poisoning. |
+| `counters` | Since process start: `rejected_detections`, `rejected_uploads`, `rejected_origin`, `rate_limited`, `clipped_updates`, `dropped_fields`, `write_errors`, `admin_logins`, `admin_login_failures`. A climbing `rejected_origin` / `rate_limited` / `clipped_updates` means someone is probing or poisoning. |
 | `python`, `log_cap`, `seen_events`, `min_conf`, `data_dir`, `log_file` | Runtime facts (Python is reported as major.minor only). |
 
 ### Privacy of the public log
@@ -141,6 +145,39 @@ Keep `DATA_DIR/.server_secret` with the data — losing it re-randomises the
 offsets, and averaging across old and new offsets weakens the protection.
 Request logs never contain the raw device id: the Docker image's access log
 omits query strings and client IPs.
+
+### Admin view (operator only)
+
+With `ADMIN_PASSWORD` set, typing that password into the app's **About →
+Advanced** password box starts an admin session in that browser tab:
+
+- Tapping **"N listening"** in the top bar lists the connected devices (active
+  in the last 90 s): whether each is listening or just has the app open, when
+  it was last seen, its listening session, how many detections it shared, and
+  the **locations it shared with those detections**, which can be shown on
+  the map. Nothing else about a device exists: heartbeats carry no location,
+  and a shared location is the one the phone sent, already moved by its own
+  fixed secret offset of up to ~1.5 km. The admin view never sees a raw GPS fix.
+- A **Server** tab appears with health, the most recent ~1000 server log
+  records of this process (the hosting platform keeps the full log), the stored
+  detection records (private device hash and stored coordinates, filterable
+  by device), the files in `DATA_DIR` (names and sizes only, never contents)
+  and the configuration.
+
+The Advanced box's own password is checked in the browser against a hash that
+ships in the public page, so it unlocks diagnostics only. Admin access is
+decided by the server alone. The page sends the typed password to
+`POST /admin/login`. Only if it matches `ADMIN_PASSWORD` does the server answer
+with a random token. That token is kept in memory only (never `localStorage`),
+so the session belongs to that tab and ends on reload, on **End admin
+session**, or after `ADMIN_SESSION_SEC`. A restart ends every session. The
+admin API answers only the app's own origins (never `Access-Control-Allow-Origin: *`),
+the service worker never caches it, and every login, failed attempt and logout
+is logged as `[Admin]` (`@event:admin_login`, `admin_login_failed`).
+
+Do **not** reuse the Advanced password as `ADMIN_PASSWORD`. Its SHA-256 is in
+the public page, so a short one can be guessed offline. Any long password
+typed into the same box works, and it also unlocks Advanced.
 
 ---
 
