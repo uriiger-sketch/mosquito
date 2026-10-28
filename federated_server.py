@@ -749,13 +749,23 @@ start_time        = time.time()
 # alone doesn't help: the jitter is wider than any useful grid, so it acts as
 # dither and the mean of rounded values still converges. Public endpoints
 # therefore show each report shifted by a SECRET, PER-DEVICE, CONSTANT offset
-# (±PUBLIC_GEO_OFFSET degrees, ≈ ±2.2 km by default) before rounding: averaging
-# any number of reports, over any number of days, converges on true + offset,
-# which an outsider cannot remove. The device itself appears as a keyed per-day
-# pseudonym, so reports can't be linked across days either. The raw jittered
+# (±PUBLIC_GEO_OFFSET degrees: ≈ ±2.2 km north–south, less east–west away from
+# the equator) before rounding: averaging any number of reports, over any number
+# of days, converges on true + offset, which an outsider cannot remove. The
+# device itself appears as a keyed per-day pseudonym, which stops linking days
+# BY ID — but a phone's public point is the same every day, so its days link by
+# location. The point is therefore snapped to a PUBLIC_COORD_STEP grid (0.05°,
+# the hotspot cell size): many phones share each grid point, and cross-day
+# linkage drops from ~80 % to ~20-35 % in a simulated city. The raw jittered
 # values and the stable hash stay in the private JSONL for the operator.
 PUBLIC_COORD_DECIMALS = _env_num('PUBLIC_COORD_DECIMALS', 2, 0, 4, int)
 PUBLIC_GEO_OFFSET     = _env_num('PUBLIC_GEO_OFFSET', 0.02, 0.0, 0.5)
+PUBLIC_COORD_STEP     = _env_num('PUBLIC_COORD_STEP', 0.05, 0.0, 1.0)
+
+def _public_coord(v, lo, hi):
+    if PUBLIC_COORD_STEP:
+        v = round(v / PUBLIC_COORD_STEP) * PUBLIC_COORD_STEP
+    return round(min(hi, max(lo, v)), PUBLIC_COORD_DECIMALS)
 _DAY_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
 
 def _server_secret():
@@ -824,8 +834,8 @@ def _public_row(e):
         out['lat'] = out['lng'] = None
     else:
         dlat, dlng = _geo_offset(str(e.get('device', '')))
-        out['lat'] = round(min(90.0, max(-90.0, lat + dlat)), PUBLIC_COORD_DECIMALS)
-        out['lng'] = round(min(180.0, max(-180.0, lng + dlng)), PUBLIC_COORD_DECIMALS)
+        out['lat'] = _public_coord(lat + dlat, -90.0, 90.0)
+        out['lng'] = _public_coord(lng + dlng, -180.0, 180.0)
     return out
 
 
@@ -1676,10 +1686,16 @@ def log_txt():
 
 @app.route('/hotspots', methods=['GET'])
 def hotspots():
+    # Only references are copied under the lock; the answer (up to
+    # DETECTION_CELLS_MAX dicts) is built outside it, so a public read can't
+    # hold up detections. Safe: _count_cell only ever bumps a cell's `total`
+    # in place — it never adds or removes keys, so copying one can't fail.
     with write_lock:
-        hot  = [{'key':k,**v} for k,v in hotspot_cells.items()]
-        near = [{'key':k,**v,'approaching':True} for k,v in detection_cells.items()
-                if k not in hotspot_cells and v.get('total', 0) >= 50]
+        hot_src  = list(hotspot_cells.items())
+        near_src = [(k, v) for k, v in detection_cells.items()
+                    if k not in hotspot_cells and v.get('total', 0) >= 50]
+    hot  = [{'key':k,**v} for k,v in hot_src]
+    near = [{'key':k,**v,'approaching':True} for k,v in near_src]
     return jsonify({'hotspots':hot,'approaching':near,'threshold':HOTSPOT_THRESHOLD})
 
 def _reject_upload(msg, log_reason):
@@ -1857,7 +1873,8 @@ def admin_login():
         while len(_admin_sessions) > ADMIN_SESSIONS_MAX:
             _admin_sessions.popitem(last=False)
     _count('admin_logins')
-    _log(f'[Admin] login from {ip} device {device[:8]}', 'warn', event='admin_login', device=device[:8])
+    # The IP is logged on purpose (who logged in as admin); no device id beside it.
+    _log(f'[Admin] login from {ip}', 'warn', event='admin_login')
     return jsonify({'token': token, 'expires_in': ADMIN_SESSION_SEC, 'device': device})
 
 @app.route('/admin/logout', methods=['POST'])
@@ -2023,23 +2040,32 @@ def _load_site(root):
     if not os.path.isfile(os.path.join(root, 'index.html')):
         return {}
     files = {}
-    for dirpath, dirnames, filenames in os.walk(root):
+    real_root = os.path.realpath(root)
+    for dirpath, dirnames, filenames in os.walk(root):      # never descends symlinked dirs
         dirnames[:] = sorted(d for d in dirnames if not d.startswith('.'))
         for name in filenames:
             ext = os.path.splitext(name)[1].lower()
             if name.startswith('.') or ext not in _SITE_TYPES:
                 continue
             full = os.path.join(dirpath, name)
+            rel = os.path.relpath(full, root).replace(os.sep, '/')
+            # Regular files that really live under the site, nothing else: a
+            # symlink in a build (a merged PR, a compromised minifier) would
+            # publish its target — /proc/self/environ holds ADMIN_PASSWORD.
+            if (os.path.islink(full) or not os.path.isfile(full)
+                    or os.path.commonpath([real_root, os.path.realpath(full)]) != real_root):
+                _log(f'[Site] skipped {_q(rel)}: not a regular file inside SITE_DIR', 'warn',
+                     event='site_file_skipped')
+                continue
             with open(full, 'rb') as fh:
                 body = fh.read()
-            rel = os.path.relpath(full, root).replace(os.sep, '/')
             gz = gzip.compress(body, 9, mtime=0) if ext in _SITE_GZIP else None
             files[rel] = {
                 'body': body, 'gz': gz if gz is not None and len(gz) < len(body) else None,
                 'type': _SITE_TYPES[ext], 'etag': hashlib.sha256(body).hexdigest()[:32],
                 'cache': 'no-cache' if rel in _SITE_NO_CACHE else 'public, max-age=86400',
             }
-    return files
+    return files if 'index.html' in files else {}
 
 def _site_csp(index_html):
     """The page's Content-Security-Policy. Inline scripts run only if their exact

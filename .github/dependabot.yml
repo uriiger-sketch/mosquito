@@ -1,0 +1,26 @@
+# Keeps the pinned versions current (actions are pinned to commit SHAs, Python
+# and npm to exact versions — pins that never move rot into known advisories).
+# One grouped PR per ecosystem per month; each runs the full CI like any PR.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ['*']
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      npm:
+        patterns: ['*']
