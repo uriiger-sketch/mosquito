@@ -166,6 +166,7 @@ test('built site served by the backend: CSP-clean, same-origin API, detection, s
     await page.click('#adm-logout');
     await page.waitForSelector('#tab-server[hidden]', { state: 'attached' });
     assert.equal(await page.$('#net-pill[data-admin]'), null);
+    assert.equal(await page.evaluate(() => document.querySelector('#about-advanced').open), false, 'Advanced locked again');
     assert.equal(await page.evaluate(() => document.querySelector('#adm-log').innerHTML +
                                            document.querySelector('#adm-dev-list').innerHTML), '', 'admin views wiped');
 

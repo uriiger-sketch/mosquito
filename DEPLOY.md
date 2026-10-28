@@ -148,8 +148,8 @@ omits query strings and client IPs.
 
 ### Admin view (operator only)
 
-With `ADMIN_PASSWORD` set, typing that password into the app's **About →
-Advanced** password box starts an admin session in that browser tab:
+`ADMIN_PASSWORD` is the app's only password. Typing it into **About →
+Advanced** opens Advanced and starts an admin session in that browser tab:
 
 - Tapping **"N listening"** in the top bar lists the connected devices (active
   in the last 90 s): whether each is listening or just has the app open, when
@@ -164,20 +164,21 @@ Advanced** password box starts an admin session in that browser tab:
   by device), the files in `DATA_DIR` (names and sizes only, never contents)
   and the configuration.
 
-The Advanced box's own password is checked in the browser against a hash that
-ships in the public page, so it unlocks diagnostics only. Admin access is
-decided by the server alone. The page sends the typed password to
-`POST /admin/login`. Only if it matches `ADMIN_PASSWORD` does the server answer
-with a random token. That token is kept in memory only (never `localStorage`),
+The password exists only in the server's environment. The page holds it in no
+form, not even a hash, because a hash in a public page can be guessed offline.
+The page sends what is typed to `POST /admin/login`, and only if it matches
+`ADMIN_PASSWORD` does the server answer with a random token. That token is kept in memory only (never `localStorage`),
 so the session belongs to that tab and ends on reload, on **End admin
 session**, or after `ADMIN_SESSION_SEC`. A restart ends every session. The
 admin API answers only the app's own origins (never `Access-Control-Allow-Origin: *`),
 the service worker never caches it, and every login, failed attempt and logout
-is logged as `[Admin]` (`@event:admin_login`, `admin_login_failed`).
+is logged as `[Admin]` (`@event:admin_login`, `admin_login_failed`). Advanced
+closes again when the session ends.
 
-Do **not** reuse the Advanced password as `ADMIN_PASSWORD`. Its SHA-256 is in
-the public page, so a short one can be guessed offline. Any long password
-typed into the same box works, and it also unlocks Advanced.
+Because the server checks the password, Advanced cannot be opened while the
+server is unreachable, and it stays closed on a deployment without
+`ADMIN_PASSWORD`. To change the password, change the variable on Railway. The
+service redeploys and every open session ends.
 
 ---
 
@@ -244,7 +245,8 @@ a healthy service.
 ## The app shows "Offline"
 
 In the app: **About → Advanced → Test server connection** (Advanced asks for
-the maintainers' password; the page stores only its SHA-256). It probes
+the admin password, which the server checks, so it needs one reachable
+endpoint; otherwise use `curl https://mosquito.charity/health`). It probes
 `/health` on every endpoint in `SERVER_URLS` and names the failure:
 
 | Result | Meaning | Fix |
@@ -382,8 +384,8 @@ What anyone can see, and what not:
 - **Public (the app):** only what a browser must download to run it, published
   **minified** (no comments, short local names, no source maps) — readable with
   effort, never the source. Nothing secret may ever go into the client: the
-  Advanced password is stored as a SHA-256 only, and the server trusts no
-  client input.
+  admin password is never in the page, not even as a hash (a unit test
+  enforces it). The server checks it, and it trusts no client input.
 - **Served by the backend** with a strict Content-Security-Policy: the page's
   inline script runs only by hash (injected markup cannot run code), and the
   only third-party host is the OpenStreetMap tile server. Responses are gzip

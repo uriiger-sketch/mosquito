@@ -1990,45 +1990,6 @@ const ACTIVITY = {
   day:   { icon: 'sun',  label: 'Day' },
 };
 
-// About → Advanced is behind a password. The page is public, so this only keeps
-// casual users out of the diagnostics; it ships the SHA-256, never the password.
-const ADVANCED_PW_SHA256 = 'e85de69f5bf2320774bc40924b4e2c53d167ea6741197ca80181d60eef63bbe8';
-
-// SHA-256 of a string (UTF-8), as hex. Synchronous and self-contained:
-// crypto.subtle is missing on plain-http origins (LAN testing).
-function sha256Hex(str) {
-  const primes = [];
-  for (let n = 2; primes.length < 64; n++) if (primes.every(p => n % p)) primes.push(n);
-  const frac = (x) => (x - Math.floor(x)) * 4294967296 >>> 0;
-  const K = primes.map(p => frac(Math.cbrt(p)));
-  const H = primes.slice(0, 8).map(p => frac(Math.sqrt(p)));
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-  const bytes = new TextEncoder().encode(String(str));
-  const size = Math.ceil((bytes.length + 9) / 64) * 64;
-  const buf = new Uint8Array(size);
-  buf.set(bytes);
-  buf[bytes.length] = 0x80;
-  const dv = new DataView(buf.buffer);
-  dv.setUint32(size - 8, Math.floor(bytes.length / 0x20000000));   // message length in bits, 64-bit big-endian
-  dv.setUint32(size - 4, (bytes.length * 8) >>> 0);
-  const W = new Uint32Array(64);                                      // stores wrap mod 2^32
-  for (let off = 0; off < size; off += 64) {
-    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + 4 * i);
-    for (let i = 16; i < 64; i++) {
-      const x = W[i - 15], y = W[i - 2];
-      W[i] = W[i - 16] + (rotr(x, 7) ^ rotr(x, 18) ^ (x >>> 3)) + W[i - 7] + (rotr(y, 17) ^ rotr(y, 19) ^ (y >>> 10));
-    }
-    let [a, b, c, d, e, f, g, h] = H;
-    for (let i = 0; i < 64; i++) {
-      const t1 = h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i];
-      const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
-    }
-    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });
-  }
-  return H.map(x => x.toString(16).padStart(8, '0')).join('');
-}
-
 // Short, sober guidance for the person who just heard a mosquito.
 function guidanceFor(sp, genus) {
   const g = genus || (sp && sp.genus);
@@ -3692,9 +3653,9 @@ class App {
     const d = document.getElementById(id);
     if (d && d.open) { try { d.close(); } catch (e) { d.removeAttribute('open'); } }
   }
-  // About → Advanced opens only with the password; unlocked until the app reloads.
-  // The same field takes the server's admin password: the server, never this
-  // page, decides whether it is one (adminLogin).
+  // About → Advanced opens only with the admin password, which this page never
+  // holds in any form (not even a hash): the server checks it (adminLogin), and
+  // Advanced stays open for as long as that admin session lasts.
   wireAdvanced() {
     const adv = $('#about-advanced'), form = $('#adv-form'), pw = $('#adv-pw'), err = $('#adv-error');
     const submit = $('button[type="submit"]', form);
@@ -3717,34 +3678,35 @@ class App {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (submit.disabled) return;
-      const value = pw.value;
-      if (sha256Hex(value) === ADVANCED_PW_SHA256) {
-        if (!this._admin) this.adminLogin(value);   // admin views follow if the server agrees
-      } else {
-        submit.disabled = true;
-        setText(submit, 'Checking…');
-        const r = await this.adminLogin(value);
-        submit.disabled = false;
-        setText(submit, 'Unlock');
-        if (!r.ok) {
-          setText(err, r.status === 429 ? 'Too many attempts. Wait a minute, then try again.'
-                     : r.status === 0 ? 'Wrong password, or the server could not be reached to check it.'
-                     : 'Wrong password.');
-          setHidden(err, false);
-          pw.select();
-          return;
-        }
+      submit.disabled = true;
+      setText(submit, 'Checking…');
+      const r = await this.adminLogin(pw.value);
+      submit.disabled = false;
+      setText(submit, 'Unlock');
+      if (!r.ok) {
+        setText(err, r.status === 429 ? 'Too many attempts. Wait a minute, then try again.'
+                   : r.status === 0 ? 'Wrong password, or the server could not be reached to check it.'
+                   : 'Wrong password.');
+        setHidden(err, false);
+        pw.select();
+        return;
       }
       this._advUnlocked = true;
       pw.value = '';
-      const lock = $('.adv-lock', adv);
-      lock.classList.replace('adv-lock', 'chev');
-      lock.removeAttribute('role'); lock.removeAttribute('aria-label'); lock.setAttribute('aria-hidden', 'true');
-      $('use', lock).setAttribute('href', '#i-chevron-down');
+      this.setAdvancedLock(false);
       this.closeDialog('dlg-adv');
       adv.open = true;
       this.updateFedStatus();
     });
+  }
+
+  setAdvancedLock(locked) {
+    const lock = $('summary > svg:last-child', $('#about-advanced'));
+    lock.classList.toggle('adv-lock', locked);
+    lock.classList.toggle('chev', !locked);
+    if (locked) { lock.setAttribute('role', 'img'); lock.setAttribute('aria-label', 'Password required'); lock.removeAttribute('aria-hidden'); }
+    else { lock.removeAttribute('role'); lock.removeAttribute('aria-label'); lock.setAttribute('aria-hidden', 'true'); }
+    $('use', lock).setAttribute('href', locked ? '#i-lock' : '#i-chevron-down');
   }
 
   // ═══ Admin session ═════════════════════════════════════════════════════
@@ -3818,6 +3780,11 @@ class App {
     $('.tablist').classList.remove('has-admin');
     if (this.activeTab === 'server') this.selectTab('about');
     this.closeDialog('dlg-admin-devices');
+    if (this._advUnlocked) {
+      this._advUnlocked = false;
+      $('#about-advanced').open = false;
+      this.setAdvancedLock(true);
+    }
     this._admDevices = null;
     this._admDevFilter = '';
     ['#adm-dev-list', '#adm-log', '#adm-det', '#adm-files'].forEach(sel => { $(sel).innerHTML = ''; });
