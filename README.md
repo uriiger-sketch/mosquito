@@ -88,6 +88,9 @@ everyday-sound benchmark as a held-out test):
   (so many reports from home never average back to the home); the server applies
   a second offset before anything is published and rotates device pseudonyms daily.
 - Detection history is stored only on the device and can be exported or cleared.
+- The operator's admin view (server `ADMIN_PASSWORD`, see `DEPLOY.md` → *Admin
+  view*) shows connected devices and only the locations they shared with their
+  detections, as sent. Heartbeats carry no location.
 
 ## Repository layout
 
