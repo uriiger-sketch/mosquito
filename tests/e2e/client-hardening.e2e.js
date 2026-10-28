@@ -35,7 +35,10 @@ const SKIP = !process.env.CI && missingDeps();
 const build = (out, urls) => execFileSync('bash', [path.join(ROOT, 'tools', 'build-site.sh'), out],
   { stdio: 'pipe', env: { ...process.env, SITE_RUN: '7', SITE_SHA: SHA, SERVER_URLS: urls } });
 const listen = (root, port = 0) => serve(root, port).then(srv => ({ srv, port: srv.address().port }));
-const close = (srv) => new Promise(r => srv.close(r));
+// Close a test server now: drop its sockets first. close() alone waits for every
+// open connection, and one Chromium kept open made a CI run hang until the
+// job's timeout (the next listen() on the same port, and the browser, waited).
+const close = (srv) => new Promise(r => { srv.closeAllConnections(); srv.close(() => r()); });
 
 function freePort() {
   return new Promise((resolve, reject) => {
