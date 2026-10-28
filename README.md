@@ -36,7 +36,10 @@ Live app: https://mosquito.charity (also https://uriiger-sketch.github.io/mosqui
    ("*Aedes* sp. — species uncertain") with the candidates shown.
 4. **Confidence** — `confidence` is a calibrated probability that the track
    is a real mosquito (logistic model; Brier 0.044, ECE 0.058 on the
-   synthetic test split). Only finds ≥ 70 % are shared to the map.
+   synthetic test split). The app reports a detection only from 50 %
+   (below that it is a candidate, shown as "checking"); finds ≥ 70 % are
+   confident — shared to the map, and one training step for the shared model,
+   whose update is sent after each one.
 
 The engine ⇄ UI contract is documented at the top of `js/detector.js`.
 
