@@ -7,8 +7,8 @@
  * its Content-Security-Policy without a single violation or error, reach its
  * API on the same origin, detect a mosquito, and its service worker must cache
  * the app but never answer an API request. An admin session (the server's
- * ADMIN_PASSWORD typed into About → Advanced) must open the connected-devices
- * sheet from the top bar and the Server tab, and leave no trace once ended.
+ * ADMIN_PASSWORD typed into About → Advanced) must open the Server tab — and no
+ * device list — and leave no trace once ended.
  *
  *   needs `npm ci` (the minifiers), Playwright + Chromium, and the server's
  *   Python dependencies (pip install -r requirements.txt)
@@ -142,21 +142,20 @@ test('built site served by the backend: CSP-clean, same-origin API, detection, s
     await page.fill('#adv-pw', 'not the password');
     await page.click('#adv-form button[type="submit"]');
     await page.waitForSelector('#adv-error:not([hidden])');
-    assert.equal(await page.$('#net-pill[data-admin]'), null, 'a wrong password grants nothing');
+    assert.ok(await page.$('#tab-server[hidden]'), 'a wrong password grants nothing');
     await page.fill('#adv-pw', ADMIN_PW);
     await page.click('#adv-form button[type="submit"]');
-    await page.waitForSelector('#net-pill[data-admin][role="button"]', { timeout: 10000 });
+    await page.waitForSelector('#tab-server:not([hidden])', { timeout: 10000 });
     assert.ok(await page.evaluate(() => document.querySelector('#about-advanced').open), 'Advanced unlocked too');
     assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(k => /admin|token/i.test(k)).length +
                                            Object.keys(sessionStorage).length), 0, 'the admin token is never stored');
 
+    // No device list: the "N listening" pill stays plain text, even for an admin.
+    assert.equal(await page.$('#net-pill[role], #dlg-admin-devices'), null);
     await page.click('#net-pill');
-    await page.waitForSelector('#dlg-admin-devices[open]');
-    await until(() => page.evaluate(() => [...document.querySelectorAll('#adm-dev-list .adm-badge')]
-      .some(b => b.textContent === 'Listening')), 20000, 'this device listed as listening');
-    assert.match(await page.textContent('#adm-dev-summary'), /connected · \d+ listening/);
+    assert.equal(await page.$('dialog[open]'), null, 'the pill opens nothing');
 
-    await page.click('#adm-dev-server');
+    await page.click('#tab-server');
     await page.waitForSelector('#panel-server:not([hidden])');
     await until(() => page.evaluate(() => /\[Admin\] login from/.test(document.querySelector('#adm-log').textContent)),
                 10000, 'the server log in the Server tab');
@@ -165,10 +164,9 @@ test('built site served by the backend: CSP-clean, same-origin API, detection, s
 
     await page.click('#adm-logout');
     await page.waitForSelector('#tab-server[hidden]', { state: 'attached' });
-    assert.equal(await page.$('#net-pill[data-admin]'), null);
     assert.equal(await page.evaluate(() => document.querySelector('#about-advanced').open), false, 'Advanced locked again');
     assert.equal(await page.evaluate(() => document.querySelector('#adm-log').innerHTML +
-                                           document.querySelector('#adm-dev-list').innerHTML), '', 'admin views wiped');
+                                           document.querySelector('#adm-det').innerHTML), '', 'admin views wiped');
 
     assert.deepEqual(await page.evaluate(() => window.__csp), [], 'Content-Security-Policy violations');
     assert.deepEqual(errors, [], 'errors in the page');

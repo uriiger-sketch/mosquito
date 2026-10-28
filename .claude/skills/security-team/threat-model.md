@@ -21,7 +21,7 @@ it) and to Pages. An operator can open an admin session with the server's
 
 | Asset | Where | Why it matters |
 |---|---|---|
-| Admin session / `ADMIN_PASSWORD` | Railway env; token in one tab's memory; hashed tokens in server RAM | Unlocks device list, stored locations, logs, files |
+| Admin session / `ADMIN_PASSWORD` | Railway env; token in one tab's memory; hashed tokens in server RAM | Unlocks stored detections (with shared locations), logs, files — deliberately no device list |
 | Stored detections | `DATA_DIR/detections.jsonl` (stable device hash, 4-decimal client-offset coordinates, eventIds) | Linkable per device; closest data to a user's home |
 | `.server_secret` / `PSEUDONYM_SECRET` | `DATA_DIR`, env | Undoes the public offsets and daily pseudonyms |
 | Raw device id | Phone `localStorage`; sent in heartbeat/detection/upload bodies, hashed on arrival | Links a phone's reports across days |

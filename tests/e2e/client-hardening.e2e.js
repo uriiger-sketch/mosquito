@@ -152,7 +152,7 @@ test('the GitHub Pages copy (no headers) runs under its own CSP <meta>', { skip:
     await page.click('#about-advanced > summary');
     await page.fill('#adv-pw', PW);
     await page.click('#adv-form button[type="submit"]');
-    await page.waitForSelector('#net-pill[data-admin]', { timeout: 10000 });   // cross-origin admin login
+    await page.waitForSelector('#tab-server:not([hidden])', { timeout: 10000 });   // cross-origin admin login
     await page.evaluate(() => window._app.selectTab('server'));
     await page.waitForSelector('#adm-log .adm-log-row', { timeout: 10000 });
     assert.deepEqual(await page.evaluate(() => window.__csp), [], 'the app itself violates nothing');
