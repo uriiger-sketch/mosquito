@@ -97,3 +97,31 @@ def test_the_api_is_unchanged_next_to_the_app(app_client):
     # The app's own origin may post (it is first-party).
     hb2 = post(app_client, '/heartbeat', {'deviceId': 'c' * 32}, origin='https://mosquito.charity')
     assert hb2.status_code == 200
+
+
+# ── Only regular files inside SITE_DIR are ever served ───────────────────────
+def test_symlinks_in_the_site_are_never_served(harness, site, tmp_path, capsys):
+    """A symlink in a build (a merged PR, a compromised minifier) must not
+    publish its target: /proc/self/environ would hand out ADMIN_PASSWORD."""
+    outside = tmp_path / 'private'
+    outside.mkdir()
+    (outside / 'secret.txt').write_text('ADMIN_PASSWORD=placeholder', encoding='utf-8')
+    (site / 'env.txt').symlink_to('/proc/self/environ')
+    (site / 'js' / 'leak.txt').symlink_to(outside / 'secret.txt')
+    (site / 'linked').symlink_to(outside, target_is_directory=True)
+    c = harness.start(SITE_DIR=str(site), ADMIN_PASSWORD='placeholder-password').app.test_client()
+    for path in ('/env.txt', '/js/leak.txt', '/linked/secret.txt'):
+        r = c.get(path)
+        assert r.status_code == 404, path
+        assert b'placeholder' not in r.get_data()
+    assert c.get('/').status_code == 200 and c.get('/js/app.js').status_code == 200
+    assert 'not a regular file inside SITE_DIR' in capsys.readouterr().out
+
+
+def test_a_symlinked_index_means_no_site(harness, site, tmp_path):
+    real = tmp_path / 'elsewhere.html'
+    real.write_text('<!doctype html>', encoding='utf-8')
+    (site / 'index.html').unlink()
+    (site / 'index.html').symlink_to(real)
+    c = harness.start(SITE_DIR=str(site)).app.test_client()
+    assert c.get('/').get_json()['service'].startswith('MosquitoNet')   # API only, boots fine

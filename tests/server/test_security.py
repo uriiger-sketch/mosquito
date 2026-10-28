@@ -136,6 +136,32 @@ def test_coordinate_precision_is_configurable(harness):
     assert row['lat'] == 32.1 and row['lng'] == 35.0
 
 
+def test_public_points_snap_to_a_shared_grid(harness):
+    """A phone's public point is constant, so its days link by location; snapping
+    to the hotspot grid makes many phones share each point. On by default."""
+    srv = harness.start(PUBLIC_COORD_STEP=None, PUBLIC_GEO_OFFSET='0.02')
+    assert srv.PUBLIC_COORD_STEP == 0.05
+    c = srv.app.test_client()
+    for i, (lat, lng) in enumerate(((32.0812, 34.7745), (-33.91, 18.42), (51.4999, -0.1276))):
+        post_det(c, deviceId=f'grid-{i}', lat=lat, lng=lng)
+    rows = c.get('/log').get_json()['detections']
+    assert len(rows) == 3
+    for r in rows:
+        for v in (r['lat'], r['lng']):
+            assert abs(v / 0.05 - round(v / 0.05)) < 1e-9, v       # a multiple of 0.05
+    txt = c.get('/log.txt').get_data(as_text=True)
+    for r in rows:
+        assert f"{r['lat']:.2f}, {r['lng']:.2f}" in txt
+
+
+def test_public_grid_can_be_turned_off(harness):
+    srv = harness.start(PUBLIC_COORD_STEP='0')
+    c = srv.app.test_client()
+    post_det(c, lat=32.123456, lng=34.98)
+    row = c.get('/log').get_json()['detections'][0]
+    assert (row['lat'], row['lng']) == (32.12, 34.98)
+
+
 def test_device_is_a_per_day_pseudonym(client, srv):
     dev_hash = srv.dh('my-device-id')
     post_det(client, deviceId='my-device-id', ts='2026-10-20T10:00:00Z', species='culex')
@@ -145,7 +171,8 @@ def test_device_is_a_per_day_pseudonym(client, srv):
     devices = [r['device'] for r in rows]             # newest first: 21st, 20th, 20th
     assert dev_hash not in devices
     assert devices[1] == devices[2]                   # same day: linkable (researcher dedupe)
-    assert devices[0] != devices[1]                   # next day: not linkable
+    assert devices[0] != devices[1]                   # next day: a new pseudonym (location
+                                                      # can still link days: see the grid test)
     assert all(len(d) == 16 for d in devices)
     # The /log?device= filter works on the public pseudonym, not the stable hash.
     assert client.get(f'/log?device={devices[1]}').get_json()['returned'] == 2
