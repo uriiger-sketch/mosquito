@@ -340,7 +340,6 @@ def _flush_once(lock_timeout=-1):
                     break
                 device_registry.pop(h, None)
                 session_registry.pop(h, None)
-                device_listening.pop(h, None)
             while recent_log:
                 k = next(iter(recent_log))
                 if now - recent_log[k]['ts'] <= RECENT_WINDOW:
@@ -684,7 +683,6 @@ FED_MAX_STEPS  = 50         # step weight cap (honest clients send 1, up to ~20 
 device_registry   = {}     # ACTIVE devices, oldest-seen first; hash → last_seen
 known_devices     = OrderedDict()  # recently seen hashes (ever-count dedupe), LRU-bounded
 session_registry  = {}
-device_listening  = {}     # active device → its last heartbeat's `listening` flag (RAM only)
 pending_updates   = {}     # device hash → latest update this round (one vote per device)
 detection_log     = deque(maxlen=DETECTION_LOG_MAX)   # bounded live window
 detection_cells   = {}     # LRU by last detection: hot cells stay, cold ones age out
@@ -860,7 +858,6 @@ def touch(h):
         old = next(iter(device_registry))
         device_registry.pop(old, None)
         session_registry.pop(old, None)
-        device_listening.pop(old, None)
     if h in known_devices:
         known_devices.move_to_end(h)
     else:
@@ -1270,7 +1267,6 @@ def heartbeat():
     if request.method == 'GET':
         raw_id = request.args.get('deviceId', 'anon')
         sess   = request.args.get('sess', '')
-        listening = request.args.get('listening')
     else:
         # A non-dict JSON body (e.g. `[1,2]`) is truthy, so `or {}` would not fire
         # and .get() raised AttributeError → unhandled 500. Guard on the type.
@@ -1281,13 +1277,9 @@ def heartbeat():
         # URL (URLs end up in platform/CDN access logs next to the client IP).
         # They send the session start time as a number.
         sess   = body.get('sess', '')
-        listening = body.get('listening')
         if isinstance(sess, (int, float)) and not isinstance(sess, bool):
             sess = str(int(sess)) if math.isfinite(sess) and sess > 0 else ''
     sess = sess[:32] if isinstance(sess, str) else ''   # stored per device: bound it
-    # v3 clients say whether the microphone is on (1) or the app is just open (0).
-    listening = (None if listening is None
-                 else listening is True or listening == 1 or listening in ('1', 'true'))
     h = dh(raw_id)
     wait = _throttled('dev:heartbeat', h)
     if wait:
@@ -1295,8 +1287,6 @@ def heartbeat():
     with write_lock:
         new_s = sess and session_registry.get(h) != sess
         touch(h)
-        if listening is not None:
-            device_listening[h] = listening
         if new_s:
             session_registry[h] = sess
             stats['total_sessions'] += 1
@@ -1793,15 +1783,14 @@ def _health_body():
 # ships in the public page, so it can never guard data; this is the real check.
 # The right password returns a random bearer token that the app keeps in memory
 # only (that one tab: gone on reload) and that expires after ADMIN_SESSION_SEC.
-# An admin sees what this server already stores, nothing more: the active
-# devices, with the locations they chose to share with their detections (the
-# client's own fixed ≤ ~1.5 km offset, never a raw GPS fix; heartbeats carry no
-# location at all), the stored detection records, the recent server log and the
-# files in DATA_DIR. Logins, failures and logouts are logged.
+# An admin sees what this server already stores, nothing more: the stored
+# detection records (with the locations devices shared, already gridded and
+# offset on the phone — never a raw GPS fix), the recent server log and the
+# files in DATA_DIR. There is no list of connected or listening devices.
+# Logins, failures and logouts are logged.
 ADMIN_PASSWORD     = os.environ.get('ADMIN_PASSWORD', '').strip()
 ADMIN_SESSION_SEC  = _env_num('ADMIN_SESSION_SEC', 4 * 3600, 300, 86400, int)
 ADMIN_SESSIONS_MAX = 16
-ADMIN_LOCATIONS_PER_DEVICE = 10
 _ADMIN_PW_DIGEST   = hashlib.sha256(ADMIN_PASSWORD.encode()).digest() if ADMIN_PASSWORD else None
 _admin_sessions    = OrderedDict()   # sha256(token) → session, oldest first
 _admin_lock        = threading.Lock()
@@ -1886,58 +1875,6 @@ def admin_logout(s):
             _admin_sessions.pop(k, None)
     _log(f'[Admin] logout device {s["device"][:8]}', event='admin_logout', device=s['device'][:8])
     return jsonify({'ok': True})
-
-def _session_start_ms(v):
-    """session_registry holds the client's session start (ms since epoch) as a string."""
-    try:
-        ms = int(v)
-    except (TypeError, ValueError):
-        return None
-    return ms if 1_000_000_000_000 <= ms <= 100_000_000_000_000 else None
-
-def _admin_location(e):
-    return {'id': e.get('id'), 'ts': e.get('ts'), 'lat': e.get('lat'), 'lng': e.get('lng'),
-            'species': e.get('species'), 'name': e.get('name'), 'conf': e.get('conf')}
-
-@app.route('/admin/devices', methods=['GET'])
-@_admin_only
-def admin_devices(_s):
-    """Devices active within ACTIVE_SEC, most recently seen first, each with the
-    detections it shared in the live window and their locations."""
-    limit = _int_arg('limit', 500, 1, 5000)
-    now = time.time()
-    with write_lock:
-        active = list(device_registry.items())          # oldest-seen first
-        sess = {h: session_registry.get(h) for h, _ in active}
-        lis = {h: device_listening.get(h) for h, _ in active}
-        pool = list(detection_log)
-    shared = {h: [] for h, _ in active}
-    for e in reversed(pool):                            # newest first
-        rows = shared.get(e.get('device'))
-        if rows is not None:
-            rows.append(e)
-    devices, n_listening, n_located = [], 0, 0
-    for h, seen in reversed(active):
-        rows = shared[h]
-        located = [e for e in rows if _finite(e.get('lat')) is not None and _finite(e.get('lng')) is not None]
-        n_listening += lis[h] is True
-        n_located += bool(located)
-        if len(devices) >= limit:
-            continue
-        devices.append({
-            'device':        h,
-            'last_seen_s':   round(max(0.0, now - seen), 1),
-            'listening':     lis[h],                    # None: the client did not say
-            'session_start': _session_start_ms(sess[h]),
-            'detections':    len(rows),
-            'last_detection': _admin_location(rows[0]) if rows else None,
-            'locations':     [_admin_location(e) for e in located[:ADMIN_LOCATIONS_PER_DEVICE]],
-            'app_version':   next((e['appVersion'] for e in rows if e.get('appVersion')), None),
-        })
-    return jsonify({'active': len(active), 'listening': n_listening, 'with_location': n_located,
-                    'active_window_s': ACTIVE_SEC, 'returned': len(devices), 'devices': devices,
-                    'location_note': 'Locations are only those shared with detections, as stored: '
-                                     "offset on the device by its fixed secret offset (up to ~1.5 km)."})
 
 @app.route('/admin/detections', methods=['GET'])
 @_admin_only

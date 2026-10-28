@@ -35,7 +35,7 @@ def beat(c, device, listening):
     return post(c, '/heartbeat', {'deviceId': device, 'listening': listening, 'sess': 1761650000000})
 
 
-ADMIN_GETS = ['/admin/devices', '/admin/detections', '/admin/logs', '/admin/server']
+ADMIN_GETS = ['/admin/detections', '/admin/logs', '/admin/server']
 
 
 # ── Off by default ────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ def test_expired_session_is_refused_and_dropped(ac, admin_srv):
     auth = bearer(ac)
     for s in admin_srv._admin_sessions.values():
         s['exp'] = 0
-    assert ac.get('/admin/devices', headers=auth).status_code == 401
+    assert ac.get('/admin/server', headers=auth).status_code == 401
     assert not admin_srv._admin_sessions
 
 
@@ -127,8 +127,8 @@ def test_logout_ends_only_that_session(ac):
     a, b = bearer(ac), bearer(ac)
     r = post(ac, '/admin/logout', {}, **a)
     assert r.status_code == 200
-    assert ac.get('/admin/devices', headers=a).status_code == 401
-    assert ac.get('/admin/devices', headers=b).status_code == 200
+    assert ac.get('/admin/server', headers=a).status_code == 401
+    assert ac.get('/admin/server', headers=b).status_code == 200
 
 
 def test_session_count_is_bounded(ac, admin_srv):
@@ -136,28 +136,28 @@ def test_session_count_is_bounded(ac, admin_srv):
     for i in range(admin_srv.ADMIN_SESSIONS_MAX):
         login(ac, **{'X-Forwarded-For': f'198.51.100.{i // 4 + 10}'})
     assert len(admin_srv._admin_sessions) == admin_srv.ADMIN_SESSIONS_MAX
-    assert ac.get('/admin/devices', headers=first).status_code == 401   # oldest evicted
+    assert ac.get('/admin/server', headers=first).status_code == 401   # oldest evicted
 
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 def test_admin_reads_are_never_cors_star(ac):
     auth = bearer(ac)
-    r = ac.get('/admin/devices', headers={**auth, 'Origin': FIRST_PARTY})
+    r = ac.get('/admin/server', headers={**auth, 'Origin': FIRST_PARTY})
     assert r.status_code == 200
     assert r.headers['Access-Control-Allow-Origin'] == FIRST_PARTY
     assert 'Origin' in r.headers['Vary']
-    r = ac.get('/admin/devices', headers={**auth, 'Origin': 'https://evil.example'})
+    r = ac.get('/admin/server', headers={**auth, 'Origin': 'https://evil.example'})
     assert r.status_code == 403 and 'Access-Control-Allow-Origin' not in r.headers
 
 
 def test_admin_preflight_allows_the_authorization_header(ac):
-    r = ac.open('/admin/devices', method='OPTIONS', headers={
+    r = ac.open('/admin/server', method='OPTIONS', headers={
         'Origin': FIRST_PARTY, 'Access-Control-Request-Method': 'GET',
         'Access-Control-Request-Headers': 'authorization'})
     assert r.status_code in (200, 204)
     assert r.headers['Access-Control-Allow-Origin'] == FIRST_PARTY
     assert 'Authorization' in r.headers['Access-Control-Allow-Headers']
-    r = ac.open('/admin/devices', method='OPTIONS', headers={
+    r = ac.open('/admin/server', method='OPTIONS', headers={
         'Origin': 'https://evil.example', 'Access-Control-Request-Method': 'GET'})
     assert 'Access-Control-Allow-Origin' not in r.headers
 
@@ -167,51 +167,22 @@ def test_public_reads_stay_cors_star(ac):
              .headers['Access-Control-Allow-Origin'] == '*'
 
 
-# ── Devices ───────────────────────────────────────────────────────────────────
-def test_devices_show_activity_and_only_shared_locations(ac, admin_srv):
-    beat(ac, 'listener', 1)
-    beat(ac, 'idle', 0)
-    post(ac, '/heartbeat', {'deviceId': 'legacy'})            # old client: no flag
-    assert post_det(ac, deviceId='listener', lat=32.08214, lng=34.79133).status_code == 200
-    assert post_det(ac, deviceId='idle', lat=None, lng=None).status_code == 200
-    d = ac.get('/admin/devices', headers=bearer(ac)).get_json()
-
-    assert d['active'] == 3 and d['listening'] == 1 and d['with_location'] == 1
-    by = {x['device']: x for x in d['devices']}
-    lis, idle, legacy = by[admin_srv.dh('listener')], by[admin_srv.dh('idle')], by[admin_srv.dh('legacy')]
-    assert lis['listening'] is True and idle['listening'] is False and legacy['listening'] is None
-    assert lis['session_start'] == 1761650000000
-    assert lis['detections'] == 1
-    # Exactly what the device sent (it applies its own offset), rounded as stored.
-    assert lis['locations'] == [{'id': 1, 'ts': lis['locations'][0]['ts'], 'lat': 32.0821, 'lng': 34.7913,
-                                 'species': 'aedes_albopictus', 'name': 'Aedes albopictus', 'conf': 0.83}]
-    assert idle['detections'] == 1 and idle['locations'] == []
-    assert legacy['detections'] == 0 and legacy['last_detection'] is None
-    # The raw device ids never appear, only the server's hashes.
-    body = json.dumps(d)
-    assert 'listener' not in body and 'legacy' not in body
+# ── No device list ────────────────────────────────────────────────────────────
+def test_there_is_no_connected_devices_view(ac, admin_srv):
+    """Removed on purpose: an admin cannot list connected or listening devices."""
+    beat(ac, 'phone', 1)
+    auth = bearer(ac)
+    assert ac.get('/admin/devices', headers=auth).status_code in (404, 405)
+    for path in ADMIN_GETS:
+        body = json.dumps(ac.get(path, headers=auth).get_json())
+        assert '"listening"' not in body and '"last_seen_s"' not in body, path
 
 
-def test_devices_most_recent_first_and_limited(ac, admin_srv):
-    for name in ('a', 'b', 'c'):
-        beat(ac, name, 1)
-    d = ac.get('/admin/devices?limit=2', headers=bearer(ac)).get_json()
-    assert [x['device'] for x in d['devices']] == [admin_srv.dh('c'), admin_srv.dh('b')]
-    assert d['active'] == 3 and d['listening'] == 3 and d['returned'] == 2
-
-
-def test_idle_devices_leave_the_view(ac, admin_srv):
-    beat(ac, 'gone', 1)
-    for h in admin_srv.device_registry:
-        admin_srv.device_registry[h] -= admin_srv.ACTIVE_SEC + 1
-    admin_srv._flush_once()
-    assert not admin_srv.device_listening
-    assert ac.get('/admin/devices', headers=bearer(ac)).get_json()['active'] == 0
-
-
-def test_get_heartbeat_listening_flag(ac, admin_srv):
+def test_heartbeats_keep_no_listening_flag(ac, admin_srv):
+    beat(ac, 'phone', 1)
     ac.get('/heartbeat?deviceId=g&listening=1')
-    assert admin_srv.device_listening[admin_srv.dh('g')] is True
+    assert not hasattr(admin_srv, 'device_listening')
+    assert admin_srv.active_now() == 2                     # the public live count still works
 
 
 # ── Detections, logs, server ──────────────────────────────────────────────────

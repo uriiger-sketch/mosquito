@@ -35,7 +35,10 @@ const SKIP = !process.env.CI && missingDeps();
 const build = (out, urls) => execFileSync('bash', [path.join(ROOT, 'tools', 'build-site.sh'), out],
   { stdio: 'pipe', env: { ...process.env, SITE_RUN: '7', SITE_SHA: SHA, SERVER_URLS: urls } });
 const listen = (root, port = 0) => serve(root, port).then(srv => ({ srv, port: srv.address().port }));
-const close = (srv) => new Promise(r => srv.close(r));
+// Close a test server now: drop its sockets first. close() alone waits for every
+// open connection, and one Chromium kept open made a CI run hang until the
+// job's timeout (the next listen() on the same port, and the browser, waited).
+const close = (srv) => new Promise(r => { srv.closeAllConnections(); srv.close(() => r()); });
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -71,7 +74,18 @@ async function browserContext() {
   });
   return { browser, ctx, page: await ctx.newPage() };
 }
-const controlled = (page) => page.waitForFunction(() => window._app && navigator.serviceWorker.controller, null, { timeout: 20000 });
+// Load, wait until the service worker is ACTIVE, then reload under it (as
+// site.e2e.js does). Reloading before it activated could leave the page
+// uncontrolled on a slow CI runner. Bounded: never a silent hang.
+async function openControlled(page, url) {
+  await page.goto(url, { waitUntil: 'load' });
+  await page.evaluate(() => Promise.race([
+    navigator.serviceWorker.ready.then(() => true),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('no active service worker after 30 s')), 30000)),
+  ]));
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => window._app && navigator.serviceWorker.controller, null, { timeout: 30000 });
+}
 
 test('a navigation to another file in scope never becomes the offline app', { skip: SKIP, timeout: 120000 }, async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mn-sw-'));
@@ -80,9 +94,7 @@ test('a navigation to another file in scope never becomes the offline app', { sk
   const { browser, ctx, page } = await browserContext();
   try {
     const origin = `http://127.0.0.1:${port}`;
-    await page.goto(`${origin}/`, { waitUntil: 'load' });
-    await page.reload({ waitUntil: 'load' });
-    await controlled(page);
+    await openControlled(page, `${origin}/`);
     // What a link on any other web page can do: open a different file of the site.
     await page.goto(`${origin}/map-data.json`).catch(() => {});
     await ctx.setOffline(true);
@@ -108,9 +120,7 @@ test('offline, the page runs the app code it was last served with', { skip: SKIP
   try {
     for (const root of [a, b]) {                               // the user opens release a, later b
       const { srv } = await listen(root, port);
-      await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'load' });
-      await page.reload({ waitUntil: 'load' });
-      await controlled(page);
+      await openControlled(page, `http://127.0.0.1:${port}/`);
       await close(srv);
     }
     await ctx.setOffline(true);
@@ -152,7 +162,7 @@ test('the GitHub Pages copy (no headers) runs under its own CSP <meta>', { skip:
     await page.click('#about-advanced > summary');
     await page.fill('#adv-pw', PW);
     await page.click('#adv-form button[type="submit"]');
-    await page.waitForSelector('#net-pill[data-admin]', { timeout: 10000 });   // cross-origin admin login
+    await page.waitForSelector('#tab-server:not([hidden])', { timeout: 10000 });   // cross-origin admin login
     await page.evaluate(() => window._app.selectTab('server'));
     await page.waitForSelector('#adm-log .adm-log-row', { timeout: 10000 });
     assert.deepEqual(await page.evaluate(() => window.__csp), [], 'the app itself violates nothing');
