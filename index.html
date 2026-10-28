@@ -826,6 +826,36 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .server-result[data-tone="ok"] { color: var(--ok); }
 .server-result[data-tone="warn"] { color: var(--warn); }
 .server-result[data-tone="err"] { color: var(--danger); }
+
+/* Admin views — only after the SERVER accepted the admin password (see adminLogin) */
+.net-pill[data-admin] { cursor: pointer; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.net-pill[data-admin]:hover { background: var(--surface-2); color: var(--text-1); }
+.net-pill[data-admin]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tablist.has-admin { grid-template-columns: repeat(5, 1fr); }
+.adm-list { display: grid; gap: var(--sp-2); }
+.adm-dev { display: grid; gap: var(--sp-1); padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
+.adm-dev-head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.adm-id { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--text-1); }
+.adm-badge { font-size: var(--fs-caption); padding: 1px var(--sp-2); border-radius: var(--r-full); background: var(--surface-3); color: var(--text-2); }
+.adm-badge[data-on] { background: var(--accent-soft); color: var(--accent); }
+.adm-meta { font-size: var(--fs-xs); color: var(--text-2); }
+.adm-loc { display: flex; align-items: flex-start; gap: var(--sp-2); font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-1); overflow-wrap: anywhere; }
+.adm-loc .icon { flex: none; width: 1rem; height: 1rem; }
+.adm-note { font-size: var(--fs-xs); color: var(--text-3); line-height: 1.45; }
+.adm-tools { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+.adm-select { min-height: 44px; padding: 0 var(--sp-3); border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--text-1); }
+.adm-log { max-height: 28rem; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); font-family: var(--font-mono); font-size: 0.75rem; }
+.adm-log-row { display: grid; grid-template-columns: auto 3.2em 1fr; gap: var(--sp-2); padding: 3px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
+.adm-log-row:last-child { border-bottom: 0; }
+.adm-log-msg { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-1); }
+.adm-log-row[data-level="warn"] .adm-lvl { color: var(--warn); }
+.adm-log-row[data-level="error"] .adm-lvl { color: var(--danger); }
+.adm-table-wrap { overflow-x: auto; }
+/* Real tables at every width (scroll sideways), unlike the species table's phone cards */
+.adm-table { width: 100%; border-collapse: collapse; }
+.adm-table th { text-align: left; font-size: var(--fs-over); font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+.adm-table td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); color: var(--text-2); font-family: var(--font-mono); font-size: 0.75rem; white-space: nowrap; }
+.adm-section { display: grid; gap: var(--sp-3); }
 .about-foot { text-align: center; font-size: var(--fs-caption); color: var(--text-3); padding: var(--sp-6) 0 var(--sp-2); }
 
 /* ── Dialogs & sheets ──────────────────────────────────────────────────── */
@@ -1015,6 +1045,7 @@ legend { padding: 0; }
   .tab-ind { width: auto; height: auto; background: none !important; }
   .tab[aria-selected="true"] { background: var(--surface-3); color: var(--text-1); }
   .tab .icon { width: 1.125rem; height: 1.125rem; }
+  .tablist.has-admin .tab { padding: 0 var(--sp-3); }   /* the fifth (Server) tab must clear the top bar's pill */
   .toast, .det-toast, .install { bottom: calc(var(--sp-6) + var(--safe-b)); }
   .det-toast, .install { left: auto; right: calc(var(--sp-6) + var(--safe-r)); width: 26rem; }
   .listen-grid { grid-template-columns: minmax(22rem, 27rem) minmax(0, 1fr); align-items: start; gap: var(--sp-5); }
@@ -1136,6 +1167,9 @@ legend { padding: 0; }
       </button>
       <button class="tab" role="tab" id="tab-about" data-tab="about" aria-controls="panel-about" aria-selected="false" tabindex="-1">
         <span class="tab-ind"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg></span><span>About</span>
+      </button>
+      <button class="tab" role="tab" id="tab-server" data-tab="server" aria-controls="panel-server" aria-selected="false" tabindex="-1" hidden>
+        <span class="tab-ind"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg></span><span>Server</span>
       </button>
     </div>
   </nav>
@@ -1483,6 +1517,7 @@ legend { padding: 0; }
                 <dt>Model uploads</dt><dd id="dbg-last-upload">—</dd>
                 <dt>Device ID</dt><dd id="dbg-device-id">—</dd>
                 <dt>App version</dt><dd id="dbg-version">—</dd>
+                <dt>Admin</dt><dd id="dbg-admin">Not signed in</dd>
               </dl>
               <div><button class="btn btn-secondary" id="btn-test-server"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span id="btn-test-label">Test server connection</span></button></div>
               <div class="server-result" id="dbg-server-result" role="status" hidden></div>
@@ -1491,6 +1526,63 @@ legend { padding: 0; }
         </div>
 
         <p class="about-foot">MosquitoNet <span id="about-version"></span></p>
+      </div>
+    </section>
+
+    <!-- ══ SERVER (admin session only) ═════════════════════════════════ -->
+    <section class="panel" role="tabpanel" id="panel-server" aria-labelledby="tab-server" tabindex="0" hidden>
+      <div class="panel-inner">
+        <div class="panel-head">
+          <div>
+            <h1 class="panel-title">Server</h1>
+            <p class="panel-sub" id="adm-session">Admin session</p>
+          </div>
+          <div class="hist-actions">
+            <button class="btn btn-secondary" id="adm-refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button>
+            <button class="btn btn-secondary" id="adm-logout"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>End admin session</button>
+          </div>
+        </div>
+        <div class="server-result" id="adm-error" role="alert" data-tone="err" hidden></div>
+
+        <div class="card card-pad adm-section">
+          <h2 class="card-title">Health</h2>
+          <dl class="kv" id="adm-health"><dt>Status</dt><dd>—</dd></dl>
+        </div>
+
+        <div class="card card-pad adm-section" style="margin-top:var(--sp-4)">
+          <div class="adm-tools">
+            <h2 class="card-title" style="flex:1">Server log</h2>
+            <label class="sr-only" for="adm-log-level">Minimum level</label>
+            <select class="adm-select" id="adm-log-level">
+              <option value="debug">All levels</option>
+              <option value="info">Info and above</option>
+              <option value="warn">Warnings and errors</option>
+              <option value="error">Errors only</option>
+            </select>
+          </div>
+          <p class="adm-note" id="adm-log-sub">This process’s most recent log records, newest first. The full log is kept by the hosting platform.</p>
+          <div class="adm-log" id="adm-log" tabindex="0" aria-label="Server log"></div>
+        </div>
+
+        <div class="card card-pad adm-section" style="margin-top:var(--sp-4)">
+          <div class="adm-tools">
+            <h2 class="card-title" style="flex:1">Stored detections</h2>
+            <button class="btn btn-ghost" id="adm-det-clear" hidden>Show all devices</button>
+          </div>
+          <p class="adm-note" id="adm-det-sub">—</p>
+          <div class="adm-table-wrap"><table class="adm-table" id="adm-det"><caption class="sr-only">Detections stored on the server</caption></table></div>
+        </div>
+
+        <div class="card card-pad adm-section" style="margin-top:var(--sp-4)">
+          <h2 class="card-title">Data directory</h2>
+          <p class="adm-note" id="adm-files-sub">—</p>
+          <div class="adm-table-wrap"><table class="adm-table" id="adm-files"><caption class="sr-only">Files in the server’s data directory</caption></table></div>
+        </div>
+
+        <div class="card card-pad adm-section" style="margin-top:var(--sp-4)">
+          <h2 class="card-title">Configuration</h2>
+          <dl class="kv" id="adm-config"><dt>Service</dt><dd>—</dd></dl>
+        </div>
       </div>
     </section>
 
@@ -1682,6 +1774,25 @@ legend { padding: 0; }
   </form>
 </dialog>
 
+<!-- Top bar "N listening" → active devices (admin session only) -->
+<dialog class="sheet" id="dlg-admin-devices" aria-labelledby="adm-dev-title">
+  <div class="sheet-grab" aria-hidden="true"></div>
+  <div class="dlg-head">
+    <h2 id="adm-dev-title">Connected devices</h2>
+    <button class="icon-btn" data-close aria-label="Close connected devices"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="dlg-body">
+    <p class="setting-label" id="adm-dev-summary" role="status">Loading…</p>
+    <p class="adm-note">Active in the last <span id="adm-dev-window">90</span> s. A location appears only when the device shared it with a detection, exactly as it arrived: already moved on the device by its fixed secret offset of up to ~1.5 km. Heartbeats carry no location.</p>
+    <div class="adm-list" id="adm-dev-list"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn btn-secondary" id="adm-dev-map"><svg class="icon" aria-hidden="true"><use href="#i-map"/></svg>Show on map</button>
+    <button class="btn btn-secondary" id="adm-dev-server"><svg class="icon" aria-hidden="true"><use href="#i-code"/></svg>Server</button>
+    <button class="btn btn-secondary" id="adm-dev-refresh"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button>
+  </div>
+</dialog>
+
 <!-- ══ FEEDBACK SURFACES ══════════════════════════════════════════════ -->
 <div class="toast" id="toast" role="status" aria-live="polite"><svg class="icon" aria-hidden="true"><use id="toast-ico" href="#i-check-circle"/></svg><span id="toast-text"></span></div>
 <div class="sr-only" id="announcer" aria-live="polite" aria-atomic="true"></div>
@@ -1848,6 +1959,11 @@ function fmtDuration(ms) {
   return r ? `${h} h ${r} min` : `${h} h`;
 }
 const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+// "Today, 14:32" from epoch ms or an ISO string; '—' when it doesn't parse.
+function fmtStamp(t) {
+  const d = new Date(t);
+  return Number.isFinite(d.getTime()) ? `${fmtDay(d)}, ${fmtTime(d)}` : '—';
+}
 function fmtAgo(ms) {
   const s = Math.round(ms / 1000);
   if (s < 10) return 'just now';
@@ -1873,45 +1989,6 @@ const ACTIVITY = {
   dusk:  { icon: 'dusk', label: 'Dusk & dawn' },
   day:   { icon: 'sun',  label: 'Day' },
 };
-
-// About → Advanced is behind a password. The page is public, so this only keeps
-// casual users out of the diagnostics; it ships the SHA-256, never the password.
-const ADVANCED_PW_SHA256 = 'e85de69f5bf2320774bc40924b4e2c53d167ea6741197ca80181d60eef63bbe8';
-
-// SHA-256 of a string (UTF-8), as hex. Synchronous and self-contained:
-// crypto.subtle is missing on plain-http origins (LAN testing).
-function sha256Hex(str) {
-  const primes = [];
-  for (let n = 2; primes.length < 64; n++) if (primes.every(p => n % p)) primes.push(n);
-  const frac = (x) => (x - Math.floor(x)) * 4294967296 >>> 0;
-  const K = primes.map(p => frac(Math.cbrt(p)));
-  const H = primes.slice(0, 8).map(p => frac(Math.sqrt(p)));
-  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-  const bytes = new TextEncoder().encode(String(str));
-  const size = Math.ceil((bytes.length + 9) / 64) * 64;
-  const buf = new Uint8Array(size);
-  buf.set(bytes);
-  buf[bytes.length] = 0x80;
-  const dv = new DataView(buf.buffer);
-  dv.setUint32(size - 8, Math.floor(bytes.length / 0x20000000));   // message length in bits, 64-bit big-endian
-  dv.setUint32(size - 4, (bytes.length * 8) >>> 0);
-  const W = new Uint32Array(64);                                      // stores wrap mod 2^32
-  for (let off = 0; off < size; off += 64) {
-    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + 4 * i);
-    for (let i = 16; i < 64; i++) {
-      const x = W[i - 15], y = W[i - 2];
-      W[i] = W[i - 16] + (rotr(x, 7) ^ rotr(x, 18) ^ (x >>> 3)) + W[i - 7] + (rotr(y, 17) ^ rotr(y, 19) ^ (y >>> 10));
-    }
-    let [a, b, c, d, e, f, g, h] = H;
-    for (let i = 0; i < 64; i++) {
-      const t1 = h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i];
-      const t2 = (rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
-      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
-    }
-    [a, b, c, d, e, f, g, h].forEach((v, i) => { H[i] = (H[i] + v) >>> 0; });
-  }
-  return H.map(x => x.toString(16).padStart(8, '0')).join('');
-}
 
 // Short, sober guidance for the person who just heard a mosquito.
 function guidanceFor(sp, genus) {
@@ -2610,6 +2687,36 @@ class MapController {
 
     // Apply GPS location if it arrived before map was ready
     if (this._pendingLat !== undefined) this.applyPendingUserLocation();
+    if (this._adminPoints) this.drawAdminPoints(true);
+  }
+
+  // Admin session: the locations connected devices shared with their
+  // detections (null clears). Drawn now, or as soon as the map exists.
+  setAdminPoints(points) {
+    this._adminPoints = points && points.length ? points : null;
+    if (this.map) this.drawAdminPoints(true);
+  }
+
+  drawAdminPoints(fit) {
+    if (this._adminLayer) { try { this.map.removeLayer(this._adminLayer); } catch (e) {} this._adminLayer = null; }
+    const pts = this._adminPoints;
+    if (!pts || typeof L === 'undefined') return;
+    this._adminLayer = L.layerGroup().addTo(this.map);
+    for (const p of pts) {
+      L.circleMarker([p.lat, p.lng], {
+        radius: p.latest ? 8 : 5, color: '#eef3f4', weight: p.latest ? 2 : 1,
+        fillColor: '#5cd6c2', fillOpacity: p.latest ? 0.9 : 0.45,
+      }).addTo(this._adminLayer).bindPopup(
+        `<span class="pop-title">Device ${esc(String(p.device).slice(0, 8))}</span><br>` +
+        `${esc(p.name || p.species || '')}${Number.isFinite(p.conf) ? ` · ${Math.round(p.conf * 100)}%` : ''}<br>` +
+        `<small>${esc(fmtStamp(p.ts))} · shared location, offset on the device by up to ~1.5 km</small>`);
+    }
+    if (fit) {
+      try {
+        this.map.invalidateSize();
+        this.map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lng])), { padding: [40, 40], maxZoom: 11 });
+      } catch (e) {}
+    }
   }
 
   applyPendingUserLocation() {
@@ -3184,6 +3291,7 @@ class App {
     this.wireSettings();
     this.wireDialogs();
     this.wireAdvanced();
+    this.wireAdmin();
     this.wireMap();
     this.wireHistory();
     this.wireShare();
@@ -3349,10 +3457,10 @@ class App {
   // ═══ Tabs (WAI-ARIA tabs pattern: roving tabindex + arrow keys) ═══════
   wireTabs() {
     this.tabs = $$('[role="tab"]');
-    const n = this.tabs.length;
-    this.tabs.forEach((tab, i) => {
+    this.tabs.forEach((tab) => {
       tab.addEventListener('click', () => this.selectTab(tab.dataset.tab));
       tab.addEventListener('keydown', (e) => {
+        const shown = this.tabs.filter(t => !t.hidden), n = shown.length, i = shown.indexOf(tab);
         let j = null;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % n;
         else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + n) % n;
@@ -3360,7 +3468,7 @@ class App {
         else if (e.key === 'End') j = n - 1;
         if (j === null) return;
         e.preventDefault();
-        this.selectTab(this.tabs[j].dataset.tab, { focus: true });
+        this.selectTab(shown[j].dataset.tab, { focus: true });
       });
     });
     $('#brand-link').addEventListener('click', (e) => { e.preventDefault(); this.selectTab('listen'); });
@@ -3368,8 +3476,12 @@ class App {
     $$('[data-open]').forEach(b => b.addEventListener('click', () => this.openDialog(b.dataset.open)));
   }
 
+  tabNames() {
+    return this._admin ? ['listen', 'map', 'history', 'about', 'server'] : ['listen', 'map', 'history', 'about'];
+  }
+
   selectTab(name, opts = {}) {
-    if (!['listen', 'map', 'history', 'about'].includes(name)) return;
+    if (!this.tabNames().includes(name)) return;
     this.activeTab = name;
     this.tabs.forEach(t => {
       const on = t.dataset.tab === name;
@@ -3382,10 +3494,11 @@ class App {
     if (name === 'map') this.ensureMap();
     if (name === 'history') this.renderHistory();
     if (name === 'listen') this.hideDetToast();
+    if (name === 'server') this.refreshAdminServer();
   }
 
   goto(target) {
-    if (['listen', 'map', 'history', 'about'].includes(target)) { this.selectTab(target); return; }
+    if (this.tabNames().includes(target)) { this.selectTab(target); return; }
     const el = document.getElementById(target);
     if (!el) return;
     const panel = el.closest('[role="tabpanel"]');
@@ -3540,9 +3653,12 @@ class App {
     const d = document.getElementById(id);
     if (d && d.open) { try { d.close(); } catch (e) { d.removeAttribute('open'); } }
   }
-  // About → Advanced opens only with the password; unlocked until the app reloads.
+  // About → Advanced opens only with the admin password, which this page never
+  // holds in any form (not even a hash): the server checks it (adminLogin), and
+  // Advanced stays open for as long as that admin session lasts.
   wireAdvanced() {
     const adv = $('#about-advanced'), form = $('#adv-form'), pw = $('#adv-pw'), err = $('#adv-error');
+    const submit = $('button[type="submit"]', form);
     this._advUnlocked = false;
     const ask = () => {
       pw.value = '';
@@ -3559,23 +3675,302 @@ class App {
     adv.addEventListener('toggle', () => {
       if (adv.open && !this._advUnlocked) { adv.open = false; ask(); }
     });
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (sha256Hex(pw.value) !== ADVANCED_PW_SHA256) {
+      if (submit.disabled) return;
+      submit.disabled = true;
+      setText(submit, 'Checking…');
+      const r = await this.adminLogin(pw.value);
+      submit.disabled = false;
+      setText(submit, 'Unlock');
+      if (!r.ok) {
+        setText(err, r.status === 429 ? 'Too many attempts. Wait a minute, then try again.'
+                   : r.status === 0 ? 'Wrong password, or the server could not be reached to check it.'
+                   : 'Wrong password.');
         setHidden(err, false);
         pw.select();
         return;
       }
       this._advUnlocked = true;
       pw.value = '';
-      const lock = $('.adv-lock', adv);
-      lock.classList.replace('adv-lock', 'chev');
-      lock.removeAttribute('role'); lock.removeAttribute('aria-label'); lock.setAttribute('aria-hidden', 'true');
-      $('use', lock).setAttribute('href', '#i-chevron-down');
+      this.setAdvancedLock(false);
       this.closeDialog('dlg-adv');
       adv.open = true;
       this.updateFedStatus();
     });
+  }
+
+  setAdvancedLock(locked) {
+    const lock = $('summary > svg:last-child', $('#about-advanced'));
+    lock.classList.toggle('adv-lock', locked);
+    lock.classList.toggle('chev', !locked);
+    if (locked) { lock.setAttribute('role', 'img'); lock.setAttribute('aria-label', 'Password required'); lock.removeAttribute('aria-hidden'); }
+    else { lock.removeAttribute('role'); lock.removeAttribute('aria-label'); lock.setAttribute('aria-hidden', 'true'); }
+    $('use', lock).setAttribute('href', locked ? '#i-lock' : '#i-chevron-down');
+  }
+
+  // ═══ Admin session ═════════════════════════════════════════════════════
+  // POST /admin/login checks the server's ADMIN_PASSWORD and answers with a
+  // bearer token. The token lives in this object only, never in storage: admin
+  // access belongs to this tab and ends on reload, on "End admin session", or
+  // when the server lets it expire. Everything shown comes from the server as
+  // stored — locations only as devices shared them with their detections.
+  async adminLogin(password) {
+    const url = window.SERVER_URL;
+    if (!url || !password) return { ok: false, status: 0 };
+    try {
+      const resp = await fetchWithTimeout(`${url}/admin/login`, {
+        method: 'POST', mode: 'cors', cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },   // a "simple" request: no preflight
+        body: JSON.stringify({ password, deviceId: this.fedClient.getAnonymousId() }),
+      }, 8000);
+      const d = resp.ok ? await resp.json() : null;
+      if (!d || typeof d.token !== 'string') return { ok: false, status: resp.status };
+      this.enableAdmin({ token: d.token, url, exp: Date.now() + (Number(d.expires_in) || 0) * 1000 });
+      return { ok: true, status: resp.status };
+    } catch (e) {
+      return { ok: false, status: 0 };
+    }
+  }
+
+  async adminFetch(path) {
+    const a = this._admin;
+    if (!a) throw new Error('not signed in');
+    const resp = await fetchWithTimeout(a.url + path, {
+      mode: 'cors', cache: 'no-store', headers: { Authorization: 'Bearer ' + a.token },
+    }, 10000);
+    if (resp.status === 401 || resp.status === 404) {
+      if (this._admin === a) this.disableAdmin('Admin session ended — unlock Advanced again to continue');
+      throw new Error('admin session ended');
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  enableAdmin(session) {
+    this._admin = session;
+    clearTimeout(this._adminExpT);
+    this._adminExpT = setTimeout(() => {
+      if (this._admin === session) this.disableAdmin('Admin session expired');
+    }, Math.max(0, session.exp - Date.now()));
+    clearInterval(this._adminTimer);
+    this._adminTimer = setInterval(() => this.adminTick(), 10000);
+    const pill = $('#net-pill');
+    pill.setAttribute('data-admin', '');
+    pill.setAttribute('role', 'button');
+    pill.setAttribute('aria-haspopup', 'dialog');
+    pill.setAttribute('aria-controls', 'dlg-admin-devices');
+    pill.tabIndex = 0;
+    $('#tab-server').hidden = false;
+    $('.tablist').classList.add('has-admin');
+    this.setNet(this._netState || 'connecting', this._netLive);
+    this.updateFedStatus();
+    this.showToast('Admin session — tap “listening” to see connected devices', 'shield');
+  }
+
+  // Ends the session in this tab and wipes every admin view from the page.
+  disableAdmin(msg) {
+    if (!this._admin) return;
+    this._admin = null;
+    clearTimeout(this._adminExpT);
+    clearInterval(this._adminTimer);
+    const pill = $('#net-pill');
+    ['data-admin', 'role', 'aria-haspopup', 'aria-controls', 'tabindex'].forEach(a => pill.removeAttribute(a));
+    $('#tab-server').hidden = true;
+    $('.tablist').classList.remove('has-admin');
+    if (this.activeTab === 'server') this.selectTab('about');
+    this.closeDialog('dlg-admin-devices');
+    if (this._advUnlocked) {
+      this._advUnlocked = false;
+      $('#about-advanced').open = false;
+      this.setAdvancedLock(true);
+    }
+    this._admDevices = null;
+    this._admDevFilter = '';
+    ['#adm-dev-list', '#adm-log', '#adm-det', '#adm-files'].forEach(sel => { $(sel).innerHTML = ''; });
+    $('#adm-health').innerHTML = $('#adm-config').innerHTML = '';
+    try { this.mapCtrl.setAdminPoints(null); } catch (e) {}
+    this.setNet(this._netState || 'connecting', this._netLive);
+    this.updateFedStatus();
+    if (msg) this.showToast(msg, 'lock');
+  }
+
+  async adminLogout() {
+    const a = this._admin;
+    this.disableAdmin('Admin session ended');
+    if (!a) return;
+    try {
+      await fetchWithTimeout(`${a.url}/admin/logout`, {
+        method: 'POST', mode: 'cors', cache: 'no-store', headers: { Authorization: 'Bearer ' + a.token },
+      }, 6000);
+    } catch (e) { /* it expires on the server anyway */ }
+  }
+
+  wireAdmin() {
+    const pill = $('#net-pill');
+    pill.addEventListener('click', () => { if (this._admin) this.openAdminDevices(); });
+    pill.addEventListener('keydown', (e) => {
+      if (this._admin && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); this.openAdminDevices(); }
+    });
+    $('#adm-dev-refresh').addEventListener('click', () => this.refreshAdminDevices());
+    $('#adm-dev-map').addEventListener('click', () => this.showAdminDevicesOnMap());
+    $('#adm-dev-server').addEventListener('click', () => { this.closeDialog('dlg-admin-devices'); this.selectTab('server'); });
+    $('#adm-dev-list').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-adm-device]');
+      if (!b) return;
+      this._admDevFilter = b.dataset.admDevice;
+      this.closeDialog('dlg-admin-devices');
+      this.selectTab('server');
+    });
+    $('#adm-refresh').addEventListener('click', () => this.refreshAdminServer());
+    $('#adm-logout').addEventListener('click', () => this.adminLogout());
+    $('#adm-log-level').addEventListener('change', () => this.refreshAdminServer());
+    $('#adm-det-clear').addEventListener('click', () => { this._admDevFilter = ''; this.refreshAdminServer(); });
+  }
+
+  adminTick() {
+    if (!this._admin || document.hidden) return;
+    if ($('#dlg-admin-devices').open) this.refreshAdminDevices();
+    if (this.activeTab === 'server') this.refreshAdminServer();
+    if (this.activeTab === 'about') this.updateFedStatus();
+  }
+
+  openAdminDevices() {
+    this.openDialog('dlg-admin-devices');
+    this.refreshAdminDevices();
+  }
+
+  async refreshAdminDevices() {
+    if (!this._admin || this._admDevBusy) return;
+    this._admDevBusy = true;
+    try {
+      const d = await this.adminFetch('/admin/devices?limit=500');
+      if (!this._admin) return;
+      this._admDevices = d;
+      this.renderAdminDevices(d);
+    } catch (e) {
+      if (this._admin) setText($('#adm-dev-summary'), `Could not load devices: ${e.message}`);
+    } finally {
+      this._admDevBusy = false;
+    }
+  }
+
+  renderAdminDevices(d) {
+    const num = (v) => (Number(v) || 0).toLocaleString();
+    const coord = (v) => (Number.isFinite(v) ? v.toFixed(4) : '—');
+    setText($('#adm-dev-window'), String(d.active_window_s || 90));
+    setText($('#adm-dev-summary'), `${num(d.active)} connected · ${num(d.listening)} listening · ` +
+      `${num(d.with_location)} shared a location${d.returned < d.active ? ` · showing ${num(d.returned)}` : ''}`);
+    const rows = (d.devices || []).map((x) => {
+      const state = x.listening === true ? 'Listening' : x.listening === false ? 'App open' : 'Connected';
+      const meta = [`seen ${fmtAgo((Number(x.last_seen_s) || 0) * 1000)}`];
+      if (x.session_start) meta.push(`session since ${fmtDay(x.session_start)}, ${fmtTime(x.session_start)}`);
+      if (x.app_version) meta.push('v' + x.app_version);
+      meta.push(x.detections ? `${num(x.detections)} detection${x.detections === 1 ? '' : 's'} shared` : 'no detections shared');
+      const loc = x.locations && x.locations[0];
+      const locLine = loc
+        ? `<div class="adm-loc">${icon('pin')}<span>${coord(loc.lat)}, ${coord(loc.lng)} · ${esc(loc.name || loc.species || '')} · ` +
+          `${esc(fmtStamp(loc.ts))}${x.locations.length > 1 ? ` · ${x.locations.length} locations shared` : ''}</span></div>`
+        : `<div class="adm-meta">No location shared</div>`;
+      return `<div class="adm-dev">
+        <div class="adm-dev-head"><span class="adm-id">${esc(String(x.device).slice(0, 8))}</span>` +
+        `<span class="adm-badge"${x.listening === true ? ' data-on' : ''}>${state}</span></div>
+        <div class="adm-meta">${esc(meta.join(' · '))}</div>${locLine}` +
+        (x.detections ? `<div><button class="link-btn" data-adm-device="${esc(x.device)}" style="min-height:0">View its detections</button></div>` : '') +
+        `</div>`;
+    });
+    $('#adm-dev-list').innerHTML = rows.join('') || '<p class="adm-note">No device is connected right now.</p>';
+  }
+
+  showAdminDevicesOnMap() {
+    const pts = [];
+    for (const x of (this._admDevices && this._admDevices.devices) || []) {
+      (x.locations || []).forEach((l, i) => {
+        if (Number.isFinite(l.lat) && Number.isFinite(l.lng)) pts.push({ ...l, device: x.device, latest: i === 0 });
+      });
+    }
+    if (!pts.length) { this.showToast('No connected device has shared a location', 'alert'); return; }
+    this.closeDialog('dlg-admin-devices');
+    this.selectTab('map');
+    // After the panel is shown, so the map measures its real size before fitting.
+    requestAnimationFrame(() => this.mapCtrl.setAdminPoints(pts));
+  }
+
+  async refreshAdminServer() {
+    if (!this._admin || this._admSrvBusy) return;
+    this._admSrvBusy = true;
+    const dev = this._admDevFilter || '';
+    try {
+      const [srv, logs, dets] = await Promise.all([
+        this.adminFetch('/admin/server'),
+        this.adminFetch('/admin/logs?limit=300&level=' + encodeURIComponent($('#adm-log-level').value)),
+        this.adminFetch('/admin/detections?limit=100' + (dev ? '&device=' + encodeURIComponent(dev) : '')),
+      ]);
+      if (!this._admin) return;
+      setHidden($('#adm-error'), true);
+      this.renderAdminServer(srv, logs, dets, dev);
+    } catch (e) {
+      if (this._admin) { setText($('#adm-error'), `Could not load the server view: ${e.message}`); setHidden($('#adm-error'), false); }
+    } finally {
+      this._admSrvBusy = false;
+    }
+  }
+
+  renderAdminServer(srv, logs, dets, dev) {
+    const num = (v) => (Number.isFinite(v) ? v.toLocaleString() : '—');
+    const kv = (pairs) => pairs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v === null || v === undefined || v === '' ? '—' : v)}</dd>`).join('');
+    const bytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+    const h = srv.health || {}, c = srv.config || {}, a = srv.admin || {};
+
+    setText($('#adm-session'), `Admin session · this tab only · ends in ${Math.max(1, Math.round((a.expires_in || 0) / 60))} min` +
+      (a.sessions > 1 ? ` · ${a.sessions} admin sessions open` : ''));
+    $('#adm-health').innerHTML = kv([
+      ['Status', h.status], ['Service', h.service],
+      ['Uptime', fmtDuration((h.uptime_seconds || 0) * 1000)],
+      ['Storage', h.ephemeral ? `EPHEMERAL — ${h.ephemeral_reason}` : 'Persistent'],
+      ['Writable', h.writable ? 'Yes' : 'No'], ['Disk free', Number.isFinite(h.disk_free_mb) ? `${num(h.disk_free_mb)} MB` : null],
+      ['Single instance', h.single_instance === null ? null : h.single_instance ? 'Yes' : 'NO — another process holds DATA_DIR'],
+      ['Connected now', num(h.active_now)], ['Devices ever', num(h.unique_devices)], ['Sessions', num(h.total_sessions)],
+      ['Detections', `${num(h.total_detections)} total · ${num(h.log_size)} in memory (cap ${num(h.log_cap)})`],
+      ['Model', `round ${num(h.total_rounds)} · ${num(h.total_uploads)} uploads`],
+      ['Last state save', h.last_state_save ? fmtStamp(h.last_state_save) : null],
+      ['Counters', Object.entries(h.counters || {}).map(([k, v]) => `${k} ${v}`).join(' · ')],
+    ]);
+
+    const lv = (logs.logs || []).map((r) => {
+      const t = new Date((r.t || 0) * 1000);
+      return `<div class="adm-log-row" data-level="${esc(r.level)}"><span title="${esc(t.toISOString())}">` +
+        `${esc(t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span>` +
+        `<span class="adm-lvl">${esc(r.level)}</span><span class="adm-log-msg">${esc(r.msg)}</span></div>`;
+    });
+    $('#adm-log').innerHTML = lv.join('') || '<p class="adm-note">No log records at this level.</p>';
+
+    const rows = (dets.detections || []).map((e) => `<tr><td>${esc(e.id)}</td><td>${esc(fmtStamp(e.ts))}</td>` +
+      `<td>${esc(String(e.device || '').slice(0, 8))}</td><td>${esc(e.name || e.species)}</td>` +
+      `<td>${esc(Number.isFinite(e.conf) ? e.conf.toFixed(2) : '—')}</td><td>${esc(Number.isFinite(e.freq) ? e.freq.toFixed(1) : '—')}</td>` +
+      `<td>${esc(Number.isFinite(e.lat) ? `${e.lat.toFixed(4)}, ${e.lng.toFixed(4)}` : '—')}</td><td>${esc(e.appVersion || '—')}</td></tr>`);
+    $('#adm-det').innerHTML = `<caption class="sr-only">Detections stored on the server</caption>` +
+      `<thead><tr><th scope="col">#</th><th scope="col">Time</th><th scope="col">Device</th><th scope="col">Species</th>` +
+      `<th scope="col">Conf</th><th scope="col">Hz</th><th scope="col">Shared location</th><th scope="col">App</th></tr></thead>` +
+      `<tbody>${rows.join('') || '<tr><td colspan="8">None</td></tr>'}</tbody>`;
+    setText($('#adm-det-sub'), `${dev ? `Device ${dev.slice(0, 8)} · ` : ''}newest ${num(dets.returned)} of ` +
+      `${num(dets.total_log)} in memory · ${num(dets.total_ever)} ever. Locations as the device shared them (its own offset, up to ~1.5 km).`);
+    setHidden($('#adm-det-clear'), !dev);
+
+    const files = (srv.files || []).filter(f => f.name);
+    $('#adm-files').innerHTML = `<caption class="sr-only">Files in the server’s data directory</caption>` +
+      `<thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col">Modified</th></tr></thead><tbody>` +
+      (files.map(f => `<tr><td>${esc(f.name)}${f.dir ? '/' : ''}</td><td>${esc(f.dir ? '—' : bytes(f.size))}</td>` +
+        `<td>${esc(fmtStamp(f.mtime))}</td></tr>`).join('') || '<tr><td colspan="3">Empty</td></tr>') + '</tbody>';
+    setText($('#adm-files-sub'), `${c.data_dir || '—'} · names and sizes only`);
+
+    $('#adm-config').innerHTML = kv([
+      ['Service', c.service], ['Commit', c.commit], ['Data directory', c.data_dir], ['Log format', c.log_format],
+      ['Detections kept in memory', num(c.detection_log_max)], ['Active window', `${c.active_sec} s`],
+      ['Rate-limit scale', c.rate_limit_scale], ['Trusted proxy hops', c.trusted_proxy_hops],
+      ['Public offset', `${c.public_geo_offset}° · ${c.public_coord_decimals} decimals`],
+      ['Extra origins', (c.extra_origins || []).join(', ') || 'none'], ['Site files', c.site_files],
+    ]);
   }
 
   openOnboarding() { this.openDialog('dlg-onboarding'); }
@@ -3968,13 +4363,15 @@ class App {
 
   setNet(state, live) {
     const pill = $('#net-pill');
+    this._netState = state; this._netLive = live;
     setAttr(pill, 'data-net', state);
     const text = state === 'online' ? (live > 0 ? `${live.toLocaleString()} listening` : 'Online')
                : state === 'offline' ? 'Offline' : 'Connecting';
     setText($('#net-text'), text);
-    setAttr(pill, 'title', state === 'online'
+    setAttr(pill, 'title', (state === 'online'
       ? `Connected to the MosquitoNet network${live > 0 ? ` — ${live} devices listening now` : ''}`
-      : state === 'offline' ? 'Offline — detections are queued and uploaded later' : 'Connecting to the MosquitoNet network');
+      : state === 'offline' ? 'Offline — detections are queued and uploaded later' : 'Connecting to the MosquitoNet network')
+      + (this._admin ? ' · tap to see connected devices' : ''));
   }
 
   // Community total — only ever goes up (a stale heartbeat must not lower it).
@@ -4873,6 +5270,9 @@ class App {
         ? `${s.uploadSuccess} sent · ${s.uploadFailed} failed${s.lastUpload ? ` · last ${when(s.lastUpload)}` : ''}`
         : 'None yet');
       setText($('#dbg-device-id'), this.fedClient.getAnonymousId().slice(0, 8) + '…');
+      setText($('#dbg-admin'), this._admin
+        ? `Signed in · this tab only · ends in ${Math.max(1, Math.round((this._admin.exp - now) / 60000))} min`
+        : 'Not signed in');
     } catch (e) { /* diagnostics are best-effort */ }
   }
 
