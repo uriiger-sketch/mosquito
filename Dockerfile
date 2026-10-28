@@ -24,8 +24,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # The entrypoint starts as root ONLY to hand DATA_DIR to `app` — platform
 # volumes (Railway, Render, host bind mounts) are mounted root-owned, and data
 # written by images before v13 is root-owned too — then drops privileges for
-# good with setpriv: gunicorn runs as `app` with no capabilities and no root
-# process remains. If the directory still isn't writable by `app` (e.g. an NFS
+# good with setpriv: gunicorn runs as `app` with no capabilities, an empty
+# capability bounding set and no_new_privs (setuid helpers in the base image —
+# su, mount — can't elevate it), and no root process remains. If the directory still isn't writable by `app` (e.g. an NFS
 # volume that refuses chown) it stays root with a loud warning rather than
 # turning every detection into a 503. Started with `--user`, it runs as-is.
 # (Single quotes below are deliberate: the script is written out verbatim.)
@@ -40,7 +41,7 @@ RUN groupadd --system --gid 10001 app \
       'if [ "$(id -u)" = 0 ]; then' \
       '  mkdir -p "$DATA_DIR" && chown -R app:app "$DATA_DIR"' \
       '  if setpriv --reuid=app --regid=app --init-groups test -w "$DATA_DIR"; then' \
-      '    exec setpriv --reuid=app --regid=app --init-groups --inh-caps=-all "$@"' \
+      '    exec setpriv --reuid=app --regid=app --init-groups --inh-caps=-all --bounding-set=-all --no-new-privs "$@"' \
       '  fi' \
       '  echo "[entrypoint] WARNING: $DATA_DIR is not writable by uid 10001 - running as ROOT" >&2' \
       'fi' \

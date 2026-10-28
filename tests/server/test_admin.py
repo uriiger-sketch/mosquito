@@ -69,6 +69,12 @@ def test_right_password_returns_an_expiring_token(ac, admin_srv):
     assert admin_srv.counters['admin_logins'] == 1
 
 
+def test_login_log_names_the_ip_but_no_device(ac, capsys):
+    login(ac)
+    line = next(l for l in capsys.readouterr().out.splitlines() if 'login from' in l)
+    assert line.endswith('login from 127.0.0.1')
+
+
 def test_env_password_whitespace_is_ignored(harness):
     srv = harness.start(ADMIN_PASSWORD=f'  {PW}\n')
     assert login(srv.app.test_client()).status_code == 200

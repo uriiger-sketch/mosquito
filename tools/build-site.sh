@@ -35,6 +35,11 @@ find . -type f -name '*.md' -delete
 
 # Fail loudly rather than publish something broken or private.
 test -f index.html || { echo "::error::index.html missing from the site"; exit 1; }
+# Regular files and directories only. A symlink would be published as its
+# target — by Pages (the artifact dereferences links) and by the backend — so a
+# link to /proc/self/environ or DATA_DIR would hand out secrets and user data.
+odd=$(find . ! -type f ! -type d -print)
+if [ -n "$odd" ]; then echo "::error::symlinks or special files in the site:"; echo "$odd"; exit 1; fi
 # Stamp the app-code URLs with this commit so a new index.html can never run
 # against a cached copy of the previous js/*.js (version skew).
 sed -i -E 's#(src="js/[a-z-]+\.js)\?v=[^"]*"#\1?v='"${SHA::12}"'"#g' index.html
@@ -47,14 +52,23 @@ if [ -n "${SERVER_URLS:-}" ]; then
   node "$ROOT/tools/set-server-urls.js" index.html "$SERVER_URLS"
 fi
 grep -m1 '^const SERVER_URLS = ' index.html
+# Read before minification renames it; the CSP <meta> below allows exactly these.
+URLS=$(sed -n -E "s/^const SERVER_URLS = \[(.*)\];$/\1/p" index.html | tr -d "' ")
 
 node "$ROOT/tools/minify-site.js" .
 grep -qE "[\"']${VERSION//./\\.}[\"']" index.html || { echo "::error::version $VERSION lost in minification"; exit 1; }
+# The page's CSP as a <meta> too, for hosts that can't send headers (Pages).
+node "$ROOT/tools/csp-meta.js" index.html "$URLS"
+grep -q 'http-equiv="Content-Security-Policy"' index.html || { echo "::error::CSP meta missing"; exit 1; }
+# Again on what ships: the npm minifiers ran since the first check.
+odd=$(find . ! -type f ! -type d -print)
+if [ -n "$odd" ]; then echo "::error::symlinks or special files in the site:"; echo "$odd"; exit 1; fi
 
-for p in federated_server.py gunicorn.conf.py Dockerfile Procfile railway.json requirements.txt package.json tests tools site .github; do
+for p in federated_server.py gunicorn.conf.py Dockerfile Procfile railway.json requirements.txt package.json tests tools site .github .claude; do
   if [ -e "$p" ]; then echo "::error::$p leaked into the site"; exit 1; fi
 done
-leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' -o -name '*.map' \) -print)
+leaked=$(find . \( -name '*.md' -o -name '.git*' -o -name node_modules -o -name '*.py' -o -name '*.map' \
+                 -o -name '*.jsonl' -o -name '.env*' -o -name '.server_secret' -o -name '*.pem' -o -name '*.key' \) -print)
 if [ -n "$leaked" ]; then echo "::error::non-site files in the site:"; echo "$leaked"; exit 1; fi
 
 echo "Built v$VERSION: $(find . -type f | wc -l) files, $(du -sh . | cut -f1):"

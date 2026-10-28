@@ -40,6 +40,7 @@ class Harness:
             'TRUSTED_PROXY_HOPS': '1',
             'PSEUDONYM_SECRET': 'test-secret',
             'PUBLIC_GEO_OFFSET': '0',       # exact coordinates; offset tests turn it on
+            'PUBLIC_COORD_STEP': '0',       # no public grid either; grid tests turn it on
         }
 
     def start(self, **env):

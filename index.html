@@ -700,7 +700,10 @@ button.sp-tile:hover { background: var(--surface-3); }
 /* Night map: tiles dimmed with opacity over the dark container. Not a CSS filter:
    a filter (or backdrop-filter) costs a full-screen render pass on every frame
    the map draws, and on phones that saturated the GPU until the app froze. */
-.leaflet-tile-pane { opacity: 0.3; }
+/* The light OSM tiles, toned for the dark UI: continents, borders and labels
+   stay readable (at 0.3 they washed out) without glaring at the bedside. */
+.leaflet-tile-pane { opacity: 0.75; }
+.leaflet-tile { filter: brightness(0.82) contrast(1.25) saturate(0.75); }
 .leaflet-bar { border: 1px solid var(--line-strong) !important; border-radius: var(--r-md) !important; box-shadow: var(--e-2) !important; overflow: hidden; }
 .leaflet-bar a, .leaflet-bar a:hover {
   width: 44px !important; height: 44px !important; line-height: 44px !important;
@@ -736,6 +739,7 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 /* ── HISTORY ───────────────────────────────────────────────────────────── */
 .hist-grid { display: grid; gap: var(--sp-4); }
 .stat-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+#hist-tiles { grid-template-columns: 1fr 1fr !important; }   /* two tiles at every width */
 .stat-tile { padding: var(--sp-4); display: grid; gap: 2px; align-content: start; }
 .stat-val { font-size: 1.75rem; font-weight: 620; letter-spacing: -0.02em; line-height: 1.1; }
 .stat-val.sci { font-size: 1.375rem; font-weight: 400; letter-spacing: 0; line-height: 1.2; }
@@ -821,7 +825,6 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var
 .kv { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-4); font-size: var(--fs-xs); }
 .kv dt { color: var(--text-3); }
 .kv dd { color: var(--text-1); font-family: var(--font-mono); font-size: 0.75rem; overflow-wrap: anywhere; }
-.fed-bar { margin: var(--sp-2) 0; }
 .server-result { font-family: var(--font-mono); font-size: 0.75rem; padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); word-break: break-word; white-space: pre-line; }
 .server-result[data-tone="ok"] { color: var(--ok); }
 .server-result[data-tone="warn"] { color: var(--warn); }
@@ -1386,15 +1389,8 @@ legend { padding: 0; }
             <div class="chart-box" id="hour-chart"></div>
           </section>
 
-          <section class="card" aria-labelledby="hs-title">
-            <div class="card-head"><div class="grow"><h2 class="card-title" id="hs-title">By species</h2><p class="card-sub">Share of all detections</p></div></div>
-            <ul class="bars" id="hist-species"></ul>
-          </section>
-
-          <section class="card" aria-labelledby="hg-title">
-            <div class="card-head"><div class="grow"><h2 class="card-title" id="hg-title">By genus</h2><p class="card-sub">Genus decides the disease risk</p></div></div>
-            <div class="genus-chips" id="hist-genus"></div>
-            <div class="card-head" style="padding-top:0"><div class="grow"><h3 class="card-title" style="font-size:var(--fs-body)">Listening sessions</h3><p class="card-sub" id="hist-sessions-sub">—</p></div></div>
+          <section class="card span-2" aria-labelledby="hl-title">
+            <div class="card-head"><div class="grow"><h2 class="card-title" id="hl-title">Listening sessions</h2><p class="card-sub" id="hist-sessions-sub">—</p></div></div>
             <ul class="bars" id="hist-sessions"></ul>
           </section>
 
@@ -1428,7 +1424,7 @@ legend { padding: 0; }
               <svg class="icon chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </summary>
             <div class="acc-body">
-              <p>Each species beats its wings at its own pitch — about 290–730 Hz, with overtones at two and three times that. MosquitoNet looks for steady tones with exactly that pattern and rejects voices, fans and motors. Only finds with at least 70% confidence are shared with the map.</p>
+              <p>Each species beats its wings at its own pitch — about 290–730 Hz, with overtones at two and three times that. MosquitoNet looks for steady tones with exactly that pattern and rejects voices, fans and motors. A tone counts as a detection from 50% confidence; finds with at least 70% are shared with the map.</p>
               <div class="sp-table-wrap"><table class="sp-table" id="species-table"><caption class="sr-only">Species MosquitoNet can recognise</caption></table></div>
               <p>Wingbeat data: <a href="https://zenodo.org/record/4904800" target="_blank" rel="noopener">HumBugDB</a> and the <a href="https://doi.org/10.7554/eLife.27854" target="_blank" rel="noopener">Abuzz dataset</a>.</p>
             </div>
@@ -1471,8 +1467,8 @@ legend { padding: 0; }
             <div class="acc-body">
               <ul>
                 <li><strong>No audio is stored or sent.</strong> Sound is analysed in real time and discarded.</li>
-                <li><strong>Shared:</strong> confirmed detections only, with the location moved by a fixed secret offset of up to ~1.5 km, plus differentially private model updates.</li>
-                <li><strong>Anonymous:</strong> a random device ID, kept on the server only as a hash.</li>
+                <li><strong>Shared:</strong> confirmed detections, with the location rounded to a ~2 km grid and moved by a fixed secret offset of up to ~1.5 km; small noise-added updates to the detector's model (20 numbers, never audio); and, while the app is open, a heartbeat saying whether it is listening (no location).</li>
+                <li><strong>Pseudonymous:</strong> a random device ID, kept on the server only as a hash. The public map and log never show it; the service's operator can see which devices are connected and the locations they shared.</li>
                 <li><strong>Your history stays in this browser.</strong></li>
               </ul>
             </div>
@@ -1504,7 +1500,6 @@ legend { padding: 0; }
               <p>Live state of this device, the server connection and the shared model. Turn on <button class="link-btn" data-open="dlg-settings" style="min-height:0">diagnostics in Settings</button> to see raw detector gates on the species tiles.</p>
               <div>
                 <div class="readout-row"><span class="overline">Global model · <span id="fed-round">round —</span></span><span class="readout-sub" id="fed-upload">—</span></div>
-                <div class="meter fed-bar" aria-hidden="true"><div class="meter-fill" id="fed-bar"></div></div>
                 <div class="readout-sub num" id="fed-steps">—</div>
               </div>
               <dl class="kv">
@@ -1606,7 +1601,7 @@ legend { padding: 0; }
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg></span>
-        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location shifted by a fixed, secret offset of up to about 1.5 km.</p></div>
+        <div><h3>Private by design</h3><p>Sound is analysed on this phone and immediately discarded — nothing is recorded or uploaded. Confirmed detections are shared anonymously, with location rounded to about 2 km and shifted by a fixed, secret offset of up to about 1.5 km.</p></div>
       </li>
       <li>
         <span class="acc-ico"><svg class="icon" aria-hidden="true"><use href="#i-bed"/></svg></span>
@@ -1718,7 +1713,7 @@ legend { padding: 0; }
     <button class="icon-btn" data-close aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
   </div>
   <div class="dlg-body">
-    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (offset by up to about 1.5 km). Detection works without it.</p>
+    <p id="geo-desc">Location is optional. It lets MosquitoNet focus on the species found in your region and place your anonymous detections on the map (rounded to about 2 km and offset by up to about 1.5 km). Detection works without it.</p>
     <details class="plat" data-platform="ios">
       <summary>iPhone or iPad<svg class="icon" aria-hidden="true"><use href="#i-chevron-down"/></svg></summary>
       <ol class="steps">
@@ -1783,7 +1778,7 @@ legend { padding: 0; }
   </div>
   <div class="dlg-body">
     <p class="setting-label" id="adm-dev-summary" role="status">Loading…</p>
-    <p class="adm-note">Active in the last <span id="adm-dev-window">90</span> s. A location appears only when the device shared it with a detection, exactly as it arrived: already moved on the device by its fixed secret offset of up to ~1.5 km. Heartbeats carry no location.</p>
+    <p class="adm-note">Active in the last <span id="adm-dev-window">90</span> s. A location appears only when the device shared it with a detection, exactly as it arrived: already rounded on the device to a ~2 km grid and moved by its fixed secret offset of up to ~1.5 km. Heartbeats carry no location.</p>
     <div class="adm-list" id="adm-dev-list"></div>
   </div>
   <div class="dlg-foot">
@@ -2155,7 +2150,9 @@ class FederatedLearningClient {
     this.b = [-0.4, -0.3, -0.4, -0.3];  // slight negative bias — prefer silence over FP
 
     this.LR = 0.01;        // learning rate
-    this.DP_SIGMA = 0.012; // noise σ for Gaussian mechanism (ε≈1.0, δ=1e-5)
+    // Noise σ on each clipped (L2 ≤ 1) update. It blurs single events, but it is
+    // NOT a meaningful differential-privacy guarantee: ε ≈ 400 per step at δ=1e-5.
+    this.DP_SIGMA = 0.012;
     this.CLIP_NORM = 1.0;  // gradient clipping for DP
 
     // Bumping MODEL_VERSION invalidates weights persisted by any earlier (buggy)
@@ -2164,7 +2161,10 @@ class FederatedLearningClient {
 
     this.localSteps = 0;
     this.stepsSinceUpload = 0;
-    this.UPLOAD_EVERY = 20;   // upload every 20 training steps
+    // One update per confident detection: the App trains only on those (once
+    // per insect), so each step is worth sending. Waiting for 20 meant a phone
+    // that hears a few mosquitoes a night took weeks to contribute at all.
+    this.UPLOAD_EVERY = 1;
 
     this.roundNumber = 0;
     this.lastUpload = null;      // Date of the last accepted upload
@@ -2375,7 +2375,13 @@ class FederatedLearningClient {
   // Instead each device draws ONE secret offset, uniform over a disc of radius
   // ~1.5 km, and keeps it; reports carry that constant offset plus a small fresh
   // jitter, so averaging converges to a point ~1.5 km from home, never the home.
-  // (The server adds its own per-device offset before publishing — defence in depth.)
+  // The offset lives in this browser's storage, though: when that is wiped
+  // (private tabs, Safari's 7-day limit, "clear site data") the next session
+  // draws a new one, and averaging many sessions would converge on the home
+  // again. So the fix is first snapped to a fixed worldwide grid (_shareCell):
+  // every session starts from the same cell centre, and averaging sessions ends
+  // there, not at the home. (The server adds its own per-device offset and
+  // grid before publishing — defence in depth.)
   _locationOffset() {
     const R_DEG = 0.0135, JIT = 0.002;            // ≈ 1.5 km disc, ± ≈ 110 m jitter
     if (this._locOff === undefined) {
@@ -2400,6 +2406,25 @@ class FederatedLearningClient {
              dLng: this._locOff.dLng + (Math.random() - 0.5) * JIT };
   }
 
+  // The grid cell this install reports from, kept beside the offset. It only
+  // changes when the fix is clearly (HYST) inside another cell: GPS noise around
+  // a home near a grid line would otherwise alternate between two cells, and
+  // the midpoint of the two clusters would pin the home to that line.
+  // Call after _locationOffset() (it loads the stored state).
+  _shareCell(lat, lng) {
+    const G = 0.02, HYST = 0.0025;                // ≈ 2.2 km cells, ≈ 280 m hysteresis
+    const centre = (v) => (Math.floor(v / G) + 0.5) * G;
+    const near = (v, c) => Math.abs(v - c) <= G / 2 + HYST;
+    const o = this._locOff, c = o && o.cell;
+    if (c && Number.isFinite(c.lat) && Number.isFinite(c.lng) && near(lat, c.lat) && near(lng, c.lng)) return c;
+    const cell = { lat: centre(lat), lng: centre(lng) };
+    if (o) {
+      o.cell = cell;
+      try { localStorage.setItem('mosquitonet_loc_offset', JSON.stringify(o)); } catch (e) {}
+    }
+    return cell;
+  }
+
   // ── Report a confirmed detection ──────────────────────────────────────────
   // A confirmed "true find" is durable: it is written to a persistent, ordered,
   // idempotent upload queue in localStorage, then a flush is attempted. If the
@@ -2413,11 +2438,12 @@ class FederatedLearningClient {
     if (app && app.deviceLat !== null && app.deviceLat !== undefined) {
       const o = this._locationOffset();
       if (o) {
+        const c = this._shareCell(app.deviceLat, app.deviceLng);   // the fixed worldwide grid
         // Degrees of longitude shrink with cos(lat): scale so the offset disc is
         // ~1.5 km in every direction, not just north–south.
-        const k = 1 / Math.max(0.2, Math.cos(app.deviceLat * Math.PI / 180));
-        lat = Math.max(-90, Math.min(90, app.deviceLat + o.dLat));
-        lng = ((app.deviceLng + o.dLng * k + 540) % 360) - 180;
+        const k = 1 / Math.max(0.2, Math.cos(c.lat * Math.PI / 180));
+        lat = Math.max(-90, Math.min(90, c.lat + o.dLat));
+        lng = ((c.lng + o.dLng * k + 540) % 360) - 180;
       }
     }
     const round = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : undefined);
@@ -2592,7 +2618,8 @@ class FederatedLearningClient {
         const when = (v) => (Number.isFinite(v) && v > 0 ? new Date(v) : null);
         this.roundNumber = count(saved.round);
         this.localSteps = count(saved.steps);
-        this.stepsSinceUpload = Math.min(count(saved.pending), this.UPLOAD_EVERY - 1);
+        // Steps an earlier build trained but never sent ride along with the next upload.
+        this.stepsSinceUpload = Math.min(count(saved.pending), 50);
         this.uploadSuccess = count(saved.ok);
         this.uploadFailed = count(saved.fail);
         this.lastUpload = when(saved.lastOk);
@@ -2709,7 +2736,7 @@ class MapController {
       }).addTo(this._adminLayer).bindPopup(
         `<span class="pop-title">Device ${esc(String(p.device).slice(0, 8))}</span><br>` +
         `${esc(p.name || p.species || '')}${Number.isFinite(p.conf) ? ` · ${Math.round(p.conf * 100)}%` : ''}<br>` +
-        `<small>${esc(fmtStamp(p.ts))} · shared location, offset on the device by up to ~1.5 km</small>`);
+        `<small>${esc(fmtStamp(p.ts))} · shared location, rounded (~2 km) and offset (≤ ~1.5 km) on the device</small>`);
     }
     if (fit) {
       try {
@@ -3190,7 +3217,13 @@ class HistoryStore {
 const HOLD_MS     = 60000;    // a detection stays on the dial this long after it was last heard
 const LOCAL_CD    = 60000;    // one "event" per species per minute (counts, history, map)
 const SERVER_CD   = 60000;    // independent upload cooldown
-const CONF_UPLOAD = 0.70;     // peak confidence required before a find is shared
+// The engine reports every candidate it tracks, with a calibrated P(real
+// mosquito) — a weak burst can arrive at 1 %. Below CONF_MIN it is not a
+// detection at all: no alert, no History entry, no count (the dial shows it as
+// "checking"). From CONF_UPLOAD a detection is confident: it is shared with the
+// map AND trains the shared model, once per insect.
+const CONF_MIN    = 0.50;     // minimum confidence to count as a detection
+const CONF_UPLOAD = 0.70;     // confident: shared with the map, trains the model
 const DIM_AFTER   = 30000;    // bedside dimming delay
 const SENS_HINTS  = {
   1: 'Maximum — catches the faintest tones; expect more false alarms.',
@@ -3789,6 +3822,8 @@ class App {
     this._admDevFilter = '';
     ['#adm-dev-list', '#adm-log', '#adm-det', '#adm-files'].forEach(sel => { $(sel).innerHTML = ''; });
     $('#adm-health').innerHTML = $('#adm-config').innerHTML = '';
+    [['#adm-dev-summary', 'Loading…'], ['#adm-det-sub', '—'], ['#adm-files-sub', '—'],
+     ['#adm-session', 'Admin session']].forEach(([sel, text]) => setText($(sel), text));
     try { this.mapCtrl.setAdminPoints(null); } catch (e) {}
     this.setNet(this._netState || 'connecting', this._netLive);
     this.updateFedStatus();
@@ -3954,7 +3989,7 @@ class App {
       `<th scope="col">Conf</th><th scope="col">Hz</th><th scope="col">Shared location</th><th scope="col">App</th></tr></thead>` +
       `<tbody>${rows.join('') || '<tr><td colspan="8">None</td></tr>'}</tbody>`;
     setText($('#adm-det-sub'), `${dev ? `Device ${dev.slice(0, 8)} · ` : ''}newest ${num(dets.returned)} of ` +
-      `${num(dets.total_log)} in memory · ${num(dets.total_ever)} ever. Locations as the device shared them (its own offset, up to ~1.5 km).`);
+      `${num(dets.total_log)} in memory · ${num(dets.total_ever)} ever. Locations as the device shared them (rounded to ~2 km and offset ≤ ~1.5 km).`);
     setHidden($('#adm-det-clear'), !dev);
 
     const files = (srv.files || []).filter(f => f.name);
@@ -4092,17 +4127,13 @@ class App {
     if (!has) return;
 
     const hours = new Array(24).fill(0);
-    const bySp = new Map(), byGenus = new Map(), days = new Set();
+    const days = new Set();
     for (const e of ev) {
       const d = new Date(e.t);
       hours[d.getHours()]++;
       days.add(d.toDateString());
-      const k = e.sp || ('genus:' + e.genus);
-      bySp.set(k, (bySp.get(k) || 0) + 1);
-      if (e.genus) byGenus.set(e.genus, (byGenus.get(e.genus) || 0) + 1);
     }
-    const peakH = hours.indexOf(Math.max(...hours));
-    const pad = (n) => String(n).padStart(2, '0');
+    const peakH = hours.indexOf(Math.max(...hours));   // highlighted in the hour chart
     const sess = this.running && this.session
       ? { start: this.session.start, end: Date.now(), detections: this.session.detections, live: true }
       : this.history.sessions()[this.history.sessions().length - 1];
@@ -4111,8 +4142,6 @@ class App {
     $('#hist-tiles').innerHTML = [
       ['Detections', `<span class="stat-val num">${ev.length.toLocaleString()}</span>`,
         `on ${days.size} day${days.size === 1 ? '' : 's'} · since ${new Date(first.t).toLocaleDateString([], { day: 'numeric', month: 'short' })}`],
-      ['Species', `<span class="stat-val num">${bySp.size}</span>`, `${byGenus.size} genus${byGenus.size === 1 ? '' : 'es'}`],
-      ['Peak hour', `<span class="stat-val num">${pad(peakH)}:00</span>`, `${hours[peakH]} detection${hours[peakH] === 1 ? '' : 's'} in that hour`],
       [sess && sess.live ? 'This session' : 'Last session',
         `<span class="stat-val num">${sess ? fmtDuration(sess.end - sess.start) : '—'}</span>`,
         sess ? `${sess.detections} detection${sess.detections === 1 ? '' : 's'}` : 'No sessions yet'],
@@ -4121,25 +4150,11 @@ class App {
     const chartBox = $('#hour-chart');
     chartBox.innerHTML = this.hourChartSVG(hours, peakH, chartBox.clientWidth - 32);
 
-    const maxSp = Math.max(...bySp.values());
-    $('#hist-species').innerHTML = [...bySp.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) => {
-      const sp = SPECIES_BY_ID[k];
-      const tx = sp ? this.taxonOf(sp) : null;
-      const name = tx ? tx.common : `${k.replace('genus:', '')} (species uncertain)`;
-      const sci = tx ? shortSci(tx.name) : `${k.replace('genus:', '')} sp.`;
-      return `<li style="--meter-color:${sp ? sp.color : 'var(--text-3)'}">
-        <div class="bar-l"><span>${esc(name)} <span class="sci faint">${esc(sci)}</span></span><span class="num">${c}</span></div>
-        <div class="meter" aria-hidden="true"><div class="meter-fill" style="transform:scaleX(${(c / maxSp).toFixed(3)})"></div></div></li>`;
-    }).join('');
-
-    $('#hist-genus').innerHTML = [...byGenus.entries()].sort((a, b) => b[1] - a[1]).map(([g, c]) =>
-      `<span class="chip"><span class="sci" style="font-size:1rem;color:var(--text-1)">${esc(g)}</span><span class="num">${c}</span></span>`).join('');
-
     const ses = this.history.sessions().slice(-5).reverse();
     setText($('#hist-sessions-sub'), ses.length ? `Last ${ses.length} on this device` : 'Sessions appear after you stop listening');
     const maxDur = Math.max(1, ...ses.map(s => s.end - s.start));
     $('#hist-sessions').innerHTML = ses.map(s =>
-      `<li><div class="bar-l"><span>${esc(fmtDay(s.start))}, ${esc(fmtTime(s.start))}</span><span class="num faint">${esc(fmtDuration(s.end - s.start))} · ${s.detections} det.</span></div>
+      `<li><div class="bar-l"><span>${esc(fmtDay(s.start))}, ${esc(fmtTime(s.start))}</span><span class="num faint">${esc(fmtDuration(s.end - s.start))} · ${Number(s.detections) || 0} det.</span></div>
        <div class="meter" aria-hidden="true"><div class="meter-fill" style="transform:scaleX(${((s.end - s.start) / maxDur).toFixed(3)})"></div></div></li>`).join('');
 
     const recent = ev.slice(-40).reverse();
@@ -4785,18 +4800,17 @@ class App {
         const g = this._genusEvents[genus];
         if (g && now - g.last < LOCAL_CD) ev = g;                 // same insect, track re-acquired
       }
+      // Not (yet) sure enough to be a detection. An insect already counted
+      // keeps updating its record when its confidence dips.
+      if (!ev && conf < CONF_MIN) return;
       const f0 = Number.isFinite(det.f0) ? det.f0 : det.frequency;
       const r1 = (v, d) => (Number.isFinite(v) ? parseFloat(v.toFixed(d)) : null);
 
       if (!ev) {
         // ── New local event ──
-        ev = { id: ++this._evSeq, first: now, last: now, peak: conf, uploaded: false, rec: null };
+        ev = { id: ++this._evSeq, first: now, last: now, peak: conf, uploaded: false, trained: false, rec: null };
         if (sp) this.sessionCounts[sp.id]++;
         if (this.session) this.session.detections++;
-
-        // Federated learning — genus-level model class (0 An / 1 Ae / 2 Cx / 3 other)
-        const labelIdx = sp ? this.fedClient.classIndex(sp.id) : -1;
-        if (labelIdx >= 0) { try { this.fedClient.update(det, labelIdx); } catch (e) { console.warn('[fed]', e); } }
 
         // Map marker — optional; must never abort the handler
         if (sp && this.deviceLat !== null && this.deviceLng !== null) {
@@ -4835,6 +4849,15 @@ class App {
       this._genusEvents[genus] = ev;
 
       if (i === 0) this.touchLock(det, 'ev:' + ev.id, ev.peak, now);
+
+      // Confident: one training step for the shared model, once per insect —
+      // genus-level model class (0 An / 1 Ae / 2 Cx / 3 other). Training on
+      // every candidate taught the model the false alarms too.
+      if (!ev.trained && ev.peak >= CONF_UPLOAD) {
+        ev.trained = true;
+        const labelIdx = sp ? this.fedClient.classIndex(sp.id) : -1;
+        if (labelIdx >= 0) { try { this.fedClient.update(det, labelIdx); } catch (e) { console.warn('[fed]', e); } }
+      }
 
       if (speciesLevel && !ev.uploaded && ev.peak >= CONF_UPLOAD &&
           now - (this._serverCooldown[sp.id] || 0) >= SERVER_CD) {
@@ -5243,8 +5266,7 @@ class App {
       const failedLast = s.lastFailed && (!s.lastUpload || s.lastFailed > s.lastUpload);
       setText($('#fed-upload'), failedLast ? `upload failed ${fmtAgo(now - s.lastFailed)}`
                               : s.lastUpload ? `uploaded ${fmtAgo(now - s.lastUpload)}` : 'no upload yet');
-      $('#fed-bar').style.transform = `scaleX(${s.progress / s.uploadEvery})`;
-      setText($('#fed-steps'), `${s.progress} / ${s.uploadEvery} steps to next upload · ${s.localSteps.toLocaleString()} total`);
+      setText($('#fed-steps'), `Trained on ${plural(s.localSteps, 'confident detection', 'confident detections')} · an update is sent after each`);
 
       // Connection: the latest heartbeat/stats answer versus the latest failure.
       const ok = srv ? srv.at : 0, bad = this._srvFailAt || 0;

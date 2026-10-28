@@ -3,3 +3,8 @@
 pytest==9.1.1
 pytest-cov==7.1.0
 coverage==7.16.2
+# Their dependencies, pinned too: anything unpinned here runs in CI unreviewed.
+pluggy==1.7.0
+iniconfig==2.3.1
+packaging==26.3
+pygments==2.21.0

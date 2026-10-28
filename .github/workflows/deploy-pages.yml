@@ -10,8 +10,15 @@ name: Deploy to GitHub Pages
 #
 # Gated: the site is published only after the full CI suite (ci.yml) passes —
 # JS unit tests + detector benchmark, server tests, and the browser end-to-end
-# suite. The e2e gate matters doubly here: the service worker caches what we
-# ship on users' devices, so a broken build would outlive its own rollback.
+# suite, and the backend image smoke test (Railway builds `release` from the
+# Dockerfile). The e2e gate matters doubly here: the service worker caches what
+# we ship on users' devices, so a broken build would outlive its own rollback.
+#
+# Least privilege: the build job runs third-party code (the npm minifiers), so
+# it holds a read-only token and no persisted credentials. Only the deploy job
+# can push `release` and deploy Pages, and it runs no npm code at all — it
+# publishes the artifact the build produced. Every action is pinned to a
+# commit SHA (the tag in the comment), so moving a tag can't change what runs.
 
 on:
   push:
@@ -23,10 +30,8 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# Nothing by default: every job states exactly what it needs.
+permissions: {}
 
 # Never run two deploys at once; always let the newest win.
 concurrency:
@@ -41,33 +46,32 @@ jobs:
       contents: read                    # the tests need no write access
     with:
       skip_e2e: ${{ inputs.skip_e2e == true }}
-      skip_docker: true                 # backend image doesn't affect the static site
 
-  deploy:
+  build:
+    name: Build the site
     needs: test
     runs-on: ubuntu-latest
     permissions:
-      contents: write                   # push the release branch
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      # No npm cache: a restored cache is files nobody reviewed, extracted into
+      # the workspace. npm ci checks every package against the lockfile.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-          cache: npm
 
       - name: Install the minifiers
-        run: npm ci --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       # The one build both hosts publish: repo minus non-site paths, stamped
-      # (app-code URLs, version X.Y.<run number>, optional backend list) and
-      # minified. See tools/build-site.sh.
+      # (app-code URLs, version X.Y.<run number>, optional backend list),
+      # minified, given its CSP <meta>, and checked for leaks and symlinks.
+      # See tools/build-site.sh.
       - name: Build the site
         env:
           SITE_SHA: ${{ github.sha }}
@@ -78,6 +82,32 @@ jobs:
           # live. Unset = keep the SERVER_URLS list in index.html.
           SERVER_URLS: ${{ vars.SERVER_URLS }}
         run: bash tools/build-site.sh _site
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: _site
+
+  deploy:
+    name: Publish (release branch + Pages)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                   # push the release branch
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Fetch the built site
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: github-pages
+          path: ${{ runner.temp }}/pages
 
       # Railway deploys the `release` branch: this commit's tree plus the site
       # above in site/, which federated_server.py serves at / — so
@@ -91,7 +121,10 @@ jobs:
           VERSION="$(sed -n -E "s/^const APP_VERSION = '([0-9]+\.[0-9]+)\.[0-9]+';$/\1/p" index.html).${GITHUB_RUN_NUMBER}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          rm -rf site && cp -R _site site
+          rm -rf site && mkdir site
+          tar -xf "$RUNNER_TEMP/pages/artifact.tar" -C site
+          odd=$(find site ! -type f ! -type d -print)
+          if [ -n "$odd" ]; then echo "::error::symlinks or special files in the artifact:"; echo "$odd"; exit 1; fi
           git add -A site
           tree=$(git write-tree)
           parents=()
@@ -102,13 +135,8 @@ jobs:
           echo "release → $commit (v$VERSION)"
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
       - name: Deploy
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
