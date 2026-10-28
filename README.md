@@ -95,12 +95,13 @@ everyday-sound benchmark as a held-out test):
   server adds a second secret offset, snaps to its ~5 km grid and rotates device
   pseudonyms daily. A phone's public point stays the same each day, but the grid
   makes many phones share it.
-- While the app is open it sends a heartbeat (listening or not, no location),
+- While the app is open it sends a heartbeat (no location: just that it is open),
   and it shares small noise-added updates to the detector's model.
 - Detection history is stored only on the device and can be exported or cleared.
 - The operator's admin view (server `ADMIN_PASSWORD`, see `DEPLOY.md` → *Admin
-  view*) shows connected devices and only the locations they shared with their
-  detections, as sent. Heartbeats carry no location.
+  view*) shows the stored detections and the locations shared with them, as
+  sent; there is no list of connected or listening devices. Heartbeats carry
+  no location.
 
 ## Repository layout
 

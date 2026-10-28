@@ -161,21 +161,17 @@ omits query strings and client IPs.
 ### Admin view (operator only)
 
 `ADMIN_PASSWORD` is the app's only password. Typing it into **About →
-Advanced** opens Advanced and starts an admin session in that browser tab:
+Advanced** opens Advanced and starts an admin session in that browser tab, and
+a **Server** tab appears with health, the most recent ~1000 server log records
+of this process (the hosting platform keeps the full log), the stored detection
+records (private device hash and stored coordinates, as the phone sent them:
+snapped to its ~2 km grid and moved by its secret offset of up to ~1.5 km —
+never a raw GPS fix), the files in `DATA_DIR` (names and sizes only, never
+contents) and the configuration.
 
-- Tapping **"N listening"** in the top bar lists the connected devices (active
-  in the last 90 s): whether each is listening or just has the app open, when
-  it was last seen, its listening session, how many detections it shared, and
-  the **locations it shared with those detections**, which can be shown on
-  the map. Nothing else about a device exists: heartbeats carry no location,
-  and a shared location is the one the phone sent, already snapped to its ~2 km
-  grid and moved by its own secret offset of up to ~1.5 km. The admin view
-  never sees a raw GPS fix.
-- A **Server** tab appears with health, the most recent ~1000 server log
-  records of this process (the hosting platform keeps the full log), the stored
-  detection records (private device hash and stored coordinates, filterable
-  by device), the files in `DATA_DIR` (names and sizes only, never contents)
-  and the configuration.
+There is deliberately **no list of connected or listening devices**: the
+"N listening" pill is a count for everyone, admin included, and the server
+keeps no per-device listening state (heartbeats carry no location either).
 
 The password exists only in the server's environment. The page holds it in no
 form, not even a hash, because a hash in a public page can be guessed offline.
